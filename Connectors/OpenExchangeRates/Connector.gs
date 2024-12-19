@@ -126,7 +126,7 @@ var OpenExchangeRates = class OpenExchangeRates extends OWOXCore.AbstractConnect
   
     let data = [];
     let base = this.CONFIG.base.value;
-    let app_id = this.CONFIG.AppId;
+    let app_id = this.CONFIG.AppId.value;
     let symbols = '';
   
     // Limit results to specific currencies (comma-separated list of 3-letter codes)

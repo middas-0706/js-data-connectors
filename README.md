@@ -18,4 +18,5 @@ All you need to do is copy the Google Sheets Template Connector for your desired
 # Reporting bugs and contributing code
 
 Want to report a bug or request a feature? Let us know and open an issue
+
 Want to make you contribution? Check out the Contributing Guide

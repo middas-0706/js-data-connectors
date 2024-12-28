@@ -1,0 +1,193 @@
+class AbstractConfig {
+
+
+/*
+
+@param (object) with config data. Properties are parameters names, values are values
+
+*/
+constructor(configData) {
+
+  for(var name in configData) {
+    this.addParameter(name, configData[name]);
+  };
+
+  return this;
+
+}
+
+
+/*
+
+Merge configuration to existing config
+
+@param (object) with config data. Properties are parameters names, values are values
+
+@return Config object
+
+*/
+mergeParameters(configData) {
+
+  for(var name in configData) {
+    this.addParameter(name, configData[name]);
+  }
+
+  return this;
+}
+
+/*
+
+Set values of parameters
+
+@param object with parameters' values
+
+@return Config object
+
+*/
+setParametersValues(values) {
+  
+  for(var parameterName in values) {
+    //this.CONFIG[parameterName] = parameterName in this.CONFIG ? { ...this.CONFIG[parameterName], ...{"value": values[parameterName]} } : {"value": values[parameterName]}
+    this[parameterName] = parameterName in this ? { ...this[parameterName], ...{"value": values[parameterName]} } : {"value": values[parameterName]}
+  }
+
+  return this;
+}
+
+/*
+
+Adding parameter to config
+
+@param name (string) parameter name
+@param parameter (mixed) parameter values
+
+@return Config object
+
+*/
+addParameter(name, parameter) {
+
+    // If the name of the config parameter ends with *, it is required  
+    if( name.slice(-1) == "*" ) { 
+      parameter.isRequired = true;
+    }
+
+    // replace of characters including spaces to let call parameters like this.CONFIG.parameterName
+    if( name = name.replaceAll(/[^a-zA-Z0-9]/gi, "") ) {
+
+      // parameter is already exists in CONFIG
+      //this.CONFIG[name] = name in this.CONFIG ? { ...this.CONFIG[name], ...parameter } : parameter
+      this[name] = name in this ? { ...this[name], ...parameter } : parameter
+
+    }
+
+    return this;
+
+}
+
+
+/*
+
+Validate if all parameters meet restrictions
+
+@return (boolean) true if valid, and throw an exception with error details otherwise.
+
+*/
+validate() {
+
+
+    // validating config
+    for (let name in this) {
+
+      let parameter = this[ name ];
+
+        // if parameter's value is required
+      if( parameter.isRequired == true) {
+        if( !parameter.value && parameter.value !== 0 ) {
+          throw new Error(parameter.errorMessage ? parameter.errorMessage : `Unable to load the configuration. The parameter ‘${name}’ is required but was provided with an empty value`)
+        }
+      }
+
+      // there is a type restriction for parameter values
+      if( "requiredType" in parameter && parameter.value ) {
+
+          if( !(["string", "number", "date"].includes( parameter.requiredType )) ) {
+
+            throw new Error(`Parameter '${name}' has wrong requiredType in configuration`)
+
+          // parameters must be eigher string or number
+          } else if( ( parameter.requiredType == "string" || parameter.requiredType == "number" ) 
+          && typeof parameter.value !== parameter.requiredType ) {
+
+            throw new Error(`Parameter '${name}' must a a ${parameter.requiredType}. Got ${typeof parameter} instead`)
+
+          // parameters must be a date
+          } else if ( parameter.requiredType == "date"  
+          && parameter.value.constructor.name != "Date" ) {
+
+            throw new Error(`Parameter '${name}' must be a ${parameter.requiredType}. Got ${typeof parameter} instead`)
+
+          }
+    
+      }
+
+    };
+
+    return this;
+
+}
+
+/*
+*
+* @param string current status value
+*
+*/
+updateCurrentStatus(status) {
+
+  throw new Error("updateCurrentStatus must be implemented in subclass of AbstractConfig");
+
+} 
+
+/*
+
+updating the last import attempt date in a config sheet
+
+*/
+updateLastImportDate() {
+  
+  throw new Error("updateLastImportDate must be implemented in subclass of AbstractConfig");
+
+}
+
+/*
+
+Updating the last requested date in a config sheet
+
+@param date Date requested date
+
+*/
+updateLastRequstedDate(date) {
+  throw new Error("updateLastRequstedDate must be implemented in subclass of AbstractConfig");
+}
+
+
+/*
+
+Checking current status if it is in progress or not
+
+@return boolean true is process in progress
+
+*/
+isInProgress() {
+  throw new Error("isInProgress must be implemented in subclass of AbstractConfig");
+}
+
+addWarningToCurrentStatus() {
+  throw new Error("addWarningToCurrentStatus must be implemented in subclass of AbstractConfig");
+}
+
+
+logMessage() {
+  throw new Error("logMessage must be implemented in subclass of AbstractConfig");
+}
+
+}

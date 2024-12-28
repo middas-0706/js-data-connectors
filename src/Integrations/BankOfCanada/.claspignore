@@ -1,0 +1,6 @@
+**/**
+!Integrations/BankOfCanada/*.js
+!appsscript.json
+!Core/Abstract*.js
+!Core/LibraryWapper.js
+!Core/GoogleSheets*.js

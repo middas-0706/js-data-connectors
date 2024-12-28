@@ -1,42 +1,39 @@
-var BankOfCanada = class BankOfCanada extends OWOXCore.AbstractConnector {
+var BankOfCanadaConnector = class BankOfCanadaConnector extends AbstractConnector {
 
   constructor( configRange ) {
   
-    super(
-      configRange, 
-      {
-        StartDate: {
-          isRequired: true,
-          requiredType: "date",
-          value: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-        },
-        EndDate: {
-          isRequired: true,
-          requiredType: "date",
-          value: new Date()
-        },
-        ReimportLookbackWindow: {
-          requiredType: "number",
-          isRequired: true,
-          value: 2
-        },
-        CleanUpToKeepWindow: {
-          requiredType: "number"
-        },
-        DestinationSheetName: {
-          isRequired: true,
-          value: "Data"
-        },
-        MaxFetchingDays: {
-          requiredType: "number",
-          isRequired: true,
-          value: 30
-        }
+    super( configRange.mergeParameters({
+      StartDate: {
+        isRequired: true,
+        requiredType: "date",
+        value: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+      },
+      EndDate: {
+        isRequired: true,
+        requiredType: "date",
+        value: new Date()
+      },
+      ReimportLookbackWindow: {
+        requiredType: "number",
+        isRequired: true,
+        value: 2
+      },
+      CleanUpToKeepWindow: {
+        requiredType: "number"
+      },
+      DestinationSheetName: {
+        isRequired: true,
+        value: "Data"
+      },
+      MaxFetchingDays: {
+        requiredType: "number",
+        isRequired: true,
+        value: 30
       }
-    );
+    }));
   
-    this.dateColumn = ["date"];
-    this.uniqueKeyColumns = ["date", "label"];
+    //this.dateColumn = ["date"];
+    //this.uniqueKeyColumns = ["date", "label"];
   
   }
   
@@ -56,7 +53,7 @@ var BankOfCanada = class BankOfCanada extends OWOXCore.AbstractConnector {
   
     const url = `https://www.bankofcanada.ca/valet/observations/group/FX_RATES_DAILY/json?start_date=${start_date}&end_date=${end_date}`;
       
-    this.logMessage(`🔄 Fetching data from ${start_date} to ${end_date}`);
+    this.config.logMessage(`🔄 Fetching data from ${start_date} to ${end_date}`);
   
     var response = UrlFetchApp.fetch(url, {'method': 'get', 'muteHttpExceptions': true} );
     var rates = JSON.parse( response.getContentText() );

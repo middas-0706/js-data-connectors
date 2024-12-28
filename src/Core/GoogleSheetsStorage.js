@@ -1,4 +1,4 @@
-var ActiveSheet = class ActiveSheet {
+var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
 
   /**
    * Asbstract class making Google Sheets data active in Apps Script to simplity read/write operations
@@ -7,26 +7,22 @@ var ActiveSheet = class ActiveSheet {
    * @param mixed {uniqueKeyColumns} a name of column with unique key or array with columns names
    *
    */
-  constructor(sheet, uniqueKeyColumns = null) {
+  constructor(config, uniqueKeyColumns) {
   
-    if(typeof sheet.getDataRange != "function") {
-      throw new Error(`Unable to create an ${this.constructor.name} object. First parameter must be an instance of Sheet class`);
-    }
+    super(
+      config.mergeParameters({
+        CleanUpToKeepWindow: {
+          requiredType: "number"
+        },
+        DestinationSheetName: {
+          isRequired: true,
+          value: "Data"
+        }
+      }),
+      uniqueKeyColumns
+    );
   
-    this.SHEET = sheet;
-  
-    if(typeof uniqueKeyColumns == "string") {
-  
-      this.uniqueKeyColumns = [uniqueKeyColumns];
-  
-    } else if (typeof uniqueKeyColumns == "object" ) {
-  
-      this.uniqueKeyColumns = uniqueKeyColumns;
-  
-    } else {
-    
-      throw new Error(`Cannot create a ${this.constructor.name} object. Column Id Name must be either a string or an array. Got ${typeof uniqueKeyColumns} instead`);
-    }
+    this.SHEET = this.getDestinationSheet(config);
   
     const values = this.SHEET.getDataRange().getValues();
   
@@ -35,7 +31,7 @@ var ActiveSheet = class ActiveSheet {
   
     // cheking if all columns from unique key are exist in this.columnNames
     if ( this.uniqueKeyColumns.some(column => !this.columnNames.includes(column)) ) {
-      throw new Error(`Sheet '${sheet.getName()}' is missing one the folling required for unique key: column '${this.uniqueKeyColumns}'`);
+      throw new Error(`Sheet '${this.SHEET.getName()}' is missing one the folling required for unique key: column '${this.uniqueKeyColumns}'`);
     }
   
     // Convert sheet data from array to an associative object using the unique key from the specified column
@@ -64,51 +60,69 @@ var ActiveSheet = class ActiveSheet {
   
   }
   
+  
   /*
   
-  Calculcating unique key based on this.uniqueKeyColumns
+  @param object destination Spreadsheet Config
+  @param object destination Sheet Name Config
   
-  @param object 
-  
+  @return Sheet object for data Destination
+  *
   */
-  getRecordUniqueKey(record) {
+  getDestinationSheet(config) {
   
-    return this.uniqueKeyColumns.reduce((accumulator, columnName) => {
-      
-      if( !(columnName in record) ) {
-        throw Error(`'${columnName}' value is required for Unique Key, but it is missing in ${record}`);
+    // reference to the destination sheet is not specified yet
+    if( !this.SHEET ) {
+    
+      // destination sheet is a default one (the same as config's sheet)
+      if( !config.DestinationSpreadsheet.value ) {
+  
+        config.DestinationSpreadsheet.spreadsheet = config.DestinationSpreadsheet.cell.getSheet().getParent();
+  
+      // destination spreadsheet is defined in config and must me used instead of config's sheet
+      } else {
+  
+        let match = config.DestinationSpreadsheet.value.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  
+        // Destination Spreadhseet is defined by its id
+        if( match && match[1] ) {
+  
+          config.DestinationSpreadsheet.spreadhsheet = SpreadsheetApp.openById(match[1]);
+  
+        } else {
+          
+          let match = config.DestinationSpreadsheet.cell.getRichTextValue().getLinkUrl().match(/\/d\/([a-zA-Z0-9-_]+)/);
+  
+          if (match && match[1]) {
+            config.DestinationSpreadsheet.spreadsheet = SpreadsheetApp.openById( match[1] );
+          } else {
+            throw new Error(`Destination Spreadsheet must be specified in config either by Spreadsheet Id or by a link to spreadsheet`);
+          }
+        }
       }
   
-      accumulator += `|${record[columnName]}`;      // Append the corresponding value from the row
-      return accumulator;
-    }, []);
+      // Try to get the sheet
+      config.DestinationSpreadsheet.sheet = config.DestinationSpreadsheet.spreadsheet.getSheetByName( 
+        config.DestinationSheetName.value
+      ); 
+  
+      // if destination sheet doesn't exist in destination spreadsheet, try to create it
+      if ( !config.DestinationSpreadsheet.sheet ) {
+        config.DestinationSpreadsheet.sheet = config.DestinationSpreadsheet.spreadsheet.insertSheet( 
+          config.DestinationSheetName.value, 1 
+        );
+        this.addHeader( config.DestinationSpreadsheet.sheet, this.uniqueKeyColumns );
+        this.config.logMessage(`Sheet '${config.DestinationSheetName.value}' was created.`);
+      }
+  
+      this.SHEET = config.DestinationSpreadsheet.sheet;
+  
+    }
+    
+    return this.SHEET; // Return the sheet object
   
   }
   
-  
-  /**
-   * Returning specific row data by id 
-   *
-   * @param string {key} unique id of the record
-   * @return object with row data
-   * 
-   */
-  getRecordByUniqueKey(key) {
-    return typeof this.values[key] == "object" ? this.values[key] : null;
-  }
-  
-  /**
-   * Checking if record exists by id
-   *
-   * @param object {record}  record
-   * @return TRUE if record exists, overwise FALSE
-   * 
-   */
-  isRecordExists( record )  {
-  
-    return this.getRecordUniqueKey(record) in this.values;
-  
-  }
   
   /**
    * Checking if record exists by id
@@ -145,7 +159,7 @@ var ActiveSheet = class ActiveSheet {
   }
   
   /*
-  * added records from buffer to asheet
+  * Add records from buffer to a sheet
   * 
   * @param (integer) {maxBufferSize} record will be added only if buffer size if larger than this parameter
   */
@@ -155,7 +169,7 @@ var ActiveSheet = class ActiveSheet {
     let bufferSize = Object.keys( this.addedRecordsBuffer ).length;
   
     // buffer must be saved only in case if it is larger than maxBufferSize
-    if( bufferSize >= maxBufferSize && bufferSize ) {
+    if( bufferSize && bufferSize >= maxBufferSize ) {
       
       let startIndex = this.SHEET.getLastRow() - 2;
       let index = 1;
@@ -196,7 +210,7 @@ var ActiveSheet = class ActiveSheet {
     this.columnNames.forEach((columnName, columnIndex) => {
   
       // if new record has a columnName property and a value of this property differs from an existingRecord one
-      if( columnName in record && !ActiveSheet.areValuesEqual(record[ columnName ], existingRecord[ columnName ]) ) {
+      if( columnName in record && !this.areValuesEqual(record[ columnName ], existingRecord[ columnName ]) ) {
         console.log(`${uniqueKey}: ${existingRecord[ columnName ]} ${typeof existingRecord[ columnName ]} → ${record[ columnName ]} ${typeof record[ columnName ]}`);
   
         // @TODO: before updating value we need to doublecheck that it is still the right record at this rowIndex
@@ -252,7 +266,7 @@ var ActiveSheet = class ActiveSheet {
   @param array column names to be added
   
   */
-  static addHeader(sheet, columnNames) {
+  addHeader(sheet, columnNames) {
   
     columnNames.forEach((columnName, index) => {
       sheet.insertColumns(index + 1);
@@ -280,29 +294,24 @@ var ActiveSheet = class ActiveSheet {
   }
   
   
-  getTheLastDate(dateColumnName) {
-  
-    throw new Error("getTheLastDate");
-  }
-  
   /*
   
-  @param Sheet object of Sheet
   @return boolean true if sheet is empty, false overwise 
   
   */
-  static isEmpty(sheet) {
+  isEmpty() {
   
-    return sheet.getLastRow() === 0 && sheet.getLastColumn() === 0;
+    return this.SHEET.getLastRow() === 0 && this.SHEET.getLastColumn() === 0;
   
   }
   
   
-  static areValuesEqual(value1, value2) {
+  areValuesEqual(value1, value2) {
   
     var equal = null;
   
-    if ( value1.constructor.name == "Date" || value2.constructor.name == "Date" ) {
+    if ( (typeof value1 !== "undefined" && typeof value2 !== "undefined")
+    && ( value1.constructor.name == "Date" || value2.constructor.name == "Date" ) ) {
        
       const normalizeToDate = (value) => {
         if (value === null || value === "") return null;
@@ -340,5 +349,7 @@ var ActiveSheet = class ActiveSheet {
     return equal;
   
   }
+  
+  
   
   }

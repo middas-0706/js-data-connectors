@@ -1,4 +1,4 @@
-![alt text](image.png)
+![alt text](res/image.png)
 # Why
 At OWOX, we believe everyone should have easy access to data.
 Obtaining data ownership to make it easily accessible in spreadsheets shouldn’t cost a fortune for small and medium businesses or agencies. That’s why we’ve open-sourced connectors for Google Apps Script. With just a few clicks and no coding required, you can set up automated data imports into your spreadsheets. 

@@ -1,8 +1,0 @@
-.gitignore
-.git/**
-.idea/**
-.DS_Store
-@types/**
-node_modules/**
-**/*.md
-README.md

@@ -1,22 +1,22 @@
-![alt text](res/image.png)
-# Why
-At OWOX, we believe everyone should have easy access to data.
-Obtaining data ownership to make it easily accessible in spreadsheets shouldn’t cost a fortune for small and medium businesses or agencies. That’s why we’ve open-sourced connectors for Google Apps Script. With just a few clicks and no coding required, you can set up automated data imports into your spreadsheets. 
+![Java Script Open-Source Connectors](res/main-cover.png)
+## Why
+At OWOX, we believe everyone should have easy access to data. That is why we have open-sourced data connectors to empower every business to become data owners by importing it into Spreadsheets or DWHs.
+Although there are many great SaaS and open-source products available, we see the need for a solution that offers a free cloud version and doesn’t require data engineers for maintenance.
 
-Despite the known limitations of Apps Script, these connectors offers several significant advantages:
+## What
+With just a few clicks and no coding, you can easily set up automated data imports into your spreadsheets and earn the following benefits:
 - **Privacy-Friendly**: Being open-source, no credentials need to be shared with third-party products.
-- **Customizable**: Scheduling and data schemas can be adjusted at any time.
-- **Streamlined Tech Stack**: Eliminates the need to expand your tech stack with additional supported or paid products.
+- **Unlimited Customization**: Scheduling and data schemas can be adjusted at any time.
+- **Streamlined Tech Stack**: Connectors can be developed and customized via Apps Script. Google Sheets is more than enough to run your own data pipelines
 - **Free**: Distributed under the ELv2 license, it allows free use for internal organizational services or providing paid services to clients, as long as it is not used to build a competing product.
-- **Serverless**: neither Google Cloud nor computing resources are required
+- **Serverless**: neither Google Cloud nor computing resources are required to run it
 
 
-# Getting Started
-All you need to do is copy the Google Sheets Template Connector for your desired data source and add your credentials (optional). For instance, you can start with the [Bank of Canada currency exchange rates](https://docs.google.com/spreadsheets/d/1yHHAUhH9OeFoIULGDmWUSAkfVmjb8eY4XeHzbYvu14s/edit?gid=1242480076) import, which doesn't require credentials.
+## How
+**To create your data import**, make a copy of the Google Sheets template for [existing integrations](tree/main/src/Integrations). If you experience any issues, feel free to post them [here](issues).
 
+**To contribute to existing integrations or create a new one**, please visit the [contributors' guide](CONTRIBUTORS.md). All you need to get started are basic knowledge of Apps Script and a GitHub login. No software installation is required on your computer.
 
-# Reporting bugs and contributing code
+**To become a part of the Core team**, please start by submitting a pull request to the [Core part of the product](tree/main/src/Core). Understanding TypeScript, Git, and software development is required.
 
-Want to report a bug or request a feature? Let us know and open an issue
-
-Want to make you contribution? Check out the Contributing Guide
+**To get support**, please [visit Q&A](discussions/categories/q-a) first. If you want to report a bug, please [open an issue](issues). Ideas and new integrations can be requested [here](discussions/categories/ideas).

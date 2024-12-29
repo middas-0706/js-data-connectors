@@ -4,25 +4,35 @@ var CONFIG_RANGE = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Config'
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('OWOX')
     .addItem('▶ Import New Data', 'importNewData')
-    .addItem('✖️ CleanUp Expired Data', 'cleanUpExpiredDate')
+    .addItem('🧹 CleanUp Expired Data', 'cleanUpExpiredDate')
     .addItem('🔑 Manage Credentials', 'manageCredentials')
+    .addItem('⏰ Schedule', 'scheduleRuns')
     .addToUi();
 }
 
 function importNewData() {
 
-  const Connector = new OWOXConnector.OpenExchangeRates( 
-    CONFIG_RANGE,
-    PropertiesService.getDocumentProperties().getProperties()
+  const config = new OWOX.GoogleSheetsConfig( CONFIG_RANGE );
+  
+  const pipeline = new OWOX.OpenExchangeRatesPipeline(
+    config,                                                           // pipeline configuration
+    new OWOX.OpenExchangeRatesConnector(config.setParametersValues(       // connector with parameter's values added from properties 
+      PropertiesService.getDocumentProperties().getProperties()
+    )),                          
+    new OWOX.GoogleSheetsStorage(config, ["date", "base", "currency"] )   // storage 
   );
-  Connector.importNewData();
+
+  pipeline.run();
 
 }
 
 function cleanUpExpiredData() {
 
-  const Connector = new OWOXConnector.OpenExchangeRates( CONFIG_RANGE );
-  Connector.cleanUpExpiredData();
+  const storage = new OWOX.GoogleSheetsStorage( 
+    new OWOX.GoogleSheetsConfig( CONFIG_RANGE ),
+    ["date", "base", "currency"] 
+  );
+  storage.cleanUpExpiredData("date");
 
 }
 

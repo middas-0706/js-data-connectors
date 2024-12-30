@@ -1,4 +1,4 @@
-![Java Script Open-Source Connectors](res/main-cover.png)
+![JavaScript Open-Source Connectors](res/main-cover.png)
 ## Why
 At OWOX, we believe everyone should have easy access to data. That is why we have open-sourced data connectors to empower every business to become data owners by importing it into Spreadsheets or DWHs.
 Although there are many great SaaS and open-source products available, we see the need for a solution that offers a free cloud version and doesn’t require data engineers for maintenance.
@@ -15,7 +15,7 @@ With just a few clicks and no coding, you can easily set up automated data impor
 ## How
 **To create your data import**, make a copy of the Google Sheets template for [existing integrations](tree/main/src/Integrations). If you experience any issues, feel free to post them [here](issues).
 
-**To contribute to existing integrations or create a new one**, please visit the [contributors' guide](CONTRIBUTORS.md). All you need to get started are basic knowledge of Apps Script and a GitHub login. No software installation is required on your computer.
+**To contribute to existing integrations or create a new one**, please visit the [contributors' guide](CONTRIBUTING.md). All you need to get started are basic knowledge of Apps Script and a GitHub login. No software installation is required on your computer.
 
 **To become a part of the Core team**, please start by submitting a pull request to the [Core part of the product](tree/main/src/Core). Understanding TypeScript, Git, and software development is required.
 

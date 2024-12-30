@@ -39,7 +39,7 @@ It must be an instance of `AbstractPipeline`
 
 ### Connector
 `Connector` is responsible for fetching data from the Data Source. This object has a `fetchData()` method, which is required for data source-specific implementation.
-It must be an instance of `AbstractStorage`
+It must be an instance of `AbstractConnector`
 
 ### Storage
 `Storage` is responsible for adding new data and updating existing data in storage. Currently, only Google Sheets is supported as a data storage option.

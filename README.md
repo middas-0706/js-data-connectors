@@ -15,7 +15,7 @@ With just a few clicks and no coding, you can easily set up automated data impor
 ## How
 **To create your data import**, make a copy of the Google Sheets template for [existing integrations](src/Integrations). If you experience any issues, feel free to post them [here](issues).
 
-**To contribute to existing integrations or create a new one**, please visit the [contributors' guide](../../CONTRIBUTING.md). All you need to get started are basic knowledge of Apps Script and a GitHub login. No software installation is required on your computer.
+**To contribute to existing integrations or create a new one**, please visit the [contributors' guide](../../blob/main/CONTRIBUTING.md). All you need to get started are basic knowledge of Apps Script and a GitHub login. No software installation is required on your computer.
 
 **To become a part of the Core team**, please start by submitting a pull request to the [Core part of the product](src/Core). Understanding TypeScript, Git, and software development is required.
 

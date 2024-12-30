@@ -8,7 +8,7 @@ The Google Sheets document contains the configuration in the Config sheet, contr
 
 To make the integration work, you need to connect the appropriate library to `Code.gs`. Google Sheets templates for specific data sources already have the required library connected. If you create a blank Google Sheets document, you will need to connect a library to `Code.gs` manually.
 
-Libruary files connected to templates are updated automaticaly based on Github repository. So to make your own changes you need to make a libruary copy first.
+Library files connected to templates are updated automaticaly based on Github repository. So to make your own changes you need to make a library copy first.
 
 ![Google Sheets Adding Apps Script Library](res/google-sheets-adding-apps-script-library.png)
 

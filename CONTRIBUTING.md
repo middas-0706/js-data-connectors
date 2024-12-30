@@ -45,3 +45,6 @@ It must be an instance of `AbstractStorage`
 `Storage` is responsible for adding new data and updating existing data in storage. Currently, only Google Sheets is supported as a data storage option.
 
 It must be an instance of `AbstractStorage`
+
+## Questions
+Got a questions? Ask community [here](../../discussions/categories/q-a)

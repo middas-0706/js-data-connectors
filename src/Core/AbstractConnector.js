@@ -16,23 +16,6 @@ class AbstractConnector {
   
     this.config = config;
   
-    try {
-  
-      config.validate();
-  
-    } catch(error) {
-  
-      this.config.logMessage(`Error:  ${error.message}`);
-  
-      // in case current status is not In progress, we need to update it to "Error". We cannot overwrite "In progress" status with "Error" to avoid import dublication
-      if( !this.isInProgress() ) {
-        this.config.updateCurrentStatus(`Error`);
-      }
-  
-      throw error;
-  
-    }
-  
   }
   
   
@@ -47,5 +30,20 @@ class AbstractConnector {
     throw new Error("Method fetchData must be implemented in Class inheritor of AbstractConnector");
   
   }
+
+/*
+
+returing two-levels object with schema details
+first level with name and description properties for group name
+the seconed one for the fields
+
+@return object
+
+*/
+getFieldsSchema() {
+
+  return this.fieldsSchema;
+
+}
   
-  }
+}

@@ -16,7 +16,7 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
         },
         DestinationSheetName: {
           isRequired: true,
-          value: "Data"
+          default: "Data"
         }
       }),
       uniqueKeyColumns
@@ -24,6 +24,17 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
   
     this.SHEET = this.getDestinationSheet(config);
   
+    this.loadDataFromSheet();
+  
+  }
+  
+  /*
+  
+  reading Data from the source sheet and loading it to this.values
+  
+  */
+  loadDataFromSheet() {
+    
     const values = this.SHEET.getDataRange().getValues();
   
     // getting header with columns names
@@ -111,11 +122,17 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
         config.DestinationSpreadsheet.sheet = config.DestinationSpreadsheet.spreadsheet.insertSheet( 
           config.DestinationSheetName.value, 1 
         );
-        this.addHeader( config.DestinationSpreadsheet.sheet, this.uniqueKeyColumns );
+        
         this.config.logMessage(`Sheet '${config.DestinationSheetName.value}' was created.`);
       }
   
       this.SHEET = config.DestinationSpreadsheet.sheet;
+  
+      // if sheet is blank, when header has to be added
+      if( this.isEmpty() ) {
+          this.addHeader( config.DestinationSpreadsheet.sheet, this.uniqueKeyColumns );
+          this.config.logMessage(`Headers are added to '${config.DestinationSheetName.value}' sheet.`);
+      }
   
     }
     
@@ -135,7 +152,7 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
    */
   addNewRecord(record, useBuffer = false) {
   
-    let uniqueKey = this.getRecordUniqueKey( record );
+    let uniqueKey = this.getUniqueKeyByRecordFields( record );
   
     // a new record must be added to buffer
     if( useBuffer ) {
@@ -157,6 +174,56 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
     return record;
   
   }
+  
+  
+  
+  /*
+  
+  Saving data to a storage
+  
+  @param {data} array of assoc objects with records to save
+  
+  */
+  saveData(data) {
+  
+  // if there are new columns in the first row it should be added first
+  let newFields = Object.keys(data[0]).filter( column => !this.columnNames.includes(column) );
+  
+  // create new columns that are in data but absent in a Sheet
+  for( var column in newFields ) {
+    this.addColumn(newFields[column], this.columnNames.length + 1);
+    this.config.logMessage(`Column '${newFields[column]}' was added to '${this.SHEET.getName()}' sheet`);
+  }
+  
+  // updating sheet content based on data
+  var recordsAdded = 0;
+  var recordsUpdated = 0;
+  
+  data.map((row) => {
+    if( this.isRecordExists(row) ) {
+      if( this.updateRecord(row) ) {
+        recordsUpdated++;
+      };
+    } else {
+      this.addNewRecord(row, true);
+      recordsAdded += this.saveRecordsAddedToBuffer(100);
+    }
+  })
+  
+  // saving the residue of the buffer to sheet
+  recordsAdded += this.saveRecordsAddedToBuffer(0);
+  
+  if( recordsAdded > 0) {
+    this.config.logMessage(`${recordsAdded} records were added`);
+  }
+  
+  if( recordsUpdated > 0) {
+    this.config.logMessage(`${recordsUpdated} records were updated`);
+  }
+  
+  }
+  
+  
   
   /*
   * Add records from buffer to a sheet
@@ -201,7 +268,7 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
    */
   updateRecord(record) {
   
-    let uniqueKey = this.getRecordUniqueKey( record );
+    let uniqueKey = this.getUniqueKeyByRecordFields( record );
   
     var existingRecord = this.getRecordByUniqueKey( uniqueKey );
     var isRecordUpdated = false;
@@ -267,13 +334,12 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
   
   */
   addHeader(sheet, columnNames) {
-  
     columnNames.forEach((columnName, index) => {
       sheet.insertColumns(index + 1);
       sheet.getRange(1, index + 1).setValue(columnName); 
     });
   
-    sheet.getRange("1:1").setBackground("#f3f3f3");
+    sheet.getRange("1:1").setBackground("#f3f3f3").setHorizontalAlignment("center");
     sheet.setFrozenRows(1);
   
   }
@@ -291,6 +357,28 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
     this.SHEET.getRange(1, columnIndex).setValue(columnName); 
     this.columnNames.push(columnName);
     
+  }
+  
+  
+  
+  /*
+  
+  @param columnName string column name
+  
+  @return integer columnIndex
+  
+  */
+  getColumnIndexByName(columnName) {
+  
+    const columnIndex = this.columnNames.indexOf(columnName);
+  
+    // column columnName is not found
+    if( columnIndex == -1) {
+      throw new Error(`Column ${columnName} not found in '${this.SHEET.getName()}' sheet`);
+    }
+  
+    return columnIndex + 1;
+  
   }
   
   
@@ -312,7 +400,7 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
   
     if ( (typeof value1 !== "undefined" && typeof value2 !== "undefined")
     && ( value1.constructor.name == "Date" || value2.constructor.name == "Date" ) ) {
-       
+        
       const normalizeToDate = (value) => {
         if (value === null || value === "") return null;
         if (value.constructor.name == "Date") return value;
@@ -349,7 +437,7 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
     return equal;
   
   }
-  
-  
-  
+    
+    
+    
   }

@@ -1,6 +1,6 @@
 ![JavaScript Open-Source Connectors](res/main-cover.png)
 ## Why
-At OWOX, we believe that everyone should have easy access to data. That’s why we are introducing open-source data connectors to empower every business to become data owners by importing their data into Spreadsheets or DWHs.
+We believe that everyone should have easy access to data. That’s why we are introducing open-source data connectors to empower every business to become data owners by importing their data into Spreadsheets or data warehouses.
 Although there are many great SaaS and open-source products available, we see the need for a solution that offers a free cloud version and doesn’t require data engineers for maintenance.
 
 ## What

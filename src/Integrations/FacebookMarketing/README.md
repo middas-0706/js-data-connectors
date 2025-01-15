@@ -1,4 +1,4 @@
-## How to obtain an App ID for the Facebook connector
+## How to obtain an access token for the Facebook connector
 
 1. Visit the [Meta for Developers](https://developers.facebook.com/) site and log in with your Facebook account or create a new one.
 

@@ -1,4 +1,4 @@
-var AdCampaignGroupFields = {
+var adCampaignGroupFields = {
 'id': {
   'description': 'The ID of this ad.',
   'type': 'numeric string'

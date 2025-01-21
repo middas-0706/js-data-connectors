@@ -37,7 +37,7 @@ startImportProcess() {
   }
 
   // if there are some time series nodes to import
-  if( timeSeriesNodes !== {} ) {
+  if( Object.keys(timeSeriesNodes).length > 0 ) {
     let startDate = null;
     let daysToFetch = null;
     [startDate, daysToFetch] = this.getStartDateAndDaysToFetch();

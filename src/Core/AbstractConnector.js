@@ -35,14 +35,17 @@ class AbstractConnector {
 
 returing two-levels object with schema details
 first level with name and description properties for group name
-the seconed one for the fields
+the second one for the fields
 
 @return object
 
 */
 getFieldsSchema() {
 
-  return this.fieldsSchema;
+  // filter only end points with fields
+  return Object.fromEntries(
+    Object.entries(this.fieldsSchema).filter(([_, value]) => value.fields)
+  );
 
 }
   

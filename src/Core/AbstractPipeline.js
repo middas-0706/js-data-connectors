@@ -1,39 +1,40 @@
 class AbstractPipeline {
 
-  constructor(config, connector, storage) {
-  
-    if( typeof config.setParametersValues !== "function" ) { 
-      throw new Error(`Unable to create a Pipeline. The first parameter must inherit from the AbstractConfig class`);
-      
-    } else if( typeof connector.fetchData !== "function" ) {
-      throw new Error(`Unable to create a Pipeline. The second parameter must inherit from the AbstractConnector class`);
-  
-    } else if ( !(storage instanceof AbstractStorage) ) {
-      throw new Error(`Unable to create a Pipeline. The third parameter must inherit from the AbstractStorage class`);
+constructor(config, connector, storage = null) {
+
+  if( typeof config.setParametersValues !== "function" ) { 
+    throw new Error(`Unable to create a Pipeline. The first parameter must inherit from the AbstractConfig class`);
+    
+  } else if( typeof connector.fetchData !== "function" ) {
+    throw new Error(`Unable to create a Pipeline. The second parameter must inherit from the AbstractConnector class`);
+
+  // storage might be null in case it will be dynmicaly assigned in Pipeline.startImportProcess()
+  } else if ( storage !== null && !(storage instanceof AbstractStorage) ) {
+    throw new Error(`Unable to create a Pipeline. The third parameter must inherit from the AbstractStorage class`);
+  }
+
+  try {
+
+    config.validate();
+
+  } catch(error) {
+
+    config.logMessage(`Error:  ${error.message}`);
+
+    // in case current status is not In progress, we need to update it to "Error". We cannot overwrite "In progress" status with "Error" to avoid import dublication
+    if( !config.isInProgress() ) {
+      config.updateCurrentStatus(`Error`);
     }
 
-    try {
-  
-      config.validate();
-  
-    } catch(error) {
-  
-      config.logMessage(`Error:  ${error.message}`);
-  
-      // in case current status is not In progress, we need to update it to "Error". We cannot overwrite "In progress" status with "Error" to avoid import dublication
-      if( !config.isInProgress() ) {
-        config.updateCurrentStatus(`Error`);
-      }
-  
-      throw error;
-  
-    }
-   
-    this.config = config;
-    this.connector = connector;
-    this.storage = storage;
-  
+    throw error;
+
   }
+  
+  this.config = config;
+  this.connector = connector;
+  this.storage = storage;
+
+}
   
   
   
@@ -61,7 +62,7 @@ class AbstractPipeline {
         this.config.logMessage("🟢 Start importing new data");
   
         // if destination sheet is empty than header should be created based on unique key columns list
-        if( this.storage.isEmpty() ) {        
+        if( this.storage !== null && this.storage.isEmpty() ) {        
           this.storage.addHeader(this.uniqueKeyColumns);  // @TODO: this is needed for Google Sheets Storage only
           this.config.logMessage(`Column(s) for unique key was added: ${this.uniqueKeyColumns}`);
         }  
@@ -140,6 +141,52 @@ class AbstractPipeline {
     this.config.updateLastRequstedDate(endDate);
   
   }
-  
-  
+
+/*
+
+calculates start date and days to fetch time series data
+
+@return StartData (date) and daysToFetch (integer)
+
+*/
+getStartDateAndDaysToFetch() {
+
+  let startDate = this.config.StartDate.value;
+  let endDate  = new Date();
+  let lastRequestedDate = null;
+
+  // data wasn't fetched earlier
+  if ( this.config.EndDate.value ) {
+    endDate = this.config.EndDate.value;
   }
+  
+  // data wasn't fetched earlier
+  if ( !this.config.LastRequestedDate.value ) {
+    lastRequestedDate = new Date(this.config.StartDate.value.getTime() );
+
+  } else {
+    lastRequestedDate = new Date( this.config.LastRequestedDate.value.getTime() );
+    lastRequestedDate.setDate( this.config.LastRequestedDate.value.getDate() - this.config.ReimportLookbackWindow.value );
+  }
+  // The earliest date that can be requested is the start date
+  if( startDate.getTime() < lastRequestedDate.getTime() ) {
+    startDate = lastRequestedDate;
+  }
+
+  // ensuring that data will not be requested for future 
+  const daysToFetch = Math.min (
+    Math.floor( ( endDate.getTime() - startDate.getTime() ) / (1000 * 60 * 60 * 24) ) + 1, // days from startDate until today
+    this.config.MaxFetchingDays.value 
+  )
+
+  // data to start is after end date
+  if( startDate > this.config.EndDate.value ) {
+    return [null, 0];
+  } else {
+    return [startDate, daysToFetch];
+  }
+
+}
+  
+  
+}

@@ -30,7 +30,7 @@ class AbstractStorage {
     return this.uniqueKeyColumns.reduce((accumulator, columnName) => {
       
       if( !(columnName in record) ) {
-        throw Error(`'${columnName}' value is required for Unique Key, but it is missing in ${record}`);
+        throw Error(`'${columnName}' value is required for Unique Key, but it is missing in a record`);
       }
   
       accumulator += `|${record[columnName]}`;      // Append the corresponding value from the row

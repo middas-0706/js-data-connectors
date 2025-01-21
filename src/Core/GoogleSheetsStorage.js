@@ -120,9 +120,9 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
       // if destination sheet doesn't exist in destination spreadsheet, try to create it
       if ( !config.DestinationSpreadsheet.sheet ) {
         config.DestinationSpreadsheet.sheet = config.DestinationSpreadsheet.spreadsheet.insertSheet( 
-          config.DestinationSheetName.value, 1 
+          config.DestinationSheetName.value,
+          config.DestinationSpreadsheet.spreadsheet.getSheets().length
         );
-        
         this.config.logMessage(`Sheet '${config.DestinationSheetName.value}' was created.`);
       }
   

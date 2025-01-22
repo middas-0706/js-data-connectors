@@ -41,6 +41,7 @@ constructor(configRange) {
   configObject.configSpreadsheet = configRange.getSheet().getParent();
 
   // Assigning a time zone to the Log parameter in order to write time-stamped messages into it
+//  console.log(configRange.getSheet().getParent().getSpreadsheetTimeZone());
   configObject.Log.timeZone = configRange.getSheet().getParent().getSpreadsheetTimeZone();
 
   super(configObject);
@@ -234,67 +235,85 @@ udpateFieldsSheet(connector, sheetName = "Fields") {
   
   }
   
-  /*
+/*
+
+@param GoogleSheetsConfig object
+@param groupName string name of the group
+
+@return integer number of fields of requested group
+
+*/
+getFieldsCountByGroupName(configSheetStorage, groupName) {
+
+  return Object.values(configSheetStorage.values).filter(element => element.name && element.id.startsWith(`${groupName} `)).length;
+
+}
   
-  @param GoogleSheetsConfig object
-  @param groupName string name of the group
   
-  @return integer number of fields of requested group
-  
-  */
-  getFieldsCountByGroupName(configSheetStorage, groupName) {
-  
-    return Object.values(configSheetStorage.values).filter(element => element.name && element.id.startsWith(`${groupName} `)).length;
-  
+/*
+
+Checking current status if it is in progress or not
+
+@return boolean true is process in progress
+
+*/
+isInProgress() {
+  // @TODO: Config might be not a Google Sheet
+    return (this.CurrentStatus.cell.getValue().indexOf("progress") !== -1)
+
+}
+
+addWarningToCurrentStatus() {
+  this.CurrentStatus.cell.setBackground( "#fff0c4" );
+}
+
+
+/**
+ * 
+ * validating if google sheets config is correct
+ * 
+ */
+validate() {
+
+  let scriptTimeZone = Session.getScriptTimeZone();
+  if( scriptTimeZone != "Etc/UTC" ) {
+    throw new Error(`The Apps Script time zone must be set to UTC to avoid confusion with dates. Currently, it is set to ${scriptTimeZone} instead. Update the time zone in Project Settings`)
   }
+
+  super.validate();
+
+}
+
   
+/*
+*
+* @param string message to Log
+*
+*/
+logMessage(message, removeExistingMessage = false) {
+
+  console.log(message);
   
-  /*
-  
-  Checking current status if it is in progress or not
-  
-  @return boolean true is process in progress
-  
-  */
-  isInProgress() {
-    // @TODO: Config might be not a Google Sheet
-      return (this.CurrentStatus.cell.getValue().indexOf("progress") !== -1)
-  
+  let formattedDate = Utilities.formatDate(new Date(), this.Log.timeZone, "yyyy-MM-dd HH:mm:ss"); // Format the date
+
+  // Read the existing log message if it shouldn’t be removed
+  let currentLog = removeExistingMessage ? "" : this.Log.cell.getValue();
+
+  currentLog ? currentLog += "\n" : "";
+
+  let emoji = "☑️ ";
+  let match;
+
+  // If a message starts with an emoji, we need to move it to the beginning to make the log look perfect and easy to read
+  if( match = message.match(/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Extended_Pictographic})\s+/u) ) {
+    emoji = match[0];
+    message = message.slice(2).trim();
   }
-  
-  addWarningToCurrentStatus() {
-    this.CurrentStatus.cell.setBackground( "#fff0c4" );
-  }
-  
-  /*
-  *
-  * @param string message to Log
-  *
-  */
-  logMessage(message, removeExistingMessage = false) {
-  
-    console.log(message);
-    
-    let formattedDate = Utilities.formatDate(new Date(), this.Log.timeZone, "yyyy-MM-dd HH:mm:ss"); // Format the date
-  
-    // Read the existing log message if it shouldn’t be removed
-    let currentLog = removeExistingMessage ? "" : this.Log.cell.getValue();
-  
-    currentLog ? currentLog += "\n" : "";
-  
-    let emoji = "☑️ ";
-    let match;
-  
-    // If a message starts with an emoji, we need to move it to the beginning to make the log look perfect and easy to read
-    if( match = message.match(/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Extended_Pictographic})\s+/u) ) {
-      emoji = match[0];
-      message = message.slice(2).trim();
-    }
-  
-    this.Log.cell.setValue(
-      `${currentLog}${emoji}${formattedDate}: ${message}`
-    );
-  
-  }
+
+  this.Log.cell.setValue(
+    `${currentLog}${emoji}${formattedDate}: ${message}`
+  );
+
+}
       
-  }
+}

@@ -27,6 +27,7 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
     this.loadDataFromSheet();
   
   }
+<<<<<<< Updated upstream
   
   /*
   
@@ -74,6 +75,57 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
   
   /*
   
+=======
+  
+  
+  
+  /*
+  
+  reading Data from the source sheet and loading it to this.values
+  
+  */
+  loadDataFromSheet() {
+    
+    const values = this.SHEET.getDataRange().getValues();
+  
+    // getting header with columns names
+    this.columnNames = values.shift();
+  
+    // cheking if all columns from unique key are exist in this.columnNames
+    if ( this.uniqueKeyColumns.some(column => !this.columnNames.includes(column)) ) {
+      throw new Error(`Sheet '${this.SHEET.getName()}' is missing one the folling required for unique key: column '${this.uniqueKeyColumns}'`);
+    }
+  
+    // Convert sheet data from array to an associative object using the unique key from the specified column
+    this.values = values.reduce((acc, row, rowIndex) => {
+    
+      // create a unique Key
+      const uniqueKey = this.uniqueKeyColumns.reduce((accumulator, columnName) => {
+        let index = this.columnNames.indexOf(columnName); // Find the index of the column name
+        accumulator += `|${row[index]}`;              // Append the corresponding value from the row
+        return accumulator;
+      },[]);
+  
+      acc[uniqueKey] = {
+        ...this.columnNames.reduce((obj, col, colIndex) => ({
+          ...obj,
+          [col]: row[colIndex]
+        }), {}),
+        rowIndex // Add row index for reference
+      };
+  
+      return acc;
+    }, {});
+  
+    // property to buffer added record
+    this.addedRecordsBuffer = [];
+  
+  }
+  
+  
+  /*
+  
+>>>>>>> Stashed changes
   @param object destination Spreadsheet Config
   @param object destination Sheet Name Config
   
@@ -186,6 +238,7 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
   */
   saveData(data) {
   
+<<<<<<< Updated upstream
   // if there are new columns in the first row it should be added first
   let newFields = Object.keys(data[0]).filter( column => !this.columnNames.includes(column) );
   
@@ -195,11 +248,26 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
     this.config.logMessage(`Column '${newFields[column]}' was added to '${this.SHEET.getName()}' sheet`);
   }
   
+=======
+>>>>>>> Stashed changes
   // updating sheet content based on data
   var recordsAdded = 0;
   var recordsUpdated = 0;
   
   data.map((row) => {
+<<<<<<< Updated upstream
+=======
+  
+    // if there are new columns in the first row it should be added first
+    let newFields = Object.keys(row).filter( column => !this.columnNames.includes(column) );
+  
+    // create new columns that are in data but absent in a Sheet
+    for( var column in newFields ) {
+      this.addColumn(newFields[column], this.columnNames.length + 1);
+      this.config.logMessage(`Column '${newFields[column]}' was added to '${this.SHEET.getName()}' sheet`);
+    }
+  
+>>>>>>> Stashed changes
     if( this.isRecordExists(row) ) {
       if( this.updateRecord(row) ) {
         recordsUpdated++;
@@ -278,7 +346,11 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
   
       // if new record has a columnName property and a value of this property differs from an existingRecord one
       if( columnName in record && !this.areValuesEqual(record[ columnName ], existingRecord[ columnName ]) ) {
+<<<<<<< Updated upstream
         console.log(`${uniqueKey}: ${existingRecord[ columnName ]} ${typeof existingRecord[ columnName ]} → ${record[ columnName ]} ${typeof record[ columnName ]}`);
+=======
+        //console.log(`${uniqueKey}: ${existingRecord[ columnName ]} ${typeof existingRecord[ columnName ]} → ${record[ columnName ]} ${typeof record[ columnName ]}`);
+>>>>>>> Stashed changes
   
         // @TODO: before updating value we need to doublecheck that it is still the right record at this rowIndex
         

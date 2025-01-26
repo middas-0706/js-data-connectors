@@ -161,7 +161,7 @@ var FacebookMarketingPipeline = class FacebookMarketingPipeline extends Abstract
         this.config.mergeParameters({ DestinationSheetName: {value: nodeName} }), 
         uniqueFields
       );
-      
+
       // if destination sheet is empty, we need to create header with columns for unique keys
       if( this.storages[ nodeName ].isEmpty() ) {        
         this.storages[ nodeName ].addHeader( this.storages[ nodeName ]["uniqueKeys"] );  // @TODO: this is needed for Google Sheets Storage only

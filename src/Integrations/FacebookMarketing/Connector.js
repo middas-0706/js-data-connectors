@@ -64,6 +64,14 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
           url += `act_${accountId}/?fields=${fields.join(",")}`;
           break;
   
+        case 'ad-account/ads':
+          url += `act_${accountId}/ads?&time_range=${timeRange}`;
+          break;
+  
+        case 'ad-account/adcreatives':
+          url += `act_${accountId}/adcreatives?fields=${fields.join(",")}`;
+          break;
+
         case 'ad-account/insights':
           url += `act_${accountId}/insights?level=ad&period=day&time_range=${timeRange}&fields=${fields.join(",")}`;
           break;

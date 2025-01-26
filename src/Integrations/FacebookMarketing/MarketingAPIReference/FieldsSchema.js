@@ -15,7 +15,10 @@ var FacebookMarketingFieldsSchema = {
     },  
     "ad-account/adcreatives": {
         "description": "Defines your ad's appearance and content.",
-        "documentation": "https://developers.facebook.com/docs/marketing-api/reference/ad-account/adcreatives"
+        "documentation": "https://developers.facebook.com/docs/marketing-api/reference/ad-account/adcreatives",
+        "fields": adAccountCreativesFields,
+        'uniqueKeys': ["id"]
+
     },
     "ad-account/adimages": {
         "description": "Library of images to use in ad creatives. Can be uploaded and managed independently.",
@@ -23,7 +26,9 @@ var FacebookMarketingFieldsSchema = {
     },
     "ad-account/ads": {
         "description": "Data for an ad, such as creative elements and measurement information.",
-        "documentation": "https://developers.facebook.com/docs/marketing-api/reference/ad-account/ads"
+        "documentation": "https://developers.facebook.com/docs/marketing-api/reference/ad-account/ads",
+        "fields": adAccountAdsFields,
+        'uniqueKeys': ["id"]
     },
     "ad-account/adsets": {
         "description": "Contain all ads that share the same budget, schedule, bid, and targeting.",

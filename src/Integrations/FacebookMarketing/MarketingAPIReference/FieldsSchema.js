@@ -53,7 +53,7 @@ var FacebookMarketingFieldsSchema = {
         "description": "Contains information for an ad, such as creative elements and measurement information.",
         "documentation": "https://developers.facebook.com/docs/marketing-api/reference/adgroup/",
         "fields": adGroupFields,
-        'uniqueKeys': ["id", "account_id", "adset_id", "campaign_id"]
+        'uniqueKeys': ["id"]
     },
     "ad-group/adcreatives": {
         "description": "Defines your ad's appearance and content.",

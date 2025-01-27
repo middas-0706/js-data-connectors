@@ -27,6 +27,8 @@ Then, press *OWOX -> Manage credentials*. 
 
 Add your Access Token received by this tutorial: [**How to obtain an App ID for the Facebook connector**](https://github.com/OWOX/js-data-connectors/blob/main/src/Integrations/FacebookMarketing/HOWTO.md)
 
+![Facebook Token](/src/Integrations/FacebookMarketing/res/fb_token.png)
+
 Press OK and then, press *OWOX -> Import New Data*.
 
 ![Facebook Import Data](/src/Integrations/FacebookMarketing/res/fb_import.png)

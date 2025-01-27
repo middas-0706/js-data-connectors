@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) OWOX, Inc.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
 var adInsightsBreakDownFields = {
 'action_device': {
   'description': 'The device on which the conversion event you\'re tracking occurred. For example, \""Desktop\"" if someone converted on a desktop computer.',

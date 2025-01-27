@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) OWOX, Inc.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
 var adCampaignGroupInsightsFields = {
 'account_currency': {
   'description': 'Currency that is used by your ad account.',

@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) OWOX, Inc.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
 // API Documentation: https://www.openholidaysapi.org/en/#__tabbed_6_1
 
 var OpenHolidaysConnector = class OpenHolidaysConnector extends AbstractConnector {

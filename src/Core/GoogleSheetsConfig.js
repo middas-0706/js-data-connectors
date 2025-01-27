@@ -121,7 +121,7 @@ Updating the content of the fields list to simplify the selection of fields for 
 @param sheetName string, Fields by default
 
 */
-udpateFieldsSheet(connector, sheetName = "Fields") {
+updateFieldsSheet(connector, sheetName = "Fields") {
 
   this.validate();
 

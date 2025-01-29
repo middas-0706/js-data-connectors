@@ -1,4 +1,4 @@
-## How to obtain an App ID for the Facebook connector
+## How to obtain the access token for the Facebook connector
 
 1. Visit the [Meta for Developers](https://developers.facebook.com/) site and log in with your Facebook account or create a new one.
 ![Facebook login page](/src/Integrations/FacebookMarketing/res/facebook_login.png)
@@ -14,7 +14,7 @@
 ![Facebook Business portfolio option](/src/Integrations/FacebookMarketing/res/facebook_portfolio.png)
 7. On the newly opened page, locate **Marketing API** and click **Set Up**.
 ![Facebook Marketing API set up](/src/Integrations/FacebookMarketing/res/facebook_setup.png)
-8. Grant all required token permissions. The API token is a unique code needed for authorization to access data from the Facebook account.
+8. Grant 'ads_read' and 'read_insights' token permissions. The API token is a unique code needed for authorization to access data from the Facebook account.
 ![Facebook permissions granting](/src/Integrations/FacebookMarketing/res/facebook_checkbox.png)
 9. Click the **Get Token** button.
 ![Facebook getting token](/src/Integrations/FacebookMarketing/res/facebook_gettoken.png)

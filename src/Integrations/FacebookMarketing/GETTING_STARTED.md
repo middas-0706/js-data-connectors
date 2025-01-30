@@ -25,7 +25,7 @@ Then, press *OWOX -> Manage credentials*. 
 
 ![Facebook Credentials](/src/Integrations/FacebookMarketing/res/fb_credentials.png)
 
-Add your Access Token received by this tutorial: [**How to obtain the access token for the Facebook connector**](https://github.com/OWOX/js-data-connectors/blob/main/src/Integrations/FacebookMarketing/CREDENTIAL.md)
+Add your Access Token received by this tutorial: [**How to obtain the access token for the Facebook connector**](https://github.com/OWOX/js-data-connectors/blob/main/src/Integrations/FacebookMarketing/CREDENTIALS.md)
 
 ![Facebook Token](/src/Integrations/FacebookMarketing/res/fb_token.png)
 

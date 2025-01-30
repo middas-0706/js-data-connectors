@@ -13,7 +13,8 @@ var adAccountInsightsFields = {
 },
 'account_id': {
   'description': 'The ID number of your ad account, which groups your advertising activity. Your ad account includes your campaigns, ads and billing.',
-  'type': 'numeric string'
+  'type': 'numeric string', 
+  'GoogleSheetsFormat': '@'
 },
 'account_name': {
   'description': 'The name of your ad account, which groups your advertising activity. Your ad account includes your campaigns, ads and billing.',
@@ -41,7 +42,8 @@ var adAccountInsightsFields = {
 },
 'ad_id': {
   'description': 'The unique ID of the ad you\'re viewing in reporting.',
-  'type': 'numeric string'
+  'type': 'numeric string', 
+  'GoogleSheetsFormat': '@'
 },
 'ad_impression_actions': {
   'description': 'ad_impression_actions',
@@ -53,7 +55,8 @@ var adAccountInsightsFields = {
 },
 'adset_id': {
   'description': 'The unique ID of the ad set you\'re viewing in reporting. An ad set is a group of ads that share the same budget, schedule, delivery optimization and targeting.',
-  'type': 'numeric string'
+  'type': 'numeric string', 
+  'GoogleSheetsFormat': '@'
 },
 'adset_name': {
   'description': 'The name of the ad set you\'re viewing in reporting. An ad set is a group of ads that share the same budget, schedule, delivery optimization and targeting.',
@@ -69,7 +72,8 @@ var adAccountInsightsFields = {
 },
 'auction_bid': {
   'description': 'auction_bid',
-  'type': 'numeric string'
+  'type': 'numeric string', 
+  'GoogleSheetsFormat': '@'
 },
 'auction_competitiveness': {
   'description': 'auction_competitiveness',
@@ -77,7 +81,8 @@ var adAccountInsightsFields = {
 },
 'auction_max_competitor_bid': {
   'description': 'auction_max_competitor_bid',
-  'type': 'numeric string'
+  'type': 'numeric string', 
+  'GoogleSheetsFormat': '@'
 },
 'body_asset': {
   'description': 'body_asset',
@@ -89,7 +94,8 @@ var adAccountInsightsFields = {
 },
 'campaign_id': {
   'description': 'The unique ID number of the ad campaign you\'re viewing in reporting. Your campaign contains ad sets and ads.',
-  'type': 'numeric string'
+  'type': 'numeric string', 
+  'GoogleSheetsFormat': '@'
 },
 'campaign_name': {
   'description': 'The name of the ad campaign you\'re viewing in reporting. Your campaign contains ad sets and ads.',
@@ -125,7 +131,8 @@ var adAccountInsightsFields = {
 },
 'clicks': {
   'description': 'The number of clicks on your ads.',
-  'type': 'numeric string'
+  'type': 'numeric string',
+  'GoogleSheetsFormat': '0'
 },
 'coarse_conversion_value': {
   'description': 'Allows advertisers and ad networks to receive directional post-install quality insights when the volume of campaign conversions isn\'t high enough to meet the privacy threshold needed to unlock the standard conversion value. Possible values of this breakdown are low, medium and high.',
@@ -317,7 +324,8 @@ var adAccountInsightsFields = {
 },
 'hsid': {
   'description': 'The hsid key is available for ad impressions that use SKAdNetwork 4 and later. This integer can have up to four digits. You can encode information about your advertisement in each set of digits; you may receive two, three, or all four digits of the sourceIdentifier in the first winning postback, depending on the ad impression\'s postback data tier.',
-  'type': 'string'
+  'type': 'string', 
+  'GoogleSheetsFormat': '@'
 },
 'image_asset': {
   'description': 'image_asset',
@@ -329,7 +337,8 @@ var adAccountInsightsFields = {
 },
 'impressions': {
   'description': 'The number of times your ads were on screen.',
-  'type': 'numeric string'
+  'type': 'numeric string',
+  'GoogleSheetsFormat': '0'
 },
 'inline_link_click_ctr': {
   'description': 'The percentage of time people saw your ads and performed an inline link click.',
@@ -413,7 +422,8 @@ var adAccountInsightsFields = {
 },
 'product_id': {
   'description': 'product_id',
-  'type': 'string'
+  'type': 'string', 
+  'GoogleSheetsFormat': '@'
 },
 'publisher_platform': {
   'description': 'publisher_platform',
@@ -449,7 +459,8 @@ var adAccountInsightsFields = {
 },
 'spend': {
   'description': 'The estimated total amount of money you\'ve spent on your campaign, ad set or ad during its schedule. This metric is estimated.',
-  'type': 'numeric string'
+  'type': 'numeric string',
+  'GoogleSheetsFormat': '$#,##0.00'
 },
 'title_asset': {
   'description': 'title_asset',
@@ -533,7 +544,8 @@ var adAccountInsightsFields = {
 },
 'wish_bid': {
   'description': 'wish_bid',
-  'type': 'numeric string'
+  'type': 'numeric string', 
+  'GoogleSheetsFormat': '@'
 }
 
 }

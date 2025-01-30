@@ -323,4 +323,4 @@ logMessage(message, removeExistingMessage = false) {
 
 }
       
-}
+}  

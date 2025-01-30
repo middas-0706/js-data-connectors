@@ -28,10 +28,10 @@ startImportProcess() {
   for(var nodeName in fields) {
     
     // node’s data is time-series, so add the name of the node to timeSeriesNodes array to process it later
-    if(nodeName in this.connector.fieldsSchema
-      && "isTimeSeries" in this.connector.fieldsSchema[nodeName]
-      && this.connector.fieldsSchema[nodeName].isTimeSeries ) {
-      
+    if( nodeName in this.connector.fieldsSchema
+      && "fields" in this.connector.fieldsSchema[nodeName]
+      && "date_start" in this.connector.fieldsSchema[nodeName]["fields"] ) {
+
         timeSeriesNodes[nodeName] = fields[nodeName];
 
     // node's data is catalog like, it must be imported right away
@@ -159,23 +159,15 @@ getStorageByNode(nodeName, requestedFields) {
       throw new Error(`Unique keys for '${nodeName}' are not defined in fields schema`);
     }
 
-    let uniqueFields = requestedFields.filter(
-      a => this.connector.fieldsSchema[ nodeName ]["uniqueKeys"].includes(a)
-    );
+    let uniqueFields = this.connector.fieldsSchema[ nodeName ]["uniqueKeys"];
 
-
+    // @TODO: GoogleSheets shoudn't be hardcoded here
     this.storages[ nodeName ] = new GoogleSheetsStorage( 
       this.config.mergeParameters({ DestinationSheetName: {value: nodeName} }), 
-      uniqueFields
+      uniqueFields,
+      this.connector.fieldsSchema[ nodeName ]["fields"]
     );
 
-    // if destination sheet is empty, we need to create header with columns for unique keys
-    if( this.storages[ nodeName ].isEmpty() ) {        
-      this.storages[ nodeName ].addHeader( this.storages[ nodeName ]["uniqueKeys"] );  // @TODO: this is needed for Google Sheets Storage only
-      this.config.logMessage(`Column(s) for unique key was added: ${this.uniqueKeyColumns}`);
-
-    // If the destination sheet already exists, we need to double-check that existing columns includes all requested unique keys
-    }
   }
 
   return this.storages[ nodeName ];

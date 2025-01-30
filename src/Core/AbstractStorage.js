@@ -7,7 +7,15 @@
 
 class AbstractStorage {
 
-constructor(config, uniqueKeyColumns) {
+/**
+   * Asbstract class making Google Sheets data active in Apps Script to simplity read/write operations
+   * 
+   * @param config (object) instance of Sheet
+   * @param uniqueKeyColumns (mixed) a name of column with unique key or array with columns names
+   * @param schema (object) object with structure like {fieldName: {type: "number", description: "smth" } }
+   *
+   */
+constructor(config, uniqueKeyColumns, schema = null) {
 
   if(typeof config.setParametersValues !== "function") {
     throw new Error(`Unable to create an AbstractStorage object. First parameter must be an instance of AbstractConfig class`);
@@ -15,6 +23,8 @@ constructor(config, uniqueKeyColumns) {
 
   config.validate();
   this.config = config;
+  this.schema = schema;
+  this.columnNames = [];
 
   if( typeof uniqueKeyColumns == "string" ) {
     this.uniqueKeyColumns = [uniqueKeyColumns];

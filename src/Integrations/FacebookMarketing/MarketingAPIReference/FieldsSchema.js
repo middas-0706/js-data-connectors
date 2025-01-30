@@ -57,8 +57,7 @@ var FacebookMarketingFieldsSchema = {
         "description": "Interface for insights. De-dupes results across child objects, provides sorting, and async reports.",
         "documentation": "https://developers.facebook.com/docs/marketing-api/reference/ad-account/insights",
         "fields" : adAccountInsightsFields,
-        'uniqueKeys': ["account_id", "ad_id", "adset_id", "campaign_id", "date_start", "date_stop"],
-        "isTimeSeries": true
+        'uniqueKeys': ["ad_id", "date_start", "date_stop"]
     },
     "ad-group": {
         "overview": "Ad",

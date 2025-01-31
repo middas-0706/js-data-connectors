@@ -1,4 +1,4 @@
-The [**Open Exchange Rates Connector**](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/FacebookMarketing) allows you to transfer currency data from Open Exchange Rates into Google Sheets. 
+The [**Open Exchange Rates Connector**](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/OpenExchangeRates) allows you to transfer currency data from Open Exchange Rates into Google Sheets. 
 
 ## Getting Started
 

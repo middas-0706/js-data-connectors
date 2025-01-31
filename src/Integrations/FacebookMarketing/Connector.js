@@ -158,6 +158,10 @@ castRecordFields(nodeName, record) {
         case type == 'numeric string' && ( field.slice(-3) == "_id" || field == "id" ):
           record[ field ] = String(record[ field ]);
           break;
+        
+        case type == 'numeric string' && ( field.slice(-5) == "spend"  ):
+          record[ field ] = parseFloat(record[ field ]);
+          break;
 
         case type == 'numeric string':
           record[ field ] = parseInt(record[ field ]);

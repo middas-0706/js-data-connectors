@@ -13,13 +13,13 @@ function onOpen() {
 }
 function importNewData() {
 
-  const config = new GoogleSheetsConfig(CONFIG_RANGE);            // Taking data from GSheet. 
+  const config = new OWOX.GoogleSheetsConfig(CONFIG_RANGE);            // Taking data from GSheet. 
 
-  const pipeline = new CriteoPipeline(
+  const pipeline = new OWOX.CriteoPipeline(
     config,                                                           // pipeline configuration
-    new CriteoConnector(config.setParametersValues(                   // connector with parameter's values added from properties 
+    new OWOX.CriteoConnector(config.setParametersValues(                   // connector with parameter's values added from properties 
       PropertiesService.getDocumentProperties().getProperties())),
-    new GoogleSheetsStorage(config, ["Date", "source", "medium", "campaign", "campaignId", //that what we need to get in the final object. 
+    new OWOX.GoogleSheetsStorage(config, ["Date", "source", "medium", "campaign", "campaignId", //that what we need to get in the final object. 
       "keyword", "adCost", "adClicks", "impressions",
       "currency",
       "account"])   // storage 
@@ -31,8 +31,8 @@ function importNewData() {
 
 function cleanUpExpiredData() {
 
-  const storage = new GoogleSheetsStorage(
-    new GoogleSheetsConfig(CONFIG_RANGE),
+  const storage = new OWOX.GoogleSheetsStorage(
+    new OWOX.GoogleSheetsConfig(CONFIG_RANGE),
     ["Date", "source", "medium", "campaign", "campaignId", //This fields would be cleaned during erasing. Hm. @TODO: Better cleansing?  
       "keyword", "adCost", "adClicks", "impressions", "currency", "account"]
   );

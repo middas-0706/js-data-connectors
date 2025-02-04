@@ -11,12 +11,29 @@ With just a few clicks and no coding, you can easily set up automated data impor
 - **Free**: Distributed under the ELv2 license, it allows free use for internal organizational services or providing paid services to clients, as long as it is not used to build a competing product.
 - **Serverless**: neither Google Cloud nor computing resources are required to run it
 
+### Data Sources
+| Name | Status | Links
+| ------------ | ------ | ----
+| Facebook Ads | 🟢 Public  | [Google Drive](https://drive.google.com/drive/u/0/folders/1_x556pta5lKtKbTltIrPEDkNqAn78jM4), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/FacebookMarketing)
+| Open Exchange Rates | 🟢 Public | [Google Drive](https://drive.google.com/drive/u/0/folders/1akutchS-Txr5PwToMzHrikTXd_GTs-84), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/OpenExchangeRates)
+| Bank of Canada | 🟢 Public  | [Google Drive](https://drive.google.com/drive/u/0/folders/18c9OHHmdZs-evtU1bWd6pIqdXjnANRmv), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/BankOfCanada)
+| Criteo | 🟡 In Development | [Branch](https://github.com/OWOX/js-data-connectors/tree/criteo-alpha)
+| Reddit Ads | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/2)
+
+
+### Data Storages
+| Name | Status | Links
+| ------------ | ------ | ----
+| Google Sheets | 🟢 Public  | [Issues](https://github.com/OWOX/js-data-connectors/issues?q=is%3Aissue%20state%3Aopen%20label%3AGoogleSheets)
+| Google BigQuery | 🟡 In Development | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/39)
+
+If you find an integration missing, you can share your use case and request it [here](https://github.com/OWOX/js-data-connectors/discussions)
 
 ## How
 **To create your data import**, make a copy of the Google Sheets template for [existing integrations](src/Integrations). If you experience any issues, feel free to post them [here](issues).
 
-**To contribute to existing integrations or create a new one**, please visit the [contributors' guide](../../blob/main/CONTRIBUTING.md). All you need to get started are basic knowledge of Apps Script and a GitHub login. No software installation is required on your computer.
+**To contribute to existing integrations or create a new one**, please visit the [contributors' guide](https://github.com/OWOX/js-data-connectors/blob/main/CONTRIBUTING.md). All you need to get started are basic knowledge of Apps Script and a GitHub login. No software installation is required on your computer.
 
-**To become a part of the Core team**, please start by submitting a pull request to the [Core part of the product](src/Core). Understanding TypeScript, Git, and software development is required.
+**To become a part of the Core team**, please start by submitting a pull request to the Core part of the product. Understanding TypeScript, Git, and software development is required.
 
-**To get support**, please [visit Q&A](../../discussions/categories/q-a) first. If you want to report a bug, please [open an issue](../../issues). Ideas and new integrations can be requested [here](../../discussions/categories/ideas).
+**To get support**, please [visit Q&A](https://github.com/OWOX/js-data-connectors/discussions/categories/q-a) first. If you want to report a bug, please [open an issue](https://github.com/OWOX/js-data-connectors/issues).

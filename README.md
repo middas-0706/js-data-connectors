@@ -11,7 +11,7 @@ With just a few clicks and no coding, you can easily set up automated data impor
 - **Free**: Distributed under the ELv2 license, it allows free use for internal organizational services or providing paid services to clients, as long as it is not used to build a competing product.
 - **Serverless**: neither Google Cloud nor computing resources are required to run it
 
-### Data Sources
+#### Data Sources
 | Name | Status | Links
 | ------------ | ------ | ----
 | Facebook Ads | 🟢 Public  | [Google Drive](https://drive.google.com/drive/u/0/folders/1_x556pta5lKtKbTltIrPEDkNqAn78jM4), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/FacebookMarketing)
@@ -21,7 +21,7 @@ With just a few clicks and no coding, you can easily set up automated data impor
 | Reddit Ads | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/2)
 
 
-### Data Storages
+#### Data Storages
 | Name | Status | Links
 | ------------ | ------ | ----
 | Google Sheets | 🟢 Public  | [Issues](https://github.com/OWOX/js-data-connectors/issues?q=is%3Aissue%20state%3Aopen%20label%3AGoogleSheets)

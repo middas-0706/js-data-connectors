@@ -8,7 +8,7 @@ To begin, check out [**GETTING STARTED.md**](https://github.com/OWOX/js-data-con
 
 - [**GETTING STARTED**](https://github.com/OWOX/js-data-connectors/blob/main/src/Integrations/FacebookMarketing/GETTING_STARTED.md) – quick and easy setup guide.
 - [**README**](https://github.com/OWOX/js-data-connectors/blob/main/src/Integrations/FacebookMarketing/README.md) – general information about the connector.
-- [**CREDENTIAL**](https://github.com/OWOX/js-data-connectors/blob/main/src/Integrations/FacebookMarketing/CREDENTIALS.md) – detailed guides for each step of the data retrieval process.
+- [**CREDENTIALS**](https://github.com/OWOX/js-data-connectors/blob/main/src/Integrations/FacebookMarketing/CREDENTIALS.md) – detailed guides for each step of the data retrieval process.
 - [**Q&A**](https://github.com/OWOX/js-data-connectors/discussions/categories/q-a) – troubleshooting common issues.
 
 ## Support & Feedback

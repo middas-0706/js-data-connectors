@@ -46,5 +46,16 @@ It must be an instance of `AbstractConnector`
 
 It must be an instance of `AbstractStorage`
 
+## Legal
+To clarify the intellectual property license granted with Contributions from any person or entity, we must have on file a signed Contributor License Agreement ("CLA") from each Contributor, indicating agreement with the license terms.
+
+This agreement is for your protection as a Contributor as well as the protection of us and the users of js-data-connectors. It does not change your rights to use your own Contributions for any other purpose.
+
+For more details, please review the full [OWOX CLA](https://cla-assistant.io/OWOX/js-data-connectors).
+
+Pull Request authors must sign [OWOX CLA](https://cla-assistant.io/OWOX/js-data-connectors). It will show up in an automated comment after you create a PR.
+
+If you cannot or do not want to sign this CLA (e.g., your employment contract for your employer may not allow this), **you should not submit a PR**. Instead, please open an issue, and someone else can do the work.
+
 ## Questions
 Got a questions? Ask community [here](../../discussions/categories/q-a)

@@ -30,7 +30,7 @@ With just a few clicks and no coding, you can easily set up automated data impor
 If you find an integration missing, you can share your use case and request it [here](https://github.com/OWOX/js-data-connectors/discussions)
 
 ## How
-**To create your data import**, make a copy of the Google Sheets template for [existing integrations](src/Integrations). If you experience any issues, feel free to post them [here](issues).
+**To create your data import**, make a copy of the Google Sheets template for [existing integrations](src/https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations). If you experience any issues, feel free to post them [here](https://github.com/OWOX/js-data-connectors/issues).
 
 **To contribute to existing integrations or create a new one**, please visit the [contributors' guide](https://github.com/OWOX/js-data-connectors/blob/main/CONTRIBUTING.md). All you need to get started are basic knowledge of Apps Script and a GitHub login. No software installation is required on your computer.
 

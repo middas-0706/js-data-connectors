@@ -76,21 +76,22 @@ function manageCredentials() {
   SpreadsheetApp.getUi().showModalDialog(html, 'Add Credentials');
 }
 
-// Function to call from credentials
+/**
+ * Function to call from credentials, now with cleaning of previous credentials.   
+ */ 
 function processCredentials(clientId, secret) {
-  var Properties = PropertiesService.getDocumentProperties();
-  const currentClientId = Properties.getProperty('Client Id');
-  if (currentClientId == "") {                                        //@TODO: Better logic? If we haven't this stuff saved... We have previous stuff // not cache, lives forever; (c) Andrew
-    Properties.setProperty("Client Id", clientId);
-    Properties.setProperty("Secret", secret);
-    Properties.setProperty('Access Token', takeToken());
-    return 'Credentials were set successfully!'
+   try {
+    // Get script properties in the current script. If there are old properties - they MUST be deleted. 
+    const userProperties = PropertiesService.getDocumentProperties();
+    // Delete all script properties in the current script.
+    userProperties.deleteAllProperties();
+  } catch (err) {   
+    throw new Error ('Failed with error %s', err.message);
   }
-  else {
-    Properties.setProperty("Client Id", clientId);
-    Properties.setProperty("Secret", secret);
-    return 'Credentials were updated successfully!'
-  }
+  let prop = PropertiesService.getDocumentProperties();
+   prop.setProperty("ClientId", clientId);
+   prop.setProperty("Secret", secret);
+  return 'Credentials were set successfully!'
 }
 
 

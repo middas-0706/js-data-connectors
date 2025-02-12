@@ -33,6 +33,14 @@ var CriteoConnector = class CriteoConnector extends AbstractConnector {
       CleanUpToKeepWindow: {
         requiredType: "number"
       },
+      ClientId: {
+        isRequired: true,
+        requiredType: "string"
+      },
+      Secret: {
+        isRequired: true,
+        requiredType: "string"
+      },
       MaxFetchingDays: {
         requiredType: "number",
         value: 30
@@ -46,10 +54,9 @@ var CriteoConnector = class CriteoConnector extends AbstractConnector {
    */
   fetchData(startDate) {
     //checking, if we already have token in config. for 1+ "cycle parts"
-    if (!this.config.Token) { 
-      this.getToken() 
-      };
-    const Properties = PropertiesService.getDocumentProperties();
+    if (!this.config.Token) {
+      this.getToken()
+    };
     const urlOfAPI = 'https://api.criteo.com/2024-10/statistics/report';
     // Query options
     const options = {
@@ -59,8 +66,8 @@ var CriteoConnector = class CriteoConnector extends AbstractConnector {
         'content-type': 'application/json',
       },
       //stringify, as soon as we sending json in content-type
-      payload: JSON.stringify({ 
-        advertiserIds: this.config.AccountID.value.toString(), // because it come as number. Why? Who knows. Because. 
+      payload: JSON.stringify({
+        advertiserIds: this.config.AccountID.value.toString(),
         timezone: "UTC",
         dimensions: [
           "Campaign", "CampaignId", "AdvertiserId", "Adset", "Ad"
@@ -73,7 +80,9 @@ var CriteoConnector = class CriteoConnector extends AbstractConnector {
       }),
     };
     let response = "";
-    for (var a = 1; a <= 2; a++) {   //Hi, Andrew 
+    let amountOfTriesBecauseTokenLives15Minutes = 2; 
+
+    for (var a = 1; a <= amountOfTriesBecauseTokenLives15Minutes; a++) {  
       try {
         options.headers.authorization = "Bearer " + this.config.Token.value;
         response = UrlFetchApp.fetch(urlOfAPI, options);
@@ -89,7 +98,7 @@ var CriteoConnector = class CriteoConnector extends AbstractConnector {
       var parsedAndEnrichedData = this.parsedAndAddedDataResponse(jsonObject, startDate);
       return parsedAndEnrichedData;
     } else {
-      Logger.log(`Error (${answerCode}): ${answerCode}`);
+      throw new Error(`Error (${answerCode}): ${answerCode}`);
 
     }
   }
@@ -98,7 +107,6 @@ var CriteoConnector = class CriteoConnector extends AbstractConnector {
  * Docs: https://developers.criteo.com/marketing-solutions/docs/authorization-code-setup
  */
   takeToken() {
-    const Properties = PropertiesService.getDocumentProperties();
     const url = 'https://api.criteo.com/oauth2/token';
     const options = {
       method: 'post',
@@ -108,8 +116,8 @@ var CriteoConnector = class CriteoConnector extends AbstractConnector {
       },
       payload: {
         grant_type: 'client_credentials',
-        client_id: Properties.getProperty('Client Id'),
-        client_secret: Properties.getProperty('Secret')
+        client_id: this.config.ClientId.value,
+        client_secret: this.config.Secret.value
       },
       muteHttpExceptions: true // Error catching
     };
@@ -120,7 +128,7 @@ var CriteoConnector = class CriteoConnector extends AbstractConnector {
       const json = JSON.parse(response.getContentText());
       let token = json["access_token"];
       this.config.Token = {
-        value: token      
+        value: token
       };
     } catch (err) {
       // Errors logging. 
@@ -157,9 +165,4 @@ var CriteoConnector = class CriteoConnector extends AbstractConnector {
     return goodData;
   }
 }
-
-
-
-
-
 

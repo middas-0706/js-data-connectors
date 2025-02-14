@@ -93,7 +93,9 @@ var GoogleSheetsConfig = class GoogleSheetsConfig extends AbstractConfig {
      */
     updateLastImportDate() {
       
-      this.LastImportDate.cell.setValue( Utilities.formatDate(new Date(), this.Log.timeZone, "yyyy-MM-dd HH:mm:ss") );
+      this.LastImportDate.cell.setValue( 
+        Utilities.formatDate(new Date(), this.Log.timeZone, "yyyy-MM-dd HH:mm:ss") 
+      );
     
     }
     //----------------------------------------------------------------
@@ -258,7 +260,26 @@ var GoogleSheetsConfig = class GoogleSheetsConfig extends AbstractConfig {
      */
     isInProgress() {
       // @TODO: Config might be not a Google Sheet
-        return (this.CurrentStatus.cell.getValue().indexOf("progress") !== -1)
+
+        let isInProgress = null;
+
+        // status contains "progress"
+        if( this.CurrentStatus.cell.getValue().indexOf("progress") !== -1 ) {
+
+          let diff = ( new Date() - new Date( Utilities.formatDate(this.LastImportDate.cell.getValue(), this.Log.timeZone, "yyyy-MM-dd HH:mm:ss") ) ) / (1000 * 60);
+          
+          // script is running to long, it might be confidered as not running
+          isInProgress = (diff < this.MaxRunTimeout.value);
+
+        // there is no word "progress" in status
+        } else {
+
+          isInProgress = false;
+          
+
+        }
+
+        return isInProgress;
     
     }
     //----------------------------------------------------------------
@@ -312,6 +333,8 @@ var GoogleSheetsConfig = class GoogleSheetsConfig extends AbstractConfig {
       this.Log.cell.setValue(
         `${currentLog}${emoji}${formattedDate}: ${message}`
       );
+
+      this.updateLastImportDate();
     
     }
     //----------------------------------------------------------------

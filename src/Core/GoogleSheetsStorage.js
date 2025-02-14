@@ -23,6 +23,11 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
           DestinationSheetName: {
             isRequired: true,
             default: "Data"
+          },
+          MaxRunTimeout: {
+            isRequired: true,
+            requiredType: "number",
+            default: 30
           }
         }),
         uniqueKeyColumns,

@@ -9,7 +9,7 @@ Fill in the required information:
 
 Data import starts on the chosen *Start Date* and concludes on the *End Date*.
 
-![Open Holidays Start Date](/src/Integrations/OpenHolidays/holidays_date.png)
+![Open Holidays Start Date](/src/Integrations/OpenHolidays/res/holidays_date.png)
 
 You can find country codes [here](https://www.iso.org/obp/ui/#search). Please, use the **Alpha-2 code** for the connector. 
 

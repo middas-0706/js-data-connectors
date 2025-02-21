@@ -12,6 +12,7 @@ Data import starts on the chosen *Start Date* and concludes on the *End Date*.
 ![Open Holidays Start Date](/src/Integrations/OpenHolidays/res/holidays_date.png)
 
 You can find country codes [here](https://www.iso.org/obp/ui/#search). Please, use the **Alpha-2 code** for the connector. 
+[List of supported countries](https://www.openholidaysapi.org/en/). The data will be empty if you choose a country not on the list.  
 
 languageIsoCode is English (EN) by default. You can find language codes [here](https://www.loc.gov/standards/iso639-2/php/code_list.php). Please, use the **Alpha-2 code** for the connector. 
 
@@ -19,3 +20,6 @@ Press *OWOX -> Import New Data*.
 
 ![Open Holidays Import](/src/Integrations/OpenHolidays/res/holidays_import.png)
 
+When the Log data shows "**Import is finished**", the import process is complete, and your data will be available in the **Data** tab.
+
+![Open Holidays Import Finished](/src/Integrations/OpenHolidays/res/holidays_finished.png)

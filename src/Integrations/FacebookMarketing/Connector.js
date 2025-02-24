@@ -120,9 +120,9 @@ fetchData(nodeName, accountId, fields, startDate = null)  {
     // this is non-paginated result
     } else {
       nextPageURL = null;
-      jsonData.data.forEach(record => {
-        record = this.castRecordFields(nodeName, record);
-      });
+      for(var key in jsonData) {
+        jsonData[ key ] = this.castRecordFields(nodeName, jsonData[key]);
+      }
       allData = allData.concat(jsonData);
     }
     

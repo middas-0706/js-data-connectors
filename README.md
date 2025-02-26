@@ -19,6 +19,8 @@ With just a few clicks and no coding, you can easily set up automated data impor
 | Bank of Canada | 🟢 Public  | [Google Drive](https://drive.google.com/drive/u/0/folders/18c9OHHmdZs-evtU1bWd6pIqdXjnANRmv), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/BankOfCanada)
 | Criteo | 🟡 In Development | [Branch](https://github.com/OWOX/js-data-connectors/tree/criteo-alpha)
 | Reddit Ads | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/2)
+| Bing Ads | 🟡 In Development | [Discussion](https://github.com/OWOX/js-data-connectors/tree/bing-ads-attempt-1)
+
 
 
 #### Data Storages

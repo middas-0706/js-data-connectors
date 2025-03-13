@@ -22,6 +22,7 @@ With just a few clicks and no coding, you can easily set up automated data impor
 | Reddit Ads | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/2)
 | LinkedIn | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/59)
 | Hotline | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/55)
+| Twitter | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/60)
 
 #### Data Storages
 | Name | Status | Links

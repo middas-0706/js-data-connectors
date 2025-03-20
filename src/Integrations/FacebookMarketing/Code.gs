@@ -41,7 +41,7 @@ function updateFieldsSheet() {
 
   const config = new OWOX.GoogleSheetsConfig( CONFIG_RANGE );
 
-  config.udpateFieldsSheet(
+  config.updateFieldsSheet(
     new OWOX.FacebookMarketingConnector( config.setParametersValues( {"AccessToken": "undefined", "Fields": "undefined"} ))
   );
 

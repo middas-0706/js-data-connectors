@@ -33,7 +33,7 @@ class AbstractStorage {
         this.uniqueKeyColumns = uniqueKeyColumns;
       }
 
-      if( !uniqueKeyColumns || Object.keys(uniqueKeyColumns) == 0 ) {
+      if( !this.uniqueKeyColumns.length ) {
         throw new Error("Cannot create instance of AbstractStorage object because uniqueKeyColumns are not defined");
       }
     

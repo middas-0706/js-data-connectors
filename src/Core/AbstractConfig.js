@@ -88,7 +88,6 @@ class AbstractConfig {
      */
     validate() {
 
-
         // validating config
         for (let name in this) {
 

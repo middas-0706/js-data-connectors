@@ -19,6 +19,10 @@ var GoogleBigQueryStorage = class GoogleBigQueryStorage extends AbstractStorage 
       
         super(
           config.mergeParameters({
+            DestinationLocation: {
+              isRequired: "US",
+              requiredType: "string"
+            },
             DestinationDatasetID: {
               isRequired: true,
               requiredType: "string"
@@ -119,17 +123,11 @@ var GoogleBigQueryStorage = class GoogleBigQueryStorage extends AbstractStorage 
     //---- createDatasetIfItDoesntExist --------------------------------
       createDatasetIfItDoesntExist() {
   
-        let query = `---- Creating Dataset if it not exists -----\n`;
-        query += `DECLARE dataset_exists BOOL;
-          SET dataset_exists = EXISTS (
-            SELECT 1
-            FROM \`${this.config.DestinationProjectID.value}.INFORMATION_SCHEMA.SCHEMATA\`
-            WHERE schema_name = '${this.config.DestinationDatasetName.value}'
-          );
-  
-          IF NOT dataset_exists THEN
-            CREATE SCHEMA \`${this.config.DestinationDatasetID.value}\`;
-          END IF;`;
+        let query = `---- Create Dataset if it not exists -----\n`;
+        query += `CREATE SCHEMA IF NOT EXISTS \`${this.config.DestinationProjectID.value}.${this.config.DestinationDatasetName.value}\`
+        OPTIONS (
+          location = '${this.config.DestinationLocation.value}'
+        )`;
   
         this.executeQuery(query);
   

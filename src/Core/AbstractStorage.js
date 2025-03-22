@@ -197,5 +197,24 @@ class AbstractStorage {
     
       }
     }
+
+     
+  //---- stringifyNeastedFields --------------------------------------
+    /**
+     * Because Google SHeets can store only flat structure, cast JSON fields to string format
+     * @param record (object) object with row data to cast
+     * @return record (object) object with casted fields
+     */
+    stringifyNeastedFields(record) {
+    
+      for(var field in record) {
+        if( typeof record[field] == "object" && !(record[field] instanceof Date) ) {
+          record[ field ] = JSON.stringify(record[ field ]);
+        }
+      }
+      return record;
+    }
     //----------------------------------------------------------------
+  
+
 }

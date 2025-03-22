@@ -93,20 +93,14 @@ class AbstractConfig {
 
           let parameter = this[ name ];
 
-            // if parameter's value is required
-          if( parameter.isRequired == true) {
-
-            // there is no parameter value
-            if( !parameter.value && parameter.value !== 0 ) {
-              
-              // there is default value
-              if( "default" in parameter ) {
-                parameter.value = parameter.default;
-              } else {
-                throw new Error(parameter.errorMessage ? parameter.errorMessage : `Unable to load the configuration. The parameter ‘${name}’ is required but was provided with an empty value`)
-              }
-              
-            }
+          // there is default value, but there is no original value
+          if( "default" in parameter && (!parameter.value && parameter.value !== 0) ) {
+            parameter.value = parameter.default;
+          }
+          
+          // if parameter's value is required but value is absent
+          if( (!parameter.value && parameter.value !== 0) && parameter.isRequired == true) {
+            throw new Error(parameter.errorMessage ? parameter.errorMessage : `Unable to load the configuration. The parameter ‘${name}’ is required but was provided with an empty value`)
           }
 
           // there is a type restriction for parameter values

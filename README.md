@@ -25,6 +25,7 @@ With just a few clicks and no coding, you can easily set up automated data impor
 | Twitter | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/60)
 | Shopify | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/63)
 | TikTok | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/62)
+| Google Business Profile | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/61)
 
 #### Data Storages
 | Name | Status | Links

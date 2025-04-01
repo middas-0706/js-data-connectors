@@ -25,12 +25,13 @@ With just a few clicks and no coding, you can easily set up automated data impor
 | Twitter | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/60)
 | Shopify | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/63)
 | TikTok | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/62)
+| Google Business Profile | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/61)
 
 #### Data Storages
 | Name | Status | Links
 | ------------ | ------ | ----
 | Google Sheets | 🟢 Public  | [Issues](https://github.com/OWOX/js-data-connectors/issues?q=is%3Aissue%20state%3Aopen%20label%3AGoogleSheets)
-| Google BigQuery | 🟡 In Development | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/39)
+| Google BigQuery | 🟡 In Development | [Discussion](https://github.com/OWOX/js-data-connectors/tree/65-add-support-of-google-bigquery-as-data-storage)
 
 If you find an integration missing, you can share your use case and request it [here](https://github.com/OWOX/js-data-connectors/discussions)
 

@@ -17,9 +17,9 @@ With just a few clicks and no coding, you can easily set up automated data impor
 | Facebook Ads | 🟢 Public  | [Google Drive](https://drive.google.com/drive/u/0/folders/1_x556pta5lKtKbTltIrPEDkNqAn78jM4), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/FacebookMarketing)
 | Open Exchange Rates | 🟢 Public | [Google Drive](https://drive.google.com/drive/u/0/folders/1akutchS-Txr5PwToMzHrikTXd_GTs-84), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/OpenExchangeRates)
 | Bank of Canada | 🟢 Public  | [Google Drive](https://drive.google.com/drive/u/0/folders/18c9OHHmdZs-evtU1bWd6pIqdXjnANRmv), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/BankOfCanada)
-| Criteo | 🟡 In Development | [Branch](https://github.com/OWOX/js-data-connectors/tree/criteo-alpha), [Discussion] (https://github.com/OWOX/js-data-connectors/discussions/54)
+| Criteo | 🟡 In Development | [Branch](https://github.com/OWOX/js-data-connectors/tree/criteo-alpha), [Discussion](https://github.com/OWOX/js-data-connectors/discussions/54)
 | Bing Ads | 🟡 In Development | [Discussion](https://github.com/OWOX/js-data-connectors/tree/bing-ads-attempt-1)
-| Reddit Ads | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/2)
+| Reddit Ads | 🟡 In Development | [Branch](https://github.com/OWOX/js-data-connectors/tree/reddit_connector_v0.1), [Discussion](https://github.com/OWOX/js-data-connectors/discussions/2)
 | LinkedIn | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/59)
 | Hotline | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/55)
 | Twitter | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/60)
@@ -31,7 +31,7 @@ With just a few clicks and no coding, you can easily set up automated data impor
 | Name | Status | Links
 | ------------ | ------ | ----
 | Google Sheets | 🟢 Public  | [Issues](https://github.com/OWOX/js-data-connectors/issues?q=is%3Aissue%20state%3Aopen%20label%3AGoogleSheets)
-| Google BigQuery | 🟡 In Development | [Discussion](https://github.com/OWOX/js-data-connectors/tree/65-add-support-of-google-bigquery-as-data-storage)
+| Google BigQuery | 🟡 In Development | [Branch](https://github.com/OWOX/js-data-connectors/tree/65-add-support-of-google-bigquery-as-data-storage), [Discussion](https://github.com/OWOX/js-data-connectors/discussions/39)
 
 If you find an integration missing, you can share your use case and request it [here](https://github.com/OWOX/js-data-connectors/discussions)
 

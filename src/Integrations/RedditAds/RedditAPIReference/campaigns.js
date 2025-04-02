@@ -24,7 +24,8 @@ var campaignsFields = {
     },
     'funding_instrument_id': {
         'description': 'Campaign level funding instrument ID.',
-        'type': 'string'
+        'type': 'string',
+        'GoogleSheetsFormat': '@'
     },
     'goal_type': {
         'description': 'The campaign goal type. This cannot be changed after publishing the campaign. Only works for CBO campaigns.',
@@ -36,6 +37,10 @@ var campaignsFields = {
     },
     'id': {
         'description': 'The ID of the campaign.',
+        'type': 'string'
+    },
+    'app_id': {
+        'description': 'The App ID of the app in the mobile app store (iOS App Store, Google Play Store), and is required for use with App Installs objective campaigns.',
         'type': 'string'
     },
     'modified_at': {

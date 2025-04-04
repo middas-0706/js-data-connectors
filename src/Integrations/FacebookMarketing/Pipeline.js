@@ -16,7 +16,7 @@ var FacebookMarketingPipeline = class FacebookMarketingPipeline extends Abstract
         }
       }), 
       connector);
-
+//console.log(config.DestinationTableNamePrefix);
       this.storageName = storageName;
 
     }

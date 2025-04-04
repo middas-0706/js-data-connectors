@@ -45,7 +45,7 @@ var GoogleBigQueryStorage = class GoogleBigQueryStorage extends AbstractStorage 
           },
           MaxBufferSize: {
             isRequired: true,
-            default: 1000
+            default: 250
           }
         }),
         uniqueKeyColumns,
@@ -313,21 +313,29 @@ var GoogleBigQueryStorage = class GoogleBigQueryStorage extends AbstractStorage 
 
         for(var key in this.updatedRecordsBuffer ) {
 
-          let record = this.updatedRecordsBuffer[key];
+          let record = this.stringifyNeastedFields( this.updatedRecordsBuffer[key] );
           let fields = [];
 
           for(var i in this.existingColumns) {
 
             let columnName = this.existingColumns[i]["name"];
             let columnType = this.existingColumns[i]["type"];
-            let columnValue = record[ columnName ];
-            
-            if( ["DATE", "DATETIME"].includes( columnType.toUpperCase() ) 
-            && columnValue instanceof Date ) {
-              columnValue = Utilities.formatDate(columnValue, "UTC", "yyyy-MM-dd");
+            let columnValue = null;
+
+            if( ( columnType.toUpperCase() == "DATE") && (record[ columnName ] instanceof Date) ) {
+
+              columnValue = Utilities.formatDate( record[ columnName ], "UTC", "yyyy-MM-dd" );
+
+            } else if( (columnType.toUpperCase() == "DATETIME") && (record[ columnName ] instanceof Date) ) {
+
+              columnValue = Utilities.formatDate( record[ columnName ], "UTC", "yyyy-MM-dd HH:mm:ss" );
+
             } else {
-              columnValue = this.obfuscateSpecialCharacters( this.stringifyNeastedFields(columnValue) );
+
+              columnValue = this.obfuscateSpecialCharacters( record[ columnName ] );
+
             }
+            
             
             fields.push(`SAFE_CAST("${columnValue}" AS ${columnType}) ${columnName}`);
 

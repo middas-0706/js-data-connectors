@@ -212,6 +212,7 @@ class AbstractStorage {
           record[ field ] = JSON.stringify(record[ field ]);
         }
       }
+
       return record;
     }
     //----------------------------------------------------------------

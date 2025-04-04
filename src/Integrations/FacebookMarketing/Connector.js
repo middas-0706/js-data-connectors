@@ -75,11 +75,11 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
           break;
   
         case 'ad-account/ads':
-          url += `act_${accountId}/ads?&time_range=${timeRange}`;
+          url += `act_${accountId}/ads?limit=100&time_range=${timeRange}`;
           break;
   
         case 'ad-account/adcreatives':
-          url += `act_${accountId}/adcreatives?fields=${fields.join(",")}`;
+          url += `act_${accountId}/adcreatives?limit=100&fields=${fields.join(",")}`;
           break;
   
         case 'ad-account/insights':
@@ -102,7 +102,7 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
   
       while (nextPageURL) {
         // Fetch data from the JSON URL
-        //console.log(nextPageURL);
+        console.log(nextPageURL);
         
         var response = UrlFetchApp.fetch(nextPageURL);
         
@@ -112,6 +112,7 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
         if("data" in jsonData) {
   
           nextPageURL = jsonData.paging ? jsonData.paging.next : null;
+          //nextPageURL = null;
   
           // date fields must be converted to Date objects to meet unique key requirements 
           jsonData.data.forEach(record => {
@@ -128,6 +129,7 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
           }
           allData = allData.concat(jsonData);
         }
+        console.log(`Got ${allData.length} records`);
         
       }
       //console.log(allData);

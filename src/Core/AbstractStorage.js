@@ -6,14 +6,16 @@
  */
 
 class AbstractStorage {
+  
   //---- constructor -------------------------------------------------
     /**
      * Asbstract class making Google Sheets data active in Apps Script to simplity read/write operations
      * @param config (object) instance of Sheet
      * @param uniqueKeyColumns (mixed) a name of column with unique key or array with columns names
      * @param schema (object) object with structure like {fieldName: {type: "number", description: "smth" } }
+     * @param description (string) string with storage description }
      */
-    constructor(config, uniqueKeyColumns, schema = null) {
+    constructor(config, uniqueKeyColumns, schema = null, description = null) {
     
       if(typeof config.setParametersValues !== "function") {
         throw new Error(`Unable to create an AbstractStorage object. First parameter must be an instance of AbstractConfig class`);
@@ -22,12 +24,17 @@ class AbstractStorage {
       config.validate();
       this.config = config;
       this.schema = schema;
+      this.description = description;
       this.columnNames = [];
     
       if( typeof uniqueKeyColumns == "string" ) {
         this.uniqueKeyColumns = [uniqueKeyColumns];
       } else if (typeof uniqueKeyColumns == "object" ) {
         this.uniqueKeyColumns = uniqueKeyColumns;
+      }
+
+      if( !this.uniqueKeyColumns.length ) {
+        throw new Error("Cannot create instance of AbstractStorage object because uniqueKeyColumns are not defined");
       }
     
     }
@@ -104,7 +111,7 @@ class AbstractStorage {
      */
     saveData(data) {
     
-      throw new Error("Method saveDate() has to implemented in child class of AbstractStorage");
+      throw new Error("Method saveDate() has to be implemented in a child class of AbstractStorage");
     }
     //----------------------------------------------------------------
   
@@ -190,5 +197,25 @@ class AbstractStorage {
     
       }
     }
+
+     
+  //---- stringifyNeastedFields --------------------------------------
+    /**
+     * Because Google SHeets can store only flat structure, cast JSON fields to string format
+     * @param record (object) object with row data to cast
+     * @return record (object) object with casted fields
+     */
+    stringifyNeastedFields(record) {
+    
+      for(var field in record) {
+        if( typeof record[field] == "object" && !(record[field] instanceof Date) ) {
+          record[ field ] = JSON.stringify(record[ field ]);
+        }
+      }
+
+      return record;
+    }
     //----------------------------------------------------------------
+  
+
 }

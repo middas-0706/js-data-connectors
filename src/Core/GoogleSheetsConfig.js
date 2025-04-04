@@ -6,6 +6,7 @@
  */
 
 var GoogleSheetsConfig = class GoogleSheetsConfig extends AbstractConfig {
+
   //---- constructor -------------------------------------------------
     constructor(configRange) {
     
@@ -52,9 +53,16 @@ var GoogleSheetsConfig = class GoogleSheetsConfig extends AbstractConfig {
       configObject.Log.timeZone = configRange.getSheet().getParent().getSpreadsheetTimeZone();
     
       super(configObject);
+
+      this.mergeParameters({
+          MaxRunTimeout: {
+            isRequired: true,
+            requiredType: "number",
+            default: 30
+          }
+      });
     
     }
-    //----------------------------------------------------------------
     
   //---- updateCurrentStatus -----------------------------------------
     /**

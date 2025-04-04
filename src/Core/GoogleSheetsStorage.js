@@ -9,7 +9,7 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
   //---- constructor -------------------------------------------------
     /**
      * Asbstract class making Google Sheets data active in Apps Script to simplity read/write operations
-     * @param config (object) instance of Sheet
+     * @param config (object) instance of AbscractConfig
      * @param uniqueKeyColumns (mixed) a name of column with unique key or array with columns names
      * @param schema (object) object with structure like {fieldName: {type: "number", description: "smth" } }
      */
@@ -23,11 +23,6 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
           DestinationSheetName: {
             isRequired: true,
             default: "Data"
-          },
-          MaxRunTimeout: {
-            isRequired: true,
-            requiredType: "number",
-            default: 30
           }
         }),
         uniqueKeyColumns,
@@ -96,9 +91,9 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
       if( !this.SHEET ) {
       
         // destination sheet is a default one (the same as config's sheet)
-        if( !config.DestinationSpreadsheet.value ) {
+        if( !config.DestinationSpreadsheet || !config.DestinationSpreadsheet.value ) {
     
-          config.DestinationSpreadsheet.spreadsheet = config.DestinationSpreadsheet.cell.getSheet().getParent();
+          config.DestinationSpreadsheet = {"spreadsheet": config.configSpreadsheet};
     
         // destination spreadsheet is defined in config and must me used instead of config's sheet
         } else {
@@ -202,7 +197,7 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
       
       data.map((row) => {
       
-        // if there are new columns in the first row it should be added first
+        // if there are new columns it should be added first (new columns might appears in any row)
         let newFields = Object.keys(row).filter( column => !this.columnNames.includes(column) );
       
         // create new columns that are in data but absent in a Sheet
@@ -217,7 +212,7 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
           };
         } else {
           this.addRecord(row, true);
-          recordsAdded += this.saveRecordsAddedToBuffer(100);
+          recordsAdded += this.saveRecordsAddedToBuffer(100); // @TODO; saveRecordsAddedToBuffer must be in config
         }
       })
       
@@ -334,24 +329,7 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
     
     }
     //----------------------------------------------------------------
-  
-  //---- stringifyNeastedFields --------------------------------------
-    /**
-     * Because Google SHeets can store only flat structure, cast JSON fields to string format
-     * @param record (object) object with row data to cast
-     * @return record (object) object with casted fields
-     */
-    stringifyNeastedFields(record) {
-    
-      for(var field in record) {
-        if( typeof record[field] == "object" && !(record[field] instanceof Date) ) {
-          record[ field ] = JSON.stringify(record[ field ]);
-        }
-      }
-      return record;
-    }
-    //----------------------------------------------------------------
-  
+ 
   //---- addHeader ---------------------------------------------------
     /**
      * Adding header to sheet

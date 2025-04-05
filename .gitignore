@@ -2,9 +2,8 @@
 .gitignore
 .gitattributes
 node_modules/
+dev/
 package-lock.json
-.clasp.json
-.claspignore
 Thumbs.db
 .idea/
 *.log

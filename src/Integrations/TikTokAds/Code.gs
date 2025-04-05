@@ -416,7 +416,7 @@ function cleanupOldData() {
  */
 function onOpen() {
   SpreadsheetApp.getUi()
-    .createMenu('TikTok Ads Connector')
+    .createMenu('OWOX')
     .addItem('Run Import Process', 'startImportProcess')
     .addSeparator()
     .addItem('Test Connection', 'testConnection')

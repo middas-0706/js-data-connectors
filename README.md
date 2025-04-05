@@ -15,6 +15,7 @@ With just a few clicks and no coding, you can easily set up automated data impor
 | Name | Status | Links
 | ------------ | ------ | ----
 | Facebook Ads | 🟢 Public  | [Google Drive](https://drive.google.com/drive/u/0/folders/1_x556pta5lKtKbTltIrPEDkNqAn78jM4), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/FacebookMarketing)
+| TikTok Ads | 🟢 Public | [Google Drive](https://drive.google.com/drive/u/0/folders/1zYBdx4Lm496mrCmwSNG3t82weWZRJb0o), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/TikTokAds)
 | Open Exchange Rates | 🟢 Public | [Google Drive](https://drive.google.com/drive/u/0/folders/1akutchS-Txr5PwToMzHrikTXd_GTs-84), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/OpenExchangeRates)
 | Bank of Canada | 🟢 Public  | [Google Drive](https://drive.google.com/drive/u/0/folders/18c9OHHmdZs-evtU1bWd6pIqdXjnANRmv), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/BankOfCanada)
 | Criteo Ads | 🟡 In Development | [Branch](https://github.com/OWOX/js-data-connectors/tree/criteo-alpha), [Discussion](https://github.com/OWOX/js-data-connectors/discussions/54)
@@ -24,7 +25,6 @@ With just a few clicks and no coding, you can easily set up automated data impor
 | LinkedIn Ads | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/59)
 | Twitter Ads | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/60)
 | Shopify Ads | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/63)
-| TikTok Ads | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/62)
 | Google Business Profile | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/61)
 
 #### Data Storages

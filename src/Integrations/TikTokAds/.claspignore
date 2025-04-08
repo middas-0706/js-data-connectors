@@ -2,4 +2,4 @@
 !Integrations/TikTokAds/*.js
 !appsscript.json
 !Core/Abstract*.js
-!Core/GoogleSheets*.js
+!Core/*Storage.js

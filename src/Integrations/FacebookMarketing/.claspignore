@@ -3,5 +3,4 @@
 !Integrations/FacebookMarketing/**/*.js
 !appsscript.json
 !Core/Abstract*.js
-!Core/Abstract*.ts
-!Core/GoogleSheets*.js
+!Core/*Storage.js

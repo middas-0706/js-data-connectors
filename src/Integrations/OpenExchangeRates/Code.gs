@@ -54,7 +54,7 @@ function manageCredentials() {
 
   const response = ui.prompt(
     currentKey ? 'Update your App ID' : 'Add your App Id',
-    'To import data from Open Exchange Rates, you need to add an App ID. Here's how you can get it: https://support.openexchangerates.org/article/121-your-app-id',
+    'To import data from Open Exchange Rates, you need to add an App ID. Here’s how you can get it: https://support.openexchangerates.org/article/121-your-app-id',
     ui.ButtonSet.OK_CANCEL
   );
 

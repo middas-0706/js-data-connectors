@@ -66,11 +66,9 @@ class AbstractPipeline {
           this.config.updateLastImportDate();
           this.config.logMessage("🟢 Start importing new data");
 
-          // if destination sheet is empty than header should be created based on unique key columns list
-          if( this.storage !== null && this.storage.isEmpty() && this.storage instanceof GoogleSheetsStorage) {        
-            this.storage.addHeader(this.uniqueKeyColumns);
-            this.config.logMessage(`Column(s) for unique key was added: ${this.uniqueKeyColumns}`);
-          }  
+          if (this.storage !== null) {
+            this.storage.addHeaderIfNeeded();
+          }
 
           this.startImportProcess();
 

@@ -217,5 +217,14 @@ class AbstractStorage {
     }
     //----------------------------------------------------------------
   
+  //---- addHeaderIfNeeded ------------------------------------------
+    /**
+     * Checks if storage is empty and adds headers if needed
+     * By default does nothing, should be overridden in child classes if needed
+     */
+    addHeaderIfNeeded() {
+      return;
+    }
+    //----------------------------------------------------------------
 
 }

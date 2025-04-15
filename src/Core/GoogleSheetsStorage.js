@@ -484,4 +484,15 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
     
     }
     //----------------------------------------------------------------
+  
+  //---- areHeadersNeeded ------------------------------------------
+    /**
+     * Checks if storage is empty and adds headers if needed
+     * if destination sheet is empty than header should be created based on unique key columns list
+     * @return {boolean} true if headers were added, false if they already existed
+     */
+    areHeadersNeeded() {
+      return this.isEmpty();
+    }
+    //----------------------------------------------------------------
 }

@@ -27,16 +27,16 @@ function importNewData() {
       PropertiesService.getDocumentProperties().getProperties()
     )),                          
     // Storage for Google Sheets
-    new DevOWOX.GoogleSheetsStorage(
+    new OWOX.GoogleSheetsStorage(
       config, 
-      DevOWOX.OpenExchangeRatesFieldsSchema['historical'].uniqueKeys
+      OWOX.OpenExchangeRatesFieldsSchema['historical'].uniqueKeys
     ),
     // Storage for BigQuery
-    new DevOWOX.GoogleBigQueryStorage(
-      config, 
-      DevOWOX.OpenExchangeRatesFieldsSchema['historical'].uniqueKeys,
-      DevOWOX.OpenExchangeRatesFieldsSchema['historical'].fields.bigQuery
-    )
+    // new OWOX.GoogleBigQueryStorage(
+    //   config, 
+    //   OWOX.OpenExchangeRatesFieldsSchema['historical'].uniqueKeys,
+    //   OWOX.OpenExchangeRatesFieldsSchema['historical'].fields.bigQuery
+    // )
   );
 
   pipeline.run();
@@ -45,9 +45,9 @@ function importNewData() {
 
 function cleanUpExpiredData() {
 
-  const storage = new DevOWOX.GoogleSheetsStorage( 
-    new DevOWOX.GoogleSheetsConfig( CONFIG_RANGE ),
-    DevOWOX.OpenExchangeRatesFieldsSchema['historical'].uniqueKeys
+  const storage = new OWOX.GoogleSheetsStorage( 
+    new OWOX.GoogleSheetsConfig( CONFIG_RANGE ),
+    OWOX.OpenExchangeRatesFieldsSchema['historical'].uniqueKeys
   );
   storage.cleanUpExpiredData("date");
 

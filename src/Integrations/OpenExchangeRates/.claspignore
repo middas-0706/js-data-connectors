@@ -1,5 +1,6 @@
 **/**
 !Integrations/OpenExchangeRates/*.js
+!Integrations/OpenExchangeRates/**/*.js
 !appsscript.json
 !Core/Abstract*.js
 !Core/*Storage.js

@@ -217,13 +217,14 @@ class AbstractStorage {
     }
     //----------------------------------------------------------------
   
-  //---- addHeaderIfNeeded ------------------------------------------
+  //---- areHeadersNeeded --------------------------------------------
     /**
-     * Checks if storage is empty and adds headers if needed
-     * By default does nothing, should be overridden in child classes if needed
+     * Checks if storage needs headers to be added
+     * By default returns false, should be overridden in child classes if needed
+     * @returns {boolean} true if headers need to be added, false otherwise
      */
-    addHeaderIfNeeded() {
-      return;
+    areHeadersNeeded() {
+      return false;
     }
     //----------------------------------------------------------------
 

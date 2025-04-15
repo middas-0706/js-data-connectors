@@ -66,8 +66,9 @@ class AbstractPipeline {
           this.config.updateLastImportDate();
           this.config.logMessage("🟢 Start importing new data");
 
-          if (this.storage !== null) {
-            this.storage.addHeaderIfNeeded();
+          if (this.storage !== null && this.storage.areHeadersNeeded()) {
+            this.storage.addHeader(this.storage.uniqueKeyColumns);
+            this.config.logMessage(`Column(s) for unique key was added: ${this.storage.uniqueKeyColumns}`);
           }
 
           this.startImportProcess();

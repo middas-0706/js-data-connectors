@@ -6,12 +6,8 @@
  */
 
 /**
- * BigQuery schema definition for Open Exchange Rates data
+ * Fields for historical exchange rates data
  * 
- * This schema defines the structure of the BigQuery table that stores exchange rates data.
- * The table is partitioned by date for better query performance and cost optimization.
- * 
- * Fields:
  * - date: The date of the exchange rate
  * - base: The base currency code (e.g., USD, EUR)
  * - currency: The target currency code
@@ -26,7 +22,7 @@
  * }
  */
 
-var OpenExchangeRatesBigQuerySchema = {
+var bigQueryHistoricalFields = {
   date: {
     type: "DATE",
     description: "Date of exchange rate",

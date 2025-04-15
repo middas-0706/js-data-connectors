@@ -485,17 +485,14 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
     }
     //----------------------------------------------------------------
   
-  //---- addHeaderIfNeeded ------------------------------------------
+  //---- areHeadersNeeded ------------------------------------------
     /**
      * Checks if storage is empty and adds headers if needed
-     * If destination sheet is empty than header should be created based on unique key columns list
+     * if destination sheet is empty than header should be created based on unique key columns list
+     * @return {boolean} true if headers were added, false if they already existed
      */
-    addHeaderIfNeeded() {
-      if (this.isEmpty()) {
-        this.addHeader(this.uniqueKeyColumns);
-        this.config.logMessage(`Column(s) for unique key was added: ${this.uniqueKeyColumns}`);
-      }
-      return;
+    areHeadersNeeded() {
+      return this.isEmpty();
     }
     //----------------------------------------------------------------
 }

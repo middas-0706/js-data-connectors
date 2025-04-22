@@ -67,11 +67,11 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
   
       switch (nodeName) {
         case 'ad-account':
-          url += `act_${accountId}?fields=${fields.join(",")}&limit=${this.fieldsSchema[nodeName].limit}`;
+          url += `act_${accountId}?fields=${fields.join(",")}`;
           break;
   
         case 'ad-account-user':
-          url += `act_${accountId}/?fields=${fields.join(",")}&limit=${this.fieldsSchema[nodeName].limit}`;
+          url += `act_${accountId}/?fields=${fields.join(",")}`;
           break;
   
         case 'ad-account/ads':

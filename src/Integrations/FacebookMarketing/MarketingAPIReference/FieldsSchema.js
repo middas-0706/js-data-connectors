@@ -11,16 +11,14 @@ var FacebookMarketingFieldsSchema = {
         "description": "Someone on Facebook who creates ads. Each ad user can have a role on several ad accounts",
         "documentation": "https://developers.facebook.com/docs/marketing-api/reference/ad-account-user",
         "fields": adAccountUserFields,
-        'uniqueKeys': ["id"],
-        "limit": 100
+        'uniqueKeys': ["id"]
     },
     "ad-account": {
         "overview": "Ad Account",
         "description": "Represents the business entity managing ads.",
         "documentation": "https://developers.facebook.com/docs/marketing-api/reference/ad-account/",
         "fields": adAccountFields,
-        'uniqueKeys': ["id", "account_id"],
-        "limit": 100
+        'uniqueKeys': ["id", "account_id"]
     },  
     "ad-account/adcreatives": {
         "description": "Defines your ad's appearance and content.",

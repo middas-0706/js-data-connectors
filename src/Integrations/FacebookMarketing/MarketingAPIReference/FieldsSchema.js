@@ -11,21 +11,23 @@ var FacebookMarketingFieldsSchema = {
         "description": "Someone on Facebook who creates ads. Each ad user can have a role on several ad accounts",
         "documentation": "https://developers.facebook.com/docs/marketing-api/reference/ad-account-user",
         "fields": adAccountUserFields,
-        'uniqueKeys': ["id"]
+        'uniqueKeys': ["id"],
+        "limit": 100
     },
     "ad-account": {
         "overview": "Ad Account",
         "description": "Represents the business entity managing ads.",
         "documentation": "https://developers.facebook.com/docs/marketing-api/reference/ad-account/",
         "fields": adAccountFields,
-        'uniqueKeys': ["id", "account_id"]
+        'uniqueKeys': ["id", "account_id"],
+        "limit": 100
     },  
     "ad-account/adcreatives": {
         "description": "Defines your ad's appearance and content.",
         "documentation": "https://developers.facebook.com/docs/marketing-api/reference/ad-account/adcreatives",
         "fields": adAccountCreativesFields,
-        'uniqueKeys': ["id"]
-
+        'uniqueKeys': ["id"],
+        "limit": 100
     },
     "ad-account/adimages": {
         "description": "Library of images to use in ad creatives. Can be uploaded and managed independently.",
@@ -35,7 +37,8 @@ var FacebookMarketingFieldsSchema = {
         "description": "Data for an ad, such as creative elements and measurement information.",
         "documentation": "https://developers.facebook.com/docs/marketing-api/reference/ad-account/ads",
         "fields": adAccountAdsFields,
-        'uniqueKeys': ["id"]
+        'uniqueKeys': ["id"],
+        "limit": 100
     },
     "ad-account/adsets": {
         "description": "Contain all ads that share the same budget, schedule, bid, and targeting.",
@@ -57,14 +60,16 @@ var FacebookMarketingFieldsSchema = {
         "description": "Interface for insights. De-dupes results across child objects, provides sorting, and async reports.",
         "documentation": "https://developers.facebook.com/docs/marketing-api/reference/ad-account/insights",
         "fields" : adAccountInsightsFields,
-        'uniqueKeys': ["ad_id", "date_start", "date_stop"]
+        'uniqueKeys': ["ad_id", "date_start", "date_stop"],
+        "limit": 500
     },
     "ad-group": {
         "overview": "Ad",
         "description": "Contains information for an ad, such as creative elements and measurement information.",
         "documentation": "https://developers.facebook.com/docs/marketing-api/reference/adgroup/",
         "fields": adGroupFields,
-        'uniqueKeys': ["id"]
+        'uniqueKeys': ["id"],
+        "limit": 100
     },
     "ad-group/adcreatives": {
         "description": "Defines your ad's appearance and content.",

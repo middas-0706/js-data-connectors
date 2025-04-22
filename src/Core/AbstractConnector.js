@@ -65,53 +65,125 @@ class AbstractConnector {
      * @return {HTTPResponse} The response object from the fetch
      * @throws {Error} After exhausting all retries
      */
-
     urlFetchWithRetry(url, options) {
       for (let attempt = 1; attempt <= this.maxFetchRetries; attempt++) {
         try {
-          if (this.environment === 'apps_script') {
-            const response = UrlFetchApp.fetch(url, { ...options, muteHttpExceptions: true });
-            const code = response.getResponseCode();
-
-            if (code >= HTTP_STATUS.SUCCESS_MIN && code <= HTTP_STATUS.SUCCESS_MAX) {
-              return response;
-            }
-
-            const text = response.getContentText();
-            console.log(`Response body (truncated): ${text.slice(0, 200)}`);
-            let parsedJson;
-
-            try {
-              parsedJson = JSON.parse(text);
-              console.log(`Parsed JSON:`, parsedJson);
-            } catch (parseErr) {
-              parsedJson = null;
-              console.log(`JSON.parse failed: ${parseErr.message}`);
-            }
-
-            const errMsg = parsedJson?.error?.message || text;
-            const err = new Error(errMsg);
-            err.responseCode = code;
-            err.responseJson = parsedJson;
-            throw err;
-          }
-
-          throw new Error(`Unsupported environment: ${this.environment}`);
+          const response = this._executeRequest(url, options);
+          return response;
         }
         catch (error) {
-          const retryable = this.isValidToRetry(error);
-          console.log(`isValidToRetry = ${retryable}`);
-
-          if (attempt === this.maxFetchRetries || !retryable) {
-            console.log(`No more retries (attempt ${attempt}). Throwing.`);
+          if (!this._shouldRetry(error, attempt)) {
             throw error;
           }
-
-          const delay = this.calculateBackoff(attempt);
-          console.log(`Retrying after ${Math.round(delay/1000)}s...`);
-          this.sleep(delay);
+          
+          this._waitBeforeRetry(attempt);
         }
       }
+    }
+    
+  //---- _executeRequest --------------------------------------------
+    /**
+     * Executes the HTTP request based on the current environment
+     * @param {string} url - The URL to fetch
+     * @param {Object} options - Options for the fetch request
+     * @return {HTTPResponse} The response object
+     * @throws {Error} If the request fails or returns an error status
+     * @private
+     */
+    _executeRequest(url, options) {
+      if (this.environment === 'apps_script') {
+        const response = UrlFetchApp.fetch(url, { ...options, muteHttpExceptions: true });
+        
+        return this._validateResponse(response);
+      }
+      
+      throw new Error(`Unsupported environment: ${this.environment}`);
+    }
+    
+  //---- _validateResponse ------------------------------------------
+    /**
+     * Validates the HTTP response and handles error cases
+     * @param {HTTPResponse} response - The HTTP response to validate
+     * @return {HTTPResponse} The validated response
+     * @throws {Error} If the response indicates an error
+     * @private
+     */
+    _validateResponse(response) {
+      const code = response.getResponseCode();
+      
+      if (code >= HTTP_STATUS.SUCCESS_MIN && code <= HTTP_STATUS.SUCCESS_MAX) {
+        return response;
+      }
+      
+      const errorInfo = this._extractErrorInfo(response);
+      const error = new Error(errorInfo.message);
+      error.responseCode = code;
+      error.responseJson = errorInfo.json;
+      
+      throw error;
+    }
+    
+  //---- _extractErrorInfo ------------------------------------------
+    /**
+     * Extracts error information from a response
+     * @param {HTTPResponse} response - The response object
+     * @return {Object} Object containing error message and JSON data if available
+     * @private
+     */
+    _extractErrorInfo(response) {
+      const text = response.getContentText();
+      let parsedJson = null;
+      let message = text;
+      
+      try {
+        parsedJson = JSON.parse(text);
+        message = 
+          parsedJson?.error?.message || 
+          parsedJson?.message || 
+          parsedJson?.errorMessage || 
+          parsedJson?.error_message ||
+          (parsedJson?.errors && Array.isArray(parsedJson.errors) && parsedJson.errors[0]?.message) || 
+          text;
+      } catch (parseErr) {
+        console.log(`Response is not valid JSON: ${parseErr.message}`);
+      }
+      
+      return {
+        message,
+        json: parsedJson
+      };
+    }
+    
+  //---- _shouldRetry ----------------------------------------------
+    /**
+     * Determines if a retry should be attempted
+     * @param {Error} error - The error that occurred
+     * @param {number} attempt - The current attempt number
+     * @return {boolean} Whether to retry
+     * @private
+     */
+    _shouldRetry(error, attempt) {
+      if (attempt >= this.maxFetchRetries) {
+        console.log(`Maximum retry attempts (${this.maxFetchRetries}) reached.`);
+        return false;
+      }
+      
+      const retryable = this.isValidToRetry(error);
+      console.log(`Attempt ${attempt}: isValidToRetry = ${retryable}`);
+      
+      return retryable;
+    }
+    
+  //---- _waitBeforeRetry ------------------------------------------
+    /**
+     * Waits before retrying with exponential backoff
+     * @param {number} attempt - The current attempt number
+     * @private
+     */
+    _waitBeforeRetry(attempt) {
+      const delay = this.calculateBackoff(attempt);
+      console.log(`Retrying after ${Math.round(delay/1000)}s...`);
+      this.sleep(delay);
     }
     
   //---- calculateBackoff --------------------------------------------

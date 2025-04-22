@@ -7,7 +7,7 @@
 
 var BankOfCanadaConnector = class BankOfCanadaConnector extends AbstractConnector {
 
-constructor( configRange ) {
+constructor(configRange, options = {}) {
 
   super( configRange.mergeParameters({
     StartDate: {
@@ -35,7 +35,7 @@ constructor( configRange ) {
       isRequired: true,
       value: 30
     }
-  }));
+  }), options);
 
   
 }

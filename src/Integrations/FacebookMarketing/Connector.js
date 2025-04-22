@@ -10,7 +10,7 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
   //---- constructor -------------------------------------------------
     constructor(config, options = {}) {
   
-      super( config.mergeParameters({
+      super(config.mergeParameters({
         AccessToken:{
           isRequired: true,
           requiredType: "string",
@@ -49,7 +49,7 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
      * @return {boolean} True if the error should trigger a retry, false otherwise
      */
     isValidToRetry(error) {
-      if (error.responseCode && error.responseCode >= 500) {
+      if (error.responseCode && error.responseCode >= HTTP_STATUS.SERVER_ERROR_MIN) {
         return true;
       }
 

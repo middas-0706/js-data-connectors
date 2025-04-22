@@ -73,7 +73,7 @@ class AbstractConnector {
             const response = UrlFetchApp.fetch(url, { ...options, muteHttpExceptions: true });
             const code = response.getResponseCode();
 
-            if (code >= 200 && code < 300) {
+            if (code >= HTTP_STATUS.SUCCESS_MIN && code <= HTTP_STATUS.SUCCESS_MAX) {
               return response;
             }
 

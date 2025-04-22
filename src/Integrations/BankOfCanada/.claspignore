@@ -4,3 +4,4 @@
 !Core/Abstract*.js
 !Core/*Storage.js
 !Core/GoogleSheets*.js
+!Constants/*.js

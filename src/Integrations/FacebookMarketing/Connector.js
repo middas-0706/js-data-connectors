@@ -8,7 +8,7 @@
 var FacebookMarketingConnector = class FacebookMarketingConnector extends AbstractConnector {
 
   //---- constructor -------------------------------------------------
-    constructor( config ) {
+    constructor(config, options = {}) {
   
       super( config.mergeParameters({
         AccessToken:{
@@ -34,12 +34,36 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
           isRequired: true,
           default: 31
         }
-      }));
+      }), options);
       
       this.fieldsSchema = FacebookMarketingFieldsSchema;
   
     }
     
+  //---- isValidToRetry ----------------------------------------------
+    /**
+     * Determines if a Facebook API error is valid for retry
+     * Based on Facebook error codes
+     * 
+     * @param {Error} error - The error to check
+     * @return {boolean} True if the error should trigger a retry, false otherwise
+     */
+    isValidToRetry(error) {
+      if (error.responseCode && error.responseCode >= 500) {
+        return true;
+      }
+
+      if (!error.responseJson || !error.responseJson.error) {
+        return false;
+      }
+
+      const errorObj = error.responseJson.error;
+      const errorCode = Number(errorObj.code);
+      const result = (errorObj.is_transient === true ||
+                    (errorCode > 0 && FB_RETRYABLE_ERROR_CODES.includes(errorCode)));
+
+      return result;
+    }
   
   //---- fetchData -------------------------------------------------
     /*
@@ -104,7 +128,7 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
         // Fetch data from the JSON URL
         console.log(nextPageURL);
         
-        var response = UrlFetchApp.fetch(nextPageURL);
+        var response = this.urlFetchWithRetry(nextPageURL);
         
         var jsonData = JSON.parse(response.getContentText());
   

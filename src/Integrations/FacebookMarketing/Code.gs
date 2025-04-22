@@ -17,9 +17,12 @@ function importNewData() {
   
   const pipeline = new OWOX.FacebookMarketingPipeline(
     config,                                                           // pipeline configuration
-    new OWOX.FacebookMarketingConnector( config.setParametersValues(  // connector with parameter's values added from properties 
-      PropertiesService.getDocumentProperties().getProperties()
-    ) ),
+    new OWOX.FacebookMarketingConnector(
+      config.setParametersValues(  // connector with parameter's values added from properties 
+        PropertiesService.getDocumentProperties().getProperties()
+      ),
+      { environment: 'apps_script' }
+    ),
    // "GoogleBigQueryStorage"
   );
 
@@ -42,7 +45,10 @@ function updateFieldsSheet() {
   const config = new OWOX.GoogleSheetsConfig( CONFIG_RANGE );
 
   config.updateFieldsSheet(
-    new OWOX.FacebookMarketingConnector( config.setParametersValues( {"AccessToken": "undefined", "Fields": "undefined"} ))
+    new OWOX.FacebookMarketingConnector(
+      config.setParametersValues( {"AccessToken": "undefined", "Fields": "undefined"} ),
+      { environment: 'apps_script' }
+    )
   );
 
 }

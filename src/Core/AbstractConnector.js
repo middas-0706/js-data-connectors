@@ -68,8 +68,7 @@ class AbstractConnector {
     urlFetchWithRetry(url, options) {
       for (let attempt = 1; attempt <= this.maxFetchRetries; attempt++) {
         try {
-          const response = this._executeRequest(url, options);
-          return response;
+          return this._executeRequest(url, options);
         }
         catch (error) {
           if (!this._shouldRetry(error, attempt)) {

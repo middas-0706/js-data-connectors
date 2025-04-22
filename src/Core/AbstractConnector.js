@@ -78,12 +78,15 @@ class AbstractConnector {
             }
 
             const text = response.getContentText();
+            console.log(`Response body (truncated): ${text.slice(0, 200)}`);
             let parsedJson;
 
             try {
               parsedJson = JSON.parse(text);
+              console.log(`Parsed JSON:`, parsedJson);
             } catch (parseErr) {
               parsedJson = null;
+              console.log(`JSON.parse failed: ${parseErr.message}`);
             }
 
             const errMsg = parsedJson?.error?.message || text;
@@ -97,6 +100,7 @@ class AbstractConnector {
         }
         catch (error) {
           const retryable = this.isValidToRetry(error);
+          console.log(`isValidToRetry = ${retryable}`);
 
           if (attempt === this.maxFetchRetries || !retryable) {
             console.log(`No more retries (attempt ${attempt}). Throwing.`);

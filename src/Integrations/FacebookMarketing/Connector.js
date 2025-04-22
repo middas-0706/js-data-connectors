@@ -49,6 +49,9 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
      * @return {boolean} True if the error should trigger a retry, false otherwise
      */
     isValidToRetry(error) {
+      console.log(`isValidToRetry() called`);
+      console.log(`error.responseCode =`, error.responseCode);
+      console.log(`error.responseJson =`, error.responseJson);
       if (error.responseCode && error.responseCode >= HTTP_STATUS.SERVER_ERROR_MIN) {
         return true;
       }
@@ -57,10 +60,19 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
         return false;
       }
 
-      const errorObj = error.responseJson.error;
-      const errorCode = Number(errorObj.code);
-      const result = (errorObj.is_transient === true ||
-                    (errorCode > 0 && FB_RETRYABLE_ERROR_CODES.includes(errorCode)));
+      const fbErr = error.responseJson.error;
+      const code = Number(fbErr.code);
+      const subcode = Number(fbErr.error_subcode);
+
+      console.log(`FB error.code = ${code}`);
+      console.log(`FB error.error_subcode = ${subcode}`);
+      console.log(`is_transient = ${fbErr.is_transient}`);
+      console.log(`code in retry list = ${FB_RETRYABLE_ERROR_CODES.includes(code)}`);
+      console.log(`subcode in retry list = ${FB_RETRYABLE_ERROR_CODES.includes(subcode)}`);
+
+      const result = fbErr.is_transient === true
+                  || FB_RETRYABLE_ERROR_CODES.includes(code)
+                  || FB_RETRYABLE_ERROR_CODES.includes(subcode);
 
       return result;
     }

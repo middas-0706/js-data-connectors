@@ -8,7 +8,7 @@
 var FacebookMarketingConnector = class FacebookMarketingConnector extends AbstractConnector {
 
   //---- constructor -------------------------------------------------
-    constructor(config, options = {}) {
+    constructor(config) {
   
       super(config.mergeParameters({
         AccessToken:{
@@ -34,7 +34,7 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
           isRequired: true,
           default: 31
         }
-      }), options);
+      }));
       
       this.fieldsSchema = FacebookMarketingFieldsSchema;
   

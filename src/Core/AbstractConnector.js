@@ -11,10 +11,8 @@ class AbstractConnector {
      * Asbstract class for Connectros
      * @param {configSheetRange} instance of Range class with config data. The first row must be a name of the parameter, the second one its value 
      * @param {configConnector} optional object with hardcoded config. Defined in inherited classes. configConnector data overwrites configSheetRange data 
-     * @param {Object} options - Additional options for connector
-     * @param {string} options.environment - Environment where connector is running ('apps_script', 'node', etc.)
      */
-    constructor(config, options = {}) {
+    constructor(config) {
 
       // Check if configRange is an instance of Range Class
       if( typeof config.setParametersValues !== "function" ) {
@@ -24,7 +22,6 @@ class AbstractConnector {
       this.config = config;
       this.maxFetchRetries = 3;
       this.initialRetryDelay = 5000;
-      this.environment = options.environment || 'apps_script';
     }
     //----------------------------------------------------------------
 
@@ -90,13 +87,13 @@ class AbstractConnector {
      * @private
      */
     _executeRequest(url, options) {
-      if (this.environment === 'apps_script') {
+      if (this.config.environment === AbstractConfig.ENVIRONMENT.APPS_SCRIPT) {
         const response = UrlFetchApp.fetch(url, { ...options, muteHttpExceptions: true });
         
         return this._validateResponse(response);
       }
       
-      throw new Error(`Unsupported environment: ${this.environment}`);
+      throw new Error(`Unsupported environment: ${this.config.environment}`);
     }
     
   //---- _validateResponse ------------------------------------------
@@ -218,10 +215,10 @@ class AbstractConnector {
      * @param {number} milliseconds - Time to sleep in milliseconds
      */
     sleep(milliseconds) {
-      if (this.environment === 'apps_script') {
+      if (this.config.environment === AbstractConfig.ENVIRONMENT.APPS_SCRIPT) {
         Utilities.sleep(milliseconds);
       } else {
-        throw new Error(`Unsupported environment: ${this.environment}`);
+        throw new Error(`Unsupported environment: ${this.config.environment}`);
       }
     }
     //----------------------------------------------------------------

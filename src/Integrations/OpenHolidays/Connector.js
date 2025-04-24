@@ -8,7 +8,7 @@
 // API Documentation: https://www.openholidaysapi.org/en/#__tabbed_6_1
 
 var OpenHolidaysConnector = class OpenHolidaysConnector extends AbstractConnector {
-    constructor(config, options = {}) {
+    constructor(config) {
     super(config.mergeParameters({
       countryIsoCode: {
         isRequired: true,
@@ -29,7 +29,7 @@ var OpenHolidaysConnector = class OpenHolidaysConnector extends AbstractConnecto
         isRequired: true,
         requiredType: "date"
       }
-    }), options);
+    }));
   }
 
     fetchData() {

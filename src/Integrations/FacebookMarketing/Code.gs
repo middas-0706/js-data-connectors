@@ -20,9 +20,8 @@ function importNewData() {
     new OWOX.FacebookMarketingConnector(
       config.setParametersValues(  // connector with parameter's values added from properties 
         PropertiesService.getDocumentProperties().getProperties()
-      ),
-      { environment: 'apps_script' }
-    ),
+      )
+    )
    // "GoogleBigQueryStorage"
   );
 
@@ -46,8 +45,7 @@ function updateFieldsSheet() {
 
   config.updateFieldsSheet(
     new OWOX.FacebookMarketingConnector(
-      config.setParametersValues( {"AccessToken": "undefined", "Fields": "undefined"} ),
-      { environment: 'apps_script' }
+      config.setParametersValues( {"AccessToken": "undefined", "Fields": "undefined"} )
     )
   );
 
@@ -60,7 +58,7 @@ function manageCredentials() {
   const currentKey = Properties.getProperty('AccessToken');
   const response = ui.prompt(
     currentKey ? 'Update your Access Token' : 'Add your Access Token',
-    'To import data from Facebook Marketing API, you need to add an Access Token. Here’s how you can get it: https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/FacebookMarketing',
+    'To import data from Facebook Marketing API, you need to add an Access Token. Here's how you can get it: https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/FacebookMarketing',
     ui.ButtonSet.OK_CANCEL
   );
 

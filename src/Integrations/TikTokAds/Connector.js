@@ -7,7 +7,7 @@
 
 var TikTokAdsConnector = class TikTokAdsConnector extends AbstractConnector {
 
-  constructor(config, options = {}) {
+  constructor(config) {
     super(config.mergeParameters({
       AccessToken: {
         isRequired: true,
@@ -65,7 +65,7 @@ var TikTokAdsConnector = class TikTokAdsConnector extends AbstractConnector {
         default: false,
         description: "Use sandbox environment for testing"
       }
-    }), options);
+    }));
 
     this.fieldsSchema = TikTokAdsFieldsSchema;
     this.apiVersion = "v1.3"; // TikTok Ads API version

@@ -9,7 +9,7 @@
 
 var OpenExchangeRatesConnector = class OpenExchangeRatesConnector extends AbstractConnector {
 
-constructor(config, options = {}) {
+constructor(config) {
 
   super( config.mergeParameters({
       AppId: {
@@ -44,7 +44,7 @@ constructor(config, options = {}) {
         isRequired: true,
         value: "USD"
       }
-    }), options);
+    }) );
   
   }
   

@@ -38,7 +38,7 @@ class HttpRequestException extends AbstractException {
   constructor({ message, statusCode, payload }) {
     super(message);
     if (statusCode != null) this.statusCode = statusCode;
-    if (payload != null) this.payload    = payload;
+    if (payload != null) this.payload = payload;
   }
 }
 

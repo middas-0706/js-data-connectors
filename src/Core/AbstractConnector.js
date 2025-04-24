@@ -60,7 +60,7 @@ class AbstractConnector {
      * @param {string} url - The URL to fetch
      * @param {Object} options - Options for the fetch request (optional)
      * @return {HTTPResponse} The response object from the fetch
-     * @throws {Error} After exhausting all retries
+     * @throws {HttpRequestException} After exhausting all retries
      */
     urlFetchWithRetry(url, options) {
       for (let attempt = 1; attempt <= this.maxFetchRetries; attempt++) {
@@ -83,7 +83,7 @@ class AbstractConnector {
      * @param {string} url - The URL to fetch
      * @param {Object} options - Options for the fetch request
      * @return {HTTPResponse} The response object
-     * @throws {Error} If the request fails or returns an error status
+     * @throws {HttpRequestException} If the request fails or returns an error status
      * @private
      */
     _executeRequest(url, options) {
@@ -93,7 +93,7 @@ class AbstractConnector {
         return this._validateResponse(response);
       }
       
-      throw new Error(`Unsupported environment: ${this.config.environment}`);
+      throw new UnsupportedEnvironmentException(`Unsupported environment: ${this.config.environment}`);
     }
     
   //---- _validateResponse ------------------------------------------
@@ -101,7 +101,7 @@ class AbstractConnector {
      * Validates the HTTP response and handles error cases
      * @param {HTTPResponse} response - The HTTP response to validate
      * @return {HTTPResponse} The validated response
-     * @throws {Error} If the response indicates an error
+     * @throws {HttpRequestException} If the response indicates an error
      * @private
      */
     _validateResponse(response) {
@@ -112,11 +112,11 @@ class AbstractConnector {
       }
       
       const errorInfo = this._extractErrorInfo(response);
-      const error = new Error(errorInfo.message);
-      error.responseCode = code;
-      error.responseJson = errorInfo.json;
-      
-      throw error;
+      throw new HttpRequestException({
+        message: errorInfo.message,
+        statusCode: code,
+        payload: errorInfo.json
+      });
     }
     
   //---- _extractErrorInfo ------------------------------------------
@@ -153,7 +153,7 @@ class AbstractConnector {
   //---- _shouldRetry ----------------------------------------------
     /**
      * Determines if a retry should be attempted
-     * @param {Error} error - The error that occurred
+     * @param {HttpRequestException} error - The error that occurred
      * @param {number} attempt - The current attempt number
      * @return {boolean} Whether to retry
      * @private
@@ -199,7 +199,7 @@ class AbstractConnector {
      * This is a default implementation that always returns false
      * Connector implementations should override this method for service-specific error handling
      * 
-     * @param {Error} error - The error to check
+     * @param {HttpRequestException} error - The error to check
      * @return {boolean} True if the error should trigger a retry, false otherwise
      */
     isValidToRetry(error) {
@@ -213,12 +213,13 @@ class AbstractConnector {
     /**
      * Sleep for the specified time based on the current environment
      * @param {number} milliseconds - Time to sleep in milliseconds
+     * @throws {UnsupportedEnvironmentException} If the environment is not supported
      */
     sleep(milliseconds) {
       if (this.config.environment === AbstractConfig.ENVIRONMENT.APPS_SCRIPT) {
         Utilities.sleep(milliseconds);
       } else {
-        throw new Error(`Unsupported environment: ${this.config.environment}`);
+        throw new UnsupportedEnvironmentException(`Unsupported environment: ${this.config.environment}`);
       }
     }
     //----------------------------------------------------------------

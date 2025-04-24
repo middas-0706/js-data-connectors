@@ -45,22 +45,22 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
      * Determines if a Facebook API error is valid for retry
      * Based on Facebook error codes
      * 
-     * @param {Error} error - The error to check
+     * @param {HttpRequestException} error - The error to check
      * @return {boolean} True if the error should trigger a retry, false otherwise
      */
     isValidToRetry(error) {
       console.log(`isValidToRetry() called`);
-      console.log(`error.responseCode =`, error.responseCode);
-      console.log(`error.responseJson =`, error.responseJson);
-      if (error.responseCode && error.responseCode >= HTTP_STATUS.SERVER_ERROR_MIN) {
+      console.log(`error.statusCode =`, error.statusCode);
+      console.log(`error.payload =`, error.payload);
+      if (error.statusCode && error.statusCode >= HTTP_STATUS.SERVER_ERROR_MIN) {
         return true;
       }
 
-      if (!error.responseJson || !error.responseJson.error) {
+      if (!error.payload || !error.payload.error) {
         return false;
       }
 
-      const fbErr = error.responseJson.error;
+      const fbErr = error.payload.error;
       const code = Number(fbErr.code);
       const subcode = Number(fbErr.error_subcode);
 
@@ -70,11 +70,9 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
       console.log(`code in retry list = ${FB_RETRYABLE_ERROR_CODES.includes(code)}`);
       console.log(`subcode in retry list = ${FB_RETRYABLE_ERROR_CODES.includes(subcode)}`);
 
-      const result = fbErr.is_transient === true
-                  || FB_RETRYABLE_ERROR_CODES.includes(code)
-                  || FB_RETRYABLE_ERROR_CODES.includes(subcode);
-
-      return result;
+      return fbErr.is_transient === true
+             || FB_RETRYABLE_ERROR_CODES.includes(code)
+             || FB_RETRYABLE_ERROR_CODES.includes(subcode);
     }
   
   //---- fetchData -------------------------------------------------

@@ -6,12 +6,6 @@
  */
 
 class AbstractConfig {
-  //---- static constants --------------------------------------------
-  static ENVIRONMENT = {
-    UNKNOWN: 1,
-    APPS_SCRIPT: 2,
-  };
-  
   //---- constructor -------------------------------------------------
     /**
      * @param (object) with config data. Properties are parameters names, values are values
@@ -32,14 +26,14 @@ class AbstractConfig {
   //---- static helper -------------------------------------------------
     /**
      * Determines the runtime environment
-     * @returns {AbstractConfig.ENVIRONMENT} The detected environment
+     * @returns {ENVIRONMENT} The detected environment
      */
     static detectEnvironment() {
       if (typeof UrlFetchApp !== 'undefined') {
-        return AbstractConfig.ENVIRONMENT.APPS_SCRIPT;
+        return ENVIRONMENT.APPS_SCRIPT;
       }
 
-      return AbstractConfig.ENVIRONMENT.UNKNOWN;
+      return ENVIRONMENT.UNKNOWN;
     }
 
 

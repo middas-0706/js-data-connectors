@@ -11,15 +11,16 @@ class AbstractConfig {
      * @param (object) with config data. Properties are parameters names, values are values
      */
     constructor(configData) {
-
-      this.environment = AbstractConfig.detectEnvironment();
+      this.addParameter('Environment*', {
+        value: AbstractConfig.detectEnvironment(),
+        requiredType: "number"
+      });
 
       for(var name in configData) {
         this.addParameter(name, configData[name]);
       };
 
       return this;
-
     }
     //----------------------------------------------------------------
 

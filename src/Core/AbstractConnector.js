@@ -87,13 +87,13 @@ class AbstractConnector {
      * @private
      */
     _executeRequest(url, options) {
-      if (this.config.environment === ENVIRONMENT.APPS_SCRIPT) {
+      if (this.config.Environment.value === ENVIRONMENT.APPS_SCRIPT) {
         const response = UrlFetchApp.fetch(url, { ...options, muteHttpExceptions: true });
         
         return this._validateResponse(response);
       }
       
-      throw new UnsupportedEnvironmentException(`Unsupported environment: ${this.config.environment}`);
+      throw new UnsupportedEnvironmentException(`Unsupported environment: ${this.config.Environment.value}`);
     }
     
   //---- _validateResponse ------------------------------------------
@@ -216,10 +216,10 @@ class AbstractConnector {
      * @throws {UnsupportedEnvironmentException} If the environment is not supported
      */
     sleep(milliseconds) {
-      if (this.config.environment === ENVIRONMENT.APPS_SCRIPT) {
+      if (this.config.Environment.value === ENVIRONMENT.APPS_SCRIPT) {
         Utilities.sleep(milliseconds);
       } else {
-        throw new UnsupportedEnvironmentException(`Unsupported environment: ${this.config.environment}`);
+        throw new UnsupportedEnvironmentException(`Unsupported environment: ${this.config.Environment.value}`);
       }
     }
     //----------------------------------------------------------------

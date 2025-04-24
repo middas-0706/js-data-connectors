@@ -111,20 +111,20 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
           break;
   
         case 'ad-account/ads':
-          url += `act_${accountId}/ads?limit=100&time_range=${timeRange}`;
+          url += `act_${accountId}/ads?time_range=${timeRange}&limit=${this.fieldsSchema[nodeName].limit}`;
           break;
   
         case 'ad-account/adcreatives':
-          url += `act_${accountId}/adcreatives?limit=100&fields=${fields.join(",")}`;
+          url += `act_${accountId}/adcreatives?fields=${fields.join(",")}&limit=${this.fieldsSchema[nodeName].limit}`;
           break;
   
         case 'ad-account/insights':
-          url += `act_${accountId}/insights?level=ad&period=day&time_range=${timeRange}&fields=${fields.join(",")}`;
+          url += `act_${accountId}/insights?level=ad&period=day&time_range=${timeRange}&fields=${fields.join(",")}&limit=${this.fieldsSchema[nodeName].limit}`;
           break;
           // ad, adset, campaign, account
   
         case 'ad-group':
-          url += `act_${accountId}/ads?&time_range=${timeRange}&fields=${fields.join(",")}`;
+          url += `act_${accountId}/ads?&time_range=${timeRange}&fields=${fields.join(",")}&limit=${this.fieldsSchema[nodeName].limit}`;
           break;
   
         default:

@@ -19,9 +19,16 @@ class AbstractConnector {
         throw new Error(`Unable to create an ${this.constructor.name} object. The first parameter must be inheritance of AbstractConfig class`)
       } 
 
-      this.config = config;
-      this.maxFetchRetries = 3;
-      this.initialRetryDelay = 5000;
+      this.config = config.mergeParameters({
+        MaxFetchRetries: {
+          requiredType: "number",
+          default: 3
+        },
+        InitialRetryDelay: {
+          requiredType: "number",
+          default: 5000
+        }
+      });
     }
     //----------------------------------------------------------------
 
@@ -63,7 +70,7 @@ class AbstractConnector {
      * @throws {HttpRequestException} After exhausting all retries
      */
     urlFetchWithRetry(url, options) {
-      for (let attempt = 1; attempt <= this.maxFetchRetries; attempt++) {
+      for (let attempt = 1; attempt <= this.config.MaxFetchRetries.value; attempt++) {
         try {
           return this._executeRequest(url, options);
         }
@@ -159,8 +166,8 @@ class AbstractConnector {
      * @private
      */
     _shouldRetry(error, attempt) {
-      if (attempt >= this.maxFetchRetries) {
-        console.log(`Maximum retry attempts (${this.maxFetchRetries}) reached.`);
+      if (attempt >= this.config.MaxFetchRetries.value) {
+        console.log(`Maximum retry attempts (${this.config.MaxFetchRetries.value}) reached.`);
         return false;
       }
       
@@ -189,7 +196,7 @@ class AbstractConnector {
      * @return {number} Delay in milliseconds
      */
     calculateBackoff(attemptNumber) {
-      return this.initialRetryDelay * Math.pow(2, attemptNumber - 1) * (0.5 + Math.random());
+      return this.config.InitialRetryDelay.value * Math.pow(2, attemptNumber - 1) * (0.5 + Math.random());
     }
     //----------------------------------------------------------------
 

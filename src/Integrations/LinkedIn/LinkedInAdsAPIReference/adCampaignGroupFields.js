@@ -20,7 +20,8 @@ var adCampaignGroupFields = {
   },
   'id': {
     'description': 'Numerical identifier for the campaign group. This is a read-only field set by the system.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'name': {
     'description': 'The name of the campaign group used to make it easier to reference a campaign group and recall its purpose. The value of this field cannot exceed 100 characters.',
@@ -60,6 +61,7 @@ var adCampaignGroupFields = {
   },
   'dailyBudget': {
     'description': 'Daily budget for the campaign group and will be shared among all campaigns within the campaign group. This field is optional and mutable. It can only be used if budgetOptimization.budgetOptimizationStrategy is DYNAMIC Note: This field applies to API Versions starting from 202504 and later.',
-    'type': 'number'
+    'type': 'number',
+    'GoogleBigQueryType': 'numeric'
   }
 } 

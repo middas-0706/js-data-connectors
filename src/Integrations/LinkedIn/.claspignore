@@ -1,6 +1,6 @@
 **/**
-!Integrations/LinkedInAds/*.js
-!Integrations/LinkedInAds/**/*.js
+!Integrations/LinkedIn/*.js
+!Integrations/LinkedIn/**/*.js
 !appsscript.json
 !Core/Abstract*.js
 !Core/*Storage.js

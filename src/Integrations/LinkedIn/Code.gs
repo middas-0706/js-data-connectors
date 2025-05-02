@@ -13,9 +13,9 @@ function onOpen() {
 function importNewData() {
   const config = new OWOX.GoogleSheetsConfig(CONFIG_RANGE);
   const properties = PropertiesService.getDocumentProperties().getProperties();
-  const connector = new OWOX.LinkedInAdsConnector(config.setParametersValues(properties));
+  const connector = new OWOX.LinkedInConnector(config.setParametersValues(properties));
 
-  const pipeline = new OWOX.LinkedInAdsPipeline(
+  const pipeline = new OWOX.LinkedInPipeline(
     config,
     connector,
     "GoogleBigQueryStorage"
@@ -28,7 +28,7 @@ function updateFieldsSheet() {
   const config = new OWOX.GoogleSheetsConfig( CONFIG_RANGE );
 
   config.updateFieldsSheet(
-    new OWOX.LinkedInAdsConnector( config.setParametersValues( {"AccessToken": "undefined", "Fields": "undefined"} ))
+    new OWOX.LinkedInConnector( config.setParametersValues( {"AccessToken": "undefined", "Fields": "undefined"} ))
   );
 }
 

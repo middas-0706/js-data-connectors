@@ -16,6 +16,10 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
         requiredType: "string",
         default: "Ads"
       },
+      Version: {
+        requiredType: "string",
+        default: "202504"
+      },
       ReimportLookbackWindow: {
         requiredType: "number",
         isRequired: true,
@@ -36,9 +40,9 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
     }));
     
     // Determine which API type to use based on configuration
-    if (config.hasParameter('ApiType')) {
+    if (this.config.ApiType && this.config.ApiType.value) {
       this.apiType = this.config.ApiType.value;
-    } else if (config.hasParameter('AccountURNs') && config.AccountURNs.value) {
+    } else if (this.config.AccountURNs && this.config.AccountURNs.value) {
       this.apiType = "Ads";
     } else {
       throw new Error("Configuration must include either ApiType, AccountURNs for LinkedIn Ads or organizationalEntity for LinkedIn Pages");

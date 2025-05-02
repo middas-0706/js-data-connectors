@@ -5,7 +5,7 @@
  * file that was distributed with this source code.
  */
 
-var LinkedAdsPipeline = class LinkedAdsPipeline extends AbstractPipeline {
+var LinkedInAdsPipeline = class LinkedInAdsPipeline extends AbstractPipeline {
   constructor(config, connector, storageName = "GoogleSheetsStorage") {
     super(config.mergeParameters({
       StartDate: { isRequired: true, requiredType: "date" },
@@ -37,7 +37,7 @@ var LinkedAdsPipeline = class LinkedAdsPipeline extends AbstractPipeline {
     return parseInt(accountId);
   }
 
-  process() {
+  startImportProcess() {
     const accountUrns = String(this.config.AccountURNs.value)
       .split(/[,;]\s*/)
       .map(id => this.formatAccountUrn(id.trim()));
@@ -50,29 +50,77 @@ var LinkedAdsPipeline = class LinkedAdsPipeline extends AbstractPipeline {
 
     console.log('Fields:', fields);
 
+    let timeSeriesNodes = {};
+    
+    // Separate time series nodes from catalog nodes
     for (const nodeName in fields) {
-      console.log(`Starting processing for node: ${nodeName}`);
+      if (nodeName === 'adAnalytics') {
+        timeSeriesNodes[nodeName] = fields[nodeName];
+      } else {
+        this.startImportProcessOfCatalogData(nodeName, accountUrns, fields[nodeName]);
+      }
+    }
+
+    // Process time series nodes if any
+    if (Object.keys(timeSeriesNodes).length > 0) {
+      let [startDate, daysToFetch] = this.getStartDateAndDaysToFetch();
+      if (daysToFetch > 0) {
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + daysToFetch - 1);
+        this.startImportProcessOfTimeSeriesData(accountUrns, timeSeriesNodes, startDate, endDate);
+      }
+    }
+  }
+
+  startImportProcessOfCatalogData(nodeName, accountUrns, fields) {
+    console.log(`Starting processing for catalog node: ${nodeName}`);
+    
+    for (const accountUrn of accountUrns) {
+      console.log(`Processing ${nodeName} for account ${accountUrn}`);
       
-      for (const accountUrn of accountUrns) {
-        console.log(`Processing ${nodeName} for account ${accountUrn}`);
+      let params = {
+        fields: fields
+      };
+      
+      console.log(`Fetching data for ${nodeName} with params:`, params);
+      const data = this.connector.fetchData(nodeName, accountUrn, params);
+      console.log(`Fetched ${data.length} rows for ${nodeName}`);
+      
+      if (data.length) {
+        this.config.logMessage(`${data.length} rows of ${nodeName} were fetched for account ${accountUrn}`);
+        
+        console.log(`Getting storage for ${nodeName}`);
+        const storage = this.getStorageByNode(nodeName);
+        console.log(`Storage obtained for ${nodeName}`);
+        
+        console.log(`Saving data to storage for ${nodeName}`);
+        storage.saveData(data);
+        console.log(`Data saved successfully for ${nodeName}`);
+      } else {
+        console.log(`No data fetched for ${nodeName} and account ${accountUrn}`);
+      }
+    }
+  }
+
+  startImportProcessOfTimeSeriesData(accountUrns, timeSeriesNodes, startDate, endDate) {
+    console.log('Processing time series data from', startDate, 'to', endDate);
+    
+    for (const accountUrn of accountUrns) {
+      for (const nodeName in timeSeriesNodes) {
+        console.log(`Processing ${nodeName} for account ${accountUrn} from ${startDate} to ${endDate}`);
         
         let params = {
-          fields: fields[nodeName]
+          fields: timeSeriesNodes[nodeName],
+          startDate: startDate,
+          endDate: endDate
         };
-
-        // Add date range for adAnalytics
-        if (nodeName === 'adAnalytics') {
-          const endDate = this.config.EndDate.value || new Date();
-          params.startDate = this.config.StartDate.value;
-          params.endDate = endDate;
-        }
         
         console.log(`Fetching data for ${nodeName} with params:`, params);
         const data = this.connector.fetchData(nodeName, accountUrn, params);
         console.log(`Fetched ${data.length} rows for ${nodeName}`);
         
         if (data.length) {
-          this.config.logMessage(`${data.length} rows of ${nodeName} were fetched for account ${accountUrn}`);
+          this.config.logMessage(`${data.length} rows of ${nodeName} were fetched for account ${accountUrn} from ${startDate} to ${endDate}`);
           
           console.log(`Getting storage for ${nodeName}`);
           const storage = this.getStorageByNode(nodeName);
@@ -82,10 +130,13 @@ var LinkedAdsPipeline = class LinkedAdsPipeline extends AbstractPipeline {
           storage.saveData(data);
           console.log(`Data saved successfully for ${nodeName}`);
         } else {
-          console.log(`No data fetched for ${nodeName} and account ${accountUrn}`);
+          console.log(`No data fetched for ${nodeName} and account ${accountUrn} from ${startDate} to ${endDate}`);
         }
       }
     }
+
+    // Update LastRequestedDate to the end date
+    this.config.updateLastRequstedDate(endDate);
   }
 
   getStorageByNode(nodeName) {

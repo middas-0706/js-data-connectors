@@ -5,7 +5,7 @@
  * file that was distributed with this source code.
  */
 
-var LinkedAdsConnector = class LinkedAdsConnector extends AbstractConnector {
+var LinkedInAdsConnector = class LinkedInAdsConnector extends AbstractConnector {
   constructor(config) {
     super(config.mergeParameters({
       AccessToken:   { isRequired: true, requiredType: "string" },
@@ -15,7 +15,7 @@ var LinkedAdsConnector = class LinkedAdsConnector extends AbstractConnector {
       Granularity:   { default: "DAILY" },
       Version:       { default: "202501" }
     }));
-    this.fieldsSchema = LinkedInMarketingFieldsSchema;
+    this.fieldsSchema = LinkedInAdsFieldsSchema;
   }
 
   fetchData(nodeName, urn, params = {}) {
@@ -145,8 +145,7 @@ var LinkedAdsConnector = class LinkedAdsConnector extends AbstractConnector {
           if (!acc[key]) {
             acc[key] = {
               dateRange: item.dateRange,
-              creativeUrn: creative,
-              campaignUrn: campaign
+              pivotValues: item.pivotValues
             };
           }
           
@@ -202,4 +201,3 @@ var LinkedAdsConnector = class LinkedAdsConnector extends AbstractConnector {
     return all;
   }
 };
-

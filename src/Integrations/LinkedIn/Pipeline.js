@@ -16,34 +16,47 @@ var LinkedInPipeline = class LinkedInPipeline extends AbstractPipeline {
     this.storageName = storageName;
   }
 
-  // Main method - entry point
+  /**
+   * Main method - entry point for the import process
+   * Processes all nodes defined in the fields configuration
+   */
   startImportProcess() {
     const apiType = this.connector.apiType;
     const fields = LinkedInHelper.parseFields(this.config.Fields.value);
     console.log('Fields:', fields);
     
-    if (apiType === "Ads") {
-      this.startAdsImportProcess(fields);
-    } else {
-      throw new Error("Unknown API type: " + apiType);
-    }
-  }
-  
-  // LinkedIn Ads API import process
-  startAdsImportProcess(fields) {
-    const accountUrns = LinkedInHelper.parseAccountUrns(this.config.AccountURNs.value);
+    const urns = this.determineUrns(apiType);
     
     for (const nodeName in fields) {
       this.processNode({
         nodeName,
-        accountUrns,
+        urns,
         fields: fields[nodeName]
       });
     }
   }
+  
+  /**
+   * Determine URNs based on API type
+   * @param {string} apiType - Type of API (e.g., "Ads")
+   * @returns {Array} - Array of URNs to process
+   */
+  determineUrns(apiType) {
+    if (apiType === "Ads") {
+      return LinkedInHelper.parseAccountUrns(this.config.AccountURNs.value);
+    } else {
+      throw new Error("Unknown API type: " + apiType);
+    }
+  }
 
-  // Core business logic methods
-  processNode({ nodeName, accountUrns, fields }) {
+  /**
+   * Process a specific node (data entity)
+   * @param {Object} options - Processing options
+   * @param {string} options.nodeName - Name of the node to process
+   * @param {Array} options.urns - URNs to process
+   * @param {Array} options.fields - Fields to fetch
+   */
+  processNode({ nodeName, urns, fields }) {
     const isTimeSeriesNode = this.isTimeSeriesNode(nodeName);
     const dateInfo = this.prepareDateRangeIfNeeded(nodeName, isTimeSeriesNode);
     
@@ -53,7 +66,7 @@ var LinkedInPipeline = class LinkedInPipeline extends AbstractPipeline {
     
     this.fetchAndSaveData({
       nodeName, 
-      accountUrns, 
+      urns, 
       fields, 
       isTimeSeriesNode,
       ...dateInfo
@@ -65,44 +78,56 @@ var LinkedInPipeline = class LinkedInPipeline extends AbstractPipeline {
     }
   }
   
-  fetchAndSaveData({ nodeName, accountUrns, fields, isTimeSeriesNode, startDate, endDate }) {
-    for (const accountUrn of accountUrns) {
-      console.log(`Processing ${nodeName} for account ${accountUrn}${isTimeSeriesNode ? ` from ${startDate} to ${endDate}` : ''}`);
+  /**
+   * Fetch and save data for a node
+   * @param {Object} options - Fetch options
+   * @param {string} options.nodeName - Name of the node to process
+   * @param {Array} options.urns - URNs to process
+   * @param {Array} options.fields - Fields to fetch
+   * @param {boolean} options.isTimeSeriesNode - Whether node is time series
+   * @param {string} [options.startDate] - Start date for time series data
+   * @param {string} [options.endDate] - End date for time series data
+   */
+  fetchAndSaveData({ nodeName, urns, fields, isTimeSeriesNode, startDate, endDate }) {
+    for (const urn of urns) {
+      console.log(`Processing ${nodeName} for ${urn}${isTimeSeriesNode ? ` from ${startDate} to ${endDate}` : ''}`);
       
-      const params = this.prepareRequestParams(fields, isTimeSeriesNode, startDate, endDate);
-      const data = this.fetchData(nodeName, accountUrn, params);
+      const params = this.prepareRequestParams({ fields, isTimeSeriesNode, startDate, endDate });
+      const data = this.connector.fetchData(nodeName, urn, params);
+      console.log(`Fetched ${data.length} rows for ${nodeName}`);
       
       this.saveDataToStorage({ 
         nodeName, 
-        accountUrn, 
+        urn, 
         data, 
         ...(isTimeSeriesNode && { startDate, endDate })
       });
     }
   }
 
-  // Data fetching and storage methods
-  fetchData(nodeName, accountUrn, params) {
-    console.log(`Fetching data for ${nodeName} with params:`, params);
-    const data = this.connector.fetchData(nodeName, accountUrn, params);
-    console.log(`Fetched ${data.length} rows for ${nodeName}`);
-    return data;
-  }
-
-  saveDataToStorage({ nodeName, accountUrn, data, startDate, endDate }) {
+  /**
+   * Save fetched data to storage
+   * @param {Object} options - Storage options
+   * @param {string} options.nodeName - Name of the node
+   * @param {string} options.urn - URN of the processed entity
+   * @param {Array} options.data - Data to save
+   * @param {string} [options.startDate] - Start date for time series data
+   * @param {string} [options.endDate] - End date for time series data
+   */
+  saveDataToStorage({ nodeName, urn, data, startDate, endDate }) {
     if (data.length) {
-      const message = endDate 
-        ? `${data.length} rows of ${nodeName} were fetched for account ${accountUrn} from ${startDate} to ${endDate}`
-        : `${data.length} rows of ${nodeName} were fetched for account ${accountUrn}`;
-      
-      this.config.logMessage(message);
-      const storage = this.getStorageByNode(nodeName);
-      storage.saveData(data);
+      this.config.logMessage(`${data.length} rows of ${nodeName} were fetched for ${urn}${endDate ? ` from ${startDate} to ${endDate}` : ''}`);
+      this.getStorageByNode(nodeName).saveData(data);
     } else {
-      console.log(`No data fetched for ${nodeName} and account ${accountUrn}${endDate ? ` from ${startDate} to ${endDate}` : ''}`);
+      this.config.logMessage(`No data fetched for ${nodeName} and ${urn}${endDate ? ` from ${startDate} to ${endDate}` : ''}`);
     }
   }
 
+  /**
+   * Get or create storage instance for a node
+   * @param {string} nodeName - Name of the node
+   * @returns {Object} - Storage instance
+   */
   getStorageByNode(nodeName) {
     // initiate blank object for storages
     if (!("storages" in this)) {
@@ -130,8 +155,16 @@ var LinkedInPipeline = class LinkedInPipeline extends AbstractPipeline {
     return this.storages[nodeName];
   }
 
-  // Parameter preparation methods
-  prepareRequestParams(fields, isTimeSeriesNode, startDate, endDate) {
+  /**
+   * Prepare request parameters
+   * @param {Object} options - Parameter options
+   * @param {Array} options.fields - Fields to fetch
+   * @param {boolean} options.isTimeSeriesNode - Whether node is time series
+   * @param {string} [options.startDate] - Start date for time series data
+   * @param {string} [options.endDate] - End date for time series data
+   * @returns {Object} - Prepared parameters
+   */
+  prepareRequestParams({ fields, isTimeSeriesNode, startDate, endDate }) {
     const params = { fields };
     
     if (isTimeSeriesNode) {
@@ -142,6 +175,12 @@ var LinkedInPipeline = class LinkedInPipeline extends AbstractPipeline {
     return params;
   }
   
+  /**
+   * Prepare date range for time series nodes
+   * @param {string} nodeName - Name of the node
+   * @param {boolean} isTimeSeriesNode - Whether node is time series
+   * @returns {Object|null} - Date range object or null if skipped
+   */
   prepareDateRangeIfNeeded(nodeName, isTimeSeriesNode) {
     if (!isTimeSeriesNode) {
       return null;
@@ -160,6 +199,11 @@ var LinkedInPipeline = class LinkedInPipeline extends AbstractPipeline {
     return { startDate, endDate };
   }
 
+  /**
+   * Check if a node is a time series node
+   * @param {string} nodeName - Name of the node
+   * @returns {boolean} - Whether the node is a time series node
+   */
   isTimeSeriesNode(nodeName) {
     return this.connector.fieldsSchema[nodeName] && 
            this.connector.fieldsSchema[nodeName].isTimeSeries === true;

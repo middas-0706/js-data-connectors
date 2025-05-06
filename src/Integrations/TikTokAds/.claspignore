@@ -1,0 +1,8 @@
+**/**
+!Integrations/TikTokAds/*.js
+!appsscript.json
+!Core/Abstract*.js
+!Core/*Storage.js
+!Core/GoogleSheets*.js
+!Core/Exceptions.js
+!Constants/*.js

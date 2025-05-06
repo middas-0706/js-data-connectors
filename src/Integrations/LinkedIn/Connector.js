@@ -13,8 +13,8 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
         requiredType: "string"
       },
       ApiType: {
-        requiredType: "string",
-        default: "Ads"
+        requiredType: "number",
+        default: LinkedInApiTypes.ADS
       },
       Version: {
         requiredType: "string",
@@ -36,12 +36,15 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
       BaseUrl: {
         requiredType: "string",
         default: "https://api.linkedin.com/rest/"
-      }
+      },
+      StartDate: {
+        requiredType: "date",
+        default: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+      },
     }));
     
-    // Determine API type and setup connector
-    if (this.config.AccountURNs && this.config.AccountURNs.value) {
-      this.apiType = "Ads";
+    if (this.config.AccountURNs) {
+      this.apiType = LinkedInApiTypes.ADS;
       this.fieldsSchema = LinkedInAdsFieldsSchema;
       this.config = this.config.mergeParameters({
         AccountURNs: {
@@ -56,8 +59,8 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
           default: 20
         }
       });
-    } else if (this.config.OrganizationURNs && this.config.OrganizationURNs.value) {
-      this.apiType = "Pages";
+    } else if (this.config.OrganizationURNs) {
+      this.apiType = LinkedInApiTypes.PAGES;
       this.fieldsSchema = LinkedInPagesFieldsSchema;
       this.config = this.config.mergeParameters({
         OrganizationURNs: {
@@ -81,9 +84,9 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
    */
   fetchData(nodeName, urn, params = {}) {
     switch (this.apiType) {
-      case "Ads":
+      case LinkedInApiTypes.ADS:
         return this.fetchAdsData(nodeName, urn, params);
-      case "Pages":
+      case LinkedInApiTypes.PAGES:
         return this.fetchPagesData(nodeName, urn, params);
       default:
         throw new Error(`API type ${this.apiType} is not supported`);
@@ -122,96 +125,109 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
    * @returns {Array} - Array of processed data objects
    */
   fetchPagesData(nodeName, urn, params = {}) {
-    // Always format the URN as a string for API requests
-    const orgUrn = `urn:li:organization:${urn}`;
     switch (nodeName) {
       case "follower_statistics":
-        return this.fetchFollowerStatistics(orgUrn, params);
+        return this.fetchOrganizationStats({
+          urn, 
+          nodeName,
+          endpoint: "organizationalEntityFollowerStatistics",
+          entityParam: "organizationalEntity",
+          formatter: this.transformFollowerStatistics.bind(this),
+          ...params
+        });
       case "follower_statistics_time_bound":
-        return this.fetchFollowerStatisticsTimeBound(orgUrn, params);
+        return this.fetchOrganizationStats({
+          urn, 
+          nodeName,
+          endpoint: "organizationalEntityFollowerStatistics",
+          entityParam: "organizationalEntity",
+          formatter: this.transformFollowerStatisticsTimeBound.bind(this),
+          ...params
+        });
       default:
         throw new Error(`Unknown node: ${nodeName}`);
     }
   }
 
   /**
-   * Fetch lifetime follower statistics for an organization
-   * @param {string|number} urn - Organization ID (numeric or URN)
-   * @param {Object} params - Additional parameters for the request
-   * @returns {Array} - Processed follower statistics data
+   * Fetch organization statistics from LinkedIn Pages API
+   * @param {Object} options - Options for the request
+   * @param {string|number} options.urn - Organization ID (numeric)
+   * @param {string} options.nodeName - The node name from the schema
+   * @param {string} options.endpoint - API endpoint name
+   * @param {string} options.entityParam - Parameter name for the organization URN
+   * @param {Function} options.formatter - Function to format the response data
+   * @param {Date} [options.startDate] - Start date for time-bound data
+   * @param {Date} [options.endDate] - End date for time-bound data
+   * @returns {Array} - Processed statistics data
    */
-  fetchFollowerStatistics(urn, params = {}) {
-    // Ensure urn is a full URN string
-    const orgUrn = urn.toString().startsWith('urn:li:organization:') ? urn : `urn:li:organization:${urn}`;
+  fetchOrganizationStats(options) {
+    const { urn, nodeName, endpoint, entityParam, formatter, startDate, endDate } = options;
+    const orgUrn = `urn:li:organization:${urn}`;
     const encodedUrn = encodeURIComponent(orgUrn);
-    const url = `${this.config.BaseUrl.value}organizationalEntityFollowerStatistics?q=organizationalEntity&organizationalEntity=${encodedUrn}`;
+    
+    let url = `${this.config.BaseUrl.value}${endpoint}?q=${entityParam}&${entityParam}=${encodedUrn}`;
+    
+    const isTimeSeries = this.fieldsSchema[nodeName].isTimeSeries;
+    
+    if (isTimeSeries && startDate && endDate) {
+      const startTimestamp = new Date(startDate).getTime();
+      const endTimestamp = new Date(endDate).getTime();
+      url += `&timeIntervals=(timeRange:(start:${startTimestamp},end:${endTimestamp}),timeGranularityType:DAY)`;
+    }
     
     const response = this.makeRequest(url);
     const elements = response.elements || [];
     
-    // Transform the follower statistics into the denormalized format
-    return this.transformFollowerStatistics(elements, orgUrn);
-  }
-
-  /**
-   * Fetch time-bound follower statistics for an organization
-   * @param {string|number} urn - Organization ID (numeric or URN)
-   * @param {Object} params - Additional parameters for the request
-   * @param {Date} params.startDate - Start date for statistics
-   * @param {Date} params.endDate - End date for statistics
-   * @returns {Array} - Processed time-bound follower statistics data
-   */
-  fetchFollowerStatisticsTimeBound(urn, params = {}) {
-    // Ensure urn is a full URN string
-    const orgUrn = urn.toString().startsWith('urn:li:organization:') ? urn : `urn:li:organization:${urn}`;
-    const encodedUrn = encodeURIComponent(orgUrn);
-    
-    // Convert dates to timestamps
-    const startTimestamp = new Date(params.startDate).getTime();
-    const endTimestamp = new Date(params.endDate).getTime();
-    
-    // Build URL with timeIntervals parameters
-    const url = `${this.config.BaseUrl.value}organizationalEntityFollowerStatistics?` +
-      `q=organizationalEntity&organizationalEntity=${encodedUrn}` +
-      `&timeIntervals=(timeRange:(start:${startTimestamp},end:${endTimestamp}),timeGranularityType:DAY)`;
-    
-    const response = this.makeRequest(url);
-    const elements = response.elements || [];
-    
-    return elements.map(element => {
-      return {
-        organization_urn: element.organizationalEntity,
-        timeRange_start: element.timeRange.start,
-        timeRange_end: element.timeRange.end,
-        organicFollowerGain: element.followerGains?.organicFollowerGain || 0,
-        paidFollowerGain: element.followerGains?.paidFollowerGain || 0,
-        followerCountsByAssociationType: element.followerCountsByAssociationType || [],
-        followerCountsBySeniority: element.followerCountsBySeniority || [],
-        followerCountsByIndustry: element.followerCountsByIndustry || [],
-        followerCountsByFunction: element.followerCountsByFunction || [],
-        followerCountsByStaffCountRange: element.followerCountsByStaffCountRange || [],
-        followerCountsByGeoCountry: element.followerCountsByGeoCountry || [],
-        followerCountsByGeo: element.followerCountsByGeo || []
-      };
-    });
-  }
-
-  /**
-   * Transform follower statistics into a denormalized format
-   * @param {Array} elements - Response elements from the API
-   * @param {string} urn - Organization URN
-   * @returns {Array} - Denormalized follower statistics
-   */
-  transformFollowerStatistics(elements, urn) {
-    if (!elements || elements.length === 0) {
+    if (elements.length === 0) {
       return [];
     }
     
+    return formatter({
+      elements,
+      orgUrn,
+      options
+    });
+  }
+  
+  /**
+   * Process time-bound statistics data
+   * @param {Object} params - Parameters object
+   * @param {Array} params.elements - API response elements
+   * @param {string} params.orgUrn - Organization URN
+   * @param {Object} params.options - Original options passed to fetchOrganizationStats
+   * @returns {Array} - Processed time-bound statistics
+   */
+  transformFollowerStatisticsTimeBound({ elements }) {
+    return elements.map(element => ({
+      organization_urn: element.organizationalEntity,
+      time_range_start: element.timeRange.start,
+      time_range_end: element.timeRange.end,
+      organic_follower_gain: element.followerGains?.organicFollowerGain || 0,
+      paid_follower_gain: element.followerGains?.paidFollowerGain || 0,
+      follower_counts_by_association_type: element.followerCountsByAssociationType || [],
+      follower_counts_by_seniority: element.followerCountsBySeniority || [],
+      follower_counts_by_industry: element.followerCountsByIndustry || [],
+      follower_counts_by_function: element.followerCountsByFunction || [],
+      follower_counts_by_staff_count_range: element.followerCountsByStaffCountRange || [],
+      follower_counts_by_geo_country: element.followerCountsByGeoCountry || [],
+      follower_counts_by_geo: element.followerCountsByGeo || []
+    }));
+  }
+  
+  /**
+   * Transform follower statistics into a denormalized format
+   * @param {Object} params - Parameters object
+   * @param {Array} params.elements - Response elements from the API
+   * @param {string} params.orgUrn - Organization URN
+   * @param {Object} params.options - Original options passed to fetchOrganizationStats
+   * @returns {Array} - Denormalized follower statistics
+   */
+  transformFollowerStatistics({ elements, orgUrn }) {
     const results = [];
-    const element = elements[0]; // There should be only one element
-    const organizationUrn = element.organizationalEntity || urn;
+    const element = elements[0];
+    const organizationUrn = element.organizationalEntity || orgUrn;
     
-    // Process each category type
     const categoryTypes = [
       { type: 'followerCountsByAssociationType', segmentName: 'associationType' },
       { type: 'followerCountsBySeniority', segmentName: 'seniority' },
@@ -229,7 +245,7 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
           organization_urn: organizationUrn,
           category_type: category.type,
           segment_name: category.segmentName,
-          segment_value: item[category.segmentName] || item.geo,
+          segment_value: item[category.segmentName],
           organic_follower_count: item.followerCounts?.organicFollowerCount || 0,
           paid_follower_count: item.followerCounts?.paidFollowerCount || 0
         });
@@ -443,9 +459,9 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
       } else {
         // If no matching element exists, add the new element to the results
         mergedResults.push(newElem);
-        }
-      });
-      
+      }
+    });
+    
     return mergedResults;
   }
 };

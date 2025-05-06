@@ -8,19 +8,16 @@
 var LinkedInHelper = {
   /**
    * Universal URN formatter: extracts numeric ID from URN or returns number if already numeric
-   * @param {string|number} idOrUrn - ID or URN
+   * @param {string|number} urn
    * @param {Object} options
    * @param {string} options.prefix - URN prefix, e.g. 'urn:li:organization:'
    * @return {number} Numeric ID
    */
-  formatUrn: function(idOrUrn, {prefix}) {
-    if (!isNaN(idOrUrn)) {
-      return parseInt(idOrUrn);
+  formatUrn: function(urn, {prefix}) {
+    if (typeof urn === 'string' && urn.startsWith(prefix)) {
+      return parseInt(urn.replace(prefix, ''));
     }
-    if (typeof idOrUrn === 'string' && idOrUrn.startsWith(prefix)) {
-      return parseInt(idOrUrn.replace(prefix, ''));
-    }
-    return parseInt(idOrUrn);
+    return parseInt(urn);
   },
 
   /**
@@ -33,7 +30,7 @@ var LinkedInHelper = {
   parseUrns: function(urnsString, {prefix}) {
     return String(urnsString)
       .split(/[,;]\s*/)
-      .map(id => this.formatUrn(id.trim(), {prefix}));
+      .map(urn => this.formatUrn(urn.trim(), {prefix}));
   },
 
   /**
@@ -47,6 +44,20 @@ var LinkedInHelper = {
       (acc[key] = acc[key] || []).push(value.trim());
       return acc;
     }, {});
+  },
+  
+  /**
+   * Parse data sources string into an object with source names as keys
+   * @param {string} sourcesString - Comma/semicolon separated list of data source names
+   * @return {Object} Object with data source names as keys and null as values
+   */
+  parseDataSources: function(sourcesString) {
+    return String(sourcesString)
+      .split(/[,;]\s*/)
+      .reduce((obj, name) => {
+        obj[name.trim()] = null;
+        return obj;
+      }, {});
   },
   
   /**

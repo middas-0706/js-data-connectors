@@ -24,42 +24,30 @@ var LinkedInPipeline = class LinkedInPipeline extends AbstractPipeline {
     const apiType = this.connector.apiType;
     const { urns, dataSources } = this.determineApiResources(apiType);
     
-    if (apiType === "Ads") {
-      for (const nodeName in dataSources) {
-        this.processNode({
-          nodeName,
-          urns,
-          fields: dataSources[nodeName]
-        });
-      }
-    } else if (apiType === "Pages") {
-      for (const nodeName of dataSources) {
-        this.processNode({
-          nodeName,
-          urns,
-          fields: []
-        });
-      }
-    } else {
-      throw new Error("Unknown API type: " + apiType);
+    for (const nodeName in dataSources) {
+      this.processNode({
+        nodeName,
+        urns,
+        fields: dataSources[nodeName] || []
+      });
     }
   }
   
   /**
    * Determine API resources (URNs and fields/tables) based on API type
-   * @param {string} apiType - Type of API ("Ads" or "Pages")
+   * @param {string} apiType - Type of API (LinkedInApiTypes.ADS or LinkedInApiTypes.PAGES)
    * @returns {Object} - Object containing URNs and data sources (fields for Ads, tables for Pages)
    */
   determineApiResources(apiType) {
-    if (apiType === "Ads") {
+    if (apiType === LinkedInApiTypes.ADS) {
       return {
         urns: LinkedInHelper.parseUrns(this.config.AccountURNs.value, {prefix: 'urn:li:sponsoredAccount:'}),
         dataSources: LinkedInHelper.parseFields(this.config.Fields.value)
       };
-    } else if (apiType === "Pages") {
+    } else if (apiType === LinkedInApiTypes.PAGES) {
       return {
         urns: LinkedInHelper.parseUrns(this.config.OrganizationURNs.value, {prefix: 'urn:li:organization:'}),
-        dataSources: this.config.DataSources.value.split(',').map(name => name.trim())
+        dataSources: LinkedInHelper.parseDataSources(this.config.DataSources.value)
       };
     } else {
       throw new Error("Unknown API type: " + apiType);
@@ -84,7 +72,7 @@ var LinkedInPipeline = class LinkedInPipeline extends AbstractPipeline {
     this.fetchAndSaveData({
       nodeName, 
       urns, 
-      fields, 
+      fields,
       isTimeSeriesNode,
       ...dateInfo
     });

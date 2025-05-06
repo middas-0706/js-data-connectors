@@ -19,7 +19,7 @@ var LinkedInPagesFieldsSchema = {
     "description": "Time-bound follower statistics for a LinkedIn Organization Page",
     "documentation": "https://learn.microsoft.com/en-us/linkedin/marketing/community-management/organizations/follower-statistics",
     "fields": followerStatisticsTimeBoundFields,
-    "uniqueKeys": ["organization_urn", "timeRange_start", "timeRange_end"],
+    "uniqueKeys": ["organization_urn", "time_range_start", "time_range_end"],
     "isTimeSeries": true
   }
 };

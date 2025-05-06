@@ -11,57 +11,57 @@ var followerStatisticsTimeBoundFields = {
     "mode": "required",
     "description": "Organization URN"
   },
-  "timeRange_start": {
+  "time_range_start": {
     "type": "timestamp",
     "mode": "required",
     "description": "Start timestamp of the time range"
   },
-  "timeRange_end": {
+  "time_range_end": {
     "type": "timestamp",
     "mode": "required",
     "description": "End timestamp of the time range"
   },
-  "organicFollowerGain": {
+  "organic_follower_gain": {
     "type": "integer",
     "mode": "required",
     "description": "Number of organic followers gained during the time period"
   },
-  "paidFollowerGain": {
+  "paid_follower_gain": {
     "type": "integer",
     "mode": "required",
     "description": "Number of paid followers gained during the time period"
   },
-  "followerCountsByAssociationType": {
+  "follower_counts_by_association_type": {
     "type": "record",
     "mode": "repeated",
     "description": "Followers segmented by association type (empty in time-bound responses)"
   },
-  "followerCountsBySeniority": {
+  "follower_counts_by_seniority": {
     "type": "record",
     "mode": "repeated",
     "description": "Followers segmented by seniority (empty in time-bound responses)"
   },
-  "followerCountsByIndustry": {
+  "follower_counts_by_industry": {
     "type": "record",
     "mode": "repeated",
     "description": "Followers segmented by industry (empty in time-bound responses)"
   },
-  "followerCountsByFunction": {
+  "follower_counts_by_function": {
     "type": "record", 
     "mode": "repeated",
     "description": "Followers segmented by function (empty in time-bound responses)"
   },
-  "followerCountsByStaffCountRange": {
+  "follower_counts_by_staff_count_range": {
     "type": "record",
     "mode": "repeated",
     "description": "Followers segmented by staff count range (empty in time-bound responses)"
   },
-  "followerCountsByGeoCountry": {
+  "follower_counts_by_geo_country": {
     "type": "record",
     "mode": "repeated",
     "description": "Followers segmented by country (empty in time-bound responses)"
   },
-  "followerCountsByGeo": {
+  "follower_counts_by_geo": {
     "type": "record",
     "mode": "repeated",
     "description": "Followers segmented by geographic area (empty in time-bound responses)"

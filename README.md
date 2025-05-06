@@ -20,7 +20,7 @@ With just a few clicks and no coding, you can easily set up automated data impor
 | LinkedIn Ads | 🟡 In Development | [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/LinkedIn) | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/59)
 | TikTok Ads | 🟡 In Development | [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/TikTokAds) | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/62)
 | Criteo Ads | 🟡 In Development | [Branch](https://github.com/OWOX/js-data-connectors/tree/criteo-alpha), [Discussion](https://github.com/OWOX/js-data-connectors/discussions/54), [Readme](https://github.com/OWOX/js-data-connectors/blob/main/src/Integrations/Criteo/README.md)
-| Bing Ads | 🟡 In Development | [Discussion](https://github.com/OWOX/js-data-connectors/tree/bing-ads-attempt-1)
+| Bing Ads | 🟡 In Development | [Branch](https://github.com/OWOX/js-data-connectors/tree/bing-ads-attempt-1), [Discussion](https://github.com/OWOX/js-data-connectors/tree/bing-ads-attempt-1)
 | Reddit Ads | 🟡 In Development | [Branch](https://github.com/OWOX/js-data-connectors/tree/reddit_connector_v0.1), [Discussion](https://github.com/OWOX/js-data-connectors/discussions/2)
 | Hotline | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/55)
 | Twitter Ads | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/60)

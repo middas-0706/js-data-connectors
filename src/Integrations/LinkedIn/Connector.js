@@ -216,6 +216,30 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
   }
   
   /**
+   * Extract category types from the API response element
+   * @param {Object} element - The API response element
+   * @returns {Array} - Array of category type descriptors
+   */
+  extractCategoryTypes(element) {
+    return Object.keys(element)
+      .filter(key => 
+        // Check if the property is an array containing elements with followerCounts
+        Array.isArray(element[key]) && 
+        element[key].length > 0 && 
+        element[key][0]?.followerCounts !== undefined
+      )
+      .map(type => {
+        // Get the first item from the array, or empty object as fallback
+        const firstItem = element[type][0] || {};
+        
+        // Find a key that is not 'followerCounts' to use as segment name
+        const segmentKeys = Object.keys(firstItem).filter(key => key !== 'followerCounts');
+                  
+        return { type, segmentName: segmentKeys[0] };
+      });
+  }
+  
+  /**
    * Transform follower statistics into a denormalized format
    * @param {Object} params - Parameters object
    * @param {Array} params.elements - Response elements from the API
@@ -227,16 +251,7 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
     const results = [];
     const element = elements[0];
     const organizationUrn = element.organizationalEntity || orgUrn;
-    
-    const categoryTypes = [
-      { type: 'followerCountsByAssociationType', segmentName: 'associationType' },
-      { type: 'followerCountsBySeniority', segmentName: 'seniority' },
-      { type: 'followerCountsByIndustry', segmentName: 'industry' },
-      { type: 'followerCountsByFunction', segmentName: 'function' },
-      { type: 'followerCountsByStaffCountRange', segmentName: 'staffCountRange' },
-      { type: 'followerCountsByGeoCountry', segmentName: 'geo' },
-      { type: 'followerCountsByGeo', segmentName: 'geo' }
-    ];
+    const categoryTypes = this.extractCategoryTypes(element);
     
     categoryTypes.forEach(category => {
       const items = element[category.type] || [];

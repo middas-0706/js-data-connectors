@@ -56,6 +56,17 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
           default: 20
         }
       });
+    } else if (this.config.OrganizationURNs && this.config.OrganizationURNs.value) {
+      this.apiType = "Pages";
+      this.fieldsSchema = LinkedInPagesFieldsSchema;
+      this.config = this.config.mergeParameters({
+        OrganizationURNs: {
+          isRequired: true
+        },
+        DataSources: {
+          isRequired: true,
+        }
+      });
     } else {
       throw new Error("Not supported API type.");
     }
@@ -72,6 +83,8 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
     switch (this.apiType) {
       case "Ads":
         return this.fetchAdsData(nodeName, urn, params);
+      case "Pages":
+        return this.fetchPagesData(nodeName, urn, params);
       default:
         throw new Error(`API type ${this.apiType} is not supported`);
     }
@@ -99,6 +112,131 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
       default:
         throw new Error(`Unknown node: ${nodeName}`);
     }
+  }
+
+  /**
+   * LinkedIn Pages API implementation of fetchData
+   * @param {string} nodeName - Type of resource to fetch
+   * @param {string|number} urn - Organization ID (numeric)
+   * @param {Object} params - Additional parameters for the request
+   * @returns {Array} - Array of processed data objects
+   */
+  fetchPagesData(nodeName, urn, params = {}) {
+    // Always format the URN as a string for API requests
+    const orgUrn = `urn:li:organization:${urn}`;
+    switch (nodeName) {
+      case "follower_statistics":
+        return this.fetchFollowerStatistics(orgUrn, params);
+      case "follower_statistics_time_bound":
+        return this.fetchFollowerStatisticsTimeBound(orgUrn, params);
+      default:
+        throw new Error(`Unknown node: ${nodeName}`);
+    }
+  }
+
+  /**
+   * Fetch lifetime follower statistics for an organization
+   * @param {string|number} urn - Organization ID (numeric or URN)
+   * @param {Object} params - Additional parameters for the request
+   * @returns {Array} - Processed follower statistics data
+   */
+  fetchFollowerStatistics(urn, params = {}) {
+    // Ensure urn is a full URN string
+    const orgUrn = urn.toString().startsWith('urn:li:organization:') ? urn : `urn:li:organization:${urn}`;
+    const encodedUrn = encodeURIComponent(orgUrn);
+    const url = `${this.config.BaseUrl.value}organizationalEntityFollowerStatistics?q=organizationalEntity&organizationalEntity=${encodedUrn}`;
+    
+    const response = this.makeRequest(url);
+    const elements = response.elements || [];
+    
+    // Transform the follower statistics into the denormalized format
+    return this.transformFollowerStatistics(elements, orgUrn);
+  }
+
+  /**
+   * Fetch time-bound follower statistics for an organization
+   * @param {string|number} urn - Organization ID (numeric or URN)
+   * @param {Object} params - Additional parameters for the request
+   * @param {Date} params.startDate - Start date for statistics
+   * @param {Date} params.endDate - End date for statistics
+   * @returns {Array} - Processed time-bound follower statistics data
+   */
+  fetchFollowerStatisticsTimeBound(urn, params = {}) {
+    // Ensure urn is a full URN string
+    const orgUrn = urn.toString().startsWith('urn:li:organization:') ? urn : `urn:li:organization:${urn}`;
+    const encodedUrn = encodeURIComponent(orgUrn);
+    
+    // Convert dates to timestamps
+    const startTimestamp = new Date(params.startDate).getTime();
+    const endTimestamp = new Date(params.endDate).getTime();
+    
+    // Build URL with timeIntervals parameters
+    const url = `${this.config.BaseUrl.value}organizationalEntityFollowerStatistics?` +
+      `q=organizationalEntity&organizationalEntity=${encodedUrn}` +
+      `&timeIntervals=(timeRange:(start:${startTimestamp},end:${endTimestamp}),timeGranularityType:DAY)`;
+    
+    const response = this.makeRequest(url);
+    const elements = response.elements || [];
+    
+    return elements.map(element => {
+      return {
+        organization_urn: element.organizationalEntity,
+        timeRange_start: element.timeRange.start,
+        timeRange_end: element.timeRange.end,
+        organicFollowerGain: element.followerGains?.organicFollowerGain || 0,
+        paidFollowerGain: element.followerGains?.paidFollowerGain || 0,
+        followerCountsByAssociationType: element.followerCountsByAssociationType || [],
+        followerCountsBySeniority: element.followerCountsBySeniority || [],
+        followerCountsByIndustry: element.followerCountsByIndustry || [],
+        followerCountsByFunction: element.followerCountsByFunction || [],
+        followerCountsByStaffCountRange: element.followerCountsByStaffCountRange || [],
+        followerCountsByGeoCountry: element.followerCountsByGeoCountry || [],
+        followerCountsByGeo: element.followerCountsByGeo || []
+      };
+    });
+  }
+
+  /**
+   * Transform follower statistics into a denormalized format
+   * @param {Array} elements - Response elements from the API
+   * @param {string} urn - Organization URN
+   * @returns {Array} - Denormalized follower statistics
+   */
+  transformFollowerStatistics(elements, urn) {
+    if (!elements || elements.length === 0) {
+      return [];
+    }
+    
+    const results = [];
+    const element = elements[0]; // There should be only one element
+    const organizationUrn = element.organizationalEntity || urn;
+    
+    // Process each category type
+    const categoryTypes = [
+      { type: 'followerCountsByAssociationType', segmentName: 'associationType' },
+      { type: 'followerCountsBySeniority', segmentName: 'seniority' },
+      { type: 'followerCountsByIndustry', segmentName: 'industry' },
+      { type: 'followerCountsByFunction', segmentName: 'function' },
+      { type: 'followerCountsByStaffCountRange', segmentName: 'staffCountRange' },
+      { type: 'followerCountsByGeoCountry', segmentName: 'geo' },
+      { type: 'followerCountsByGeo', segmentName: 'geo' }
+    ];
+    
+    categoryTypes.forEach(category => {
+      const items = element[category.type] || [];
+      items.forEach(item => {
+        results.push({
+          organization_urn: organizationUrn,
+          category_type: category.type,
+          segment_name: category.segmentName,
+          segment_value: item[category.segmentName] || item.geo,
+          organic_follower_count: item.followerCounts?.organicFollowerCount || 0,
+          paid_follower_count: item.followerCounts?.paidFollowerCount || 0
+        });
+      });
+    });
+    
+    return results;
   }
 
   /**

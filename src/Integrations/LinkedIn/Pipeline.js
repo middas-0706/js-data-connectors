@@ -22,28 +22,45 @@ var LinkedInPipeline = class LinkedInPipeline extends AbstractPipeline {
    */
   startImportProcess() {
     const apiType = this.connector.apiType;
-    const fields = LinkedInHelper.parseFields(this.config.Fields.value);
-    console.log('Fields:', fields);
+    const { urns, dataSources } = this.determineApiResources(apiType);
     
-    const urns = this.determineUrns(apiType);
-    
-    for (const nodeName in fields) {
-      this.processNode({
-        nodeName,
-        urns,
-        fields: fields[nodeName]
-      });
+    if (apiType === "Ads") {
+      for (const nodeName in dataSources) {
+        this.processNode({
+          nodeName,
+          urns,
+          fields: dataSources[nodeName]
+        });
+      }
+    } else if (apiType === "Pages") {
+      for (const nodeName of dataSources) {
+        this.processNode({
+          nodeName,
+          urns,
+          fields: []
+        });
+      }
+    } else {
+      throw new Error("Unknown API type: " + apiType);
     }
   }
   
   /**
-   * Determine URNs based on API type
-   * @param {string} apiType - Type of API (e.g., "Ads")
-   * @returns {Array} - Array of URNs to process
+   * Determine API resources (URNs and fields/tables) based on API type
+   * @param {string} apiType - Type of API ("Ads" or "Pages")
+   * @returns {Object} - Object containing URNs and data sources (fields for Ads, tables for Pages)
    */
-  determineUrns(apiType) {
+  determineApiResources(apiType) {
     if (apiType === "Ads") {
-      return LinkedInHelper.parseAccountUrns(this.config.AccountURNs.value);
+      return {
+        urns: LinkedInHelper.parseUrns(this.config.AccountURNs.value, {prefix: 'urn:li:sponsoredAccount:'}),
+        dataSources: LinkedInHelper.parseFields(this.config.Fields.value)
+      };
+    } else if (apiType === "Pages") {
+      return {
+        urns: LinkedInHelper.parseUrns(this.config.OrganizationURNs.value, {prefix: 'urn:li:organization:'}),
+        dataSources: this.config.DataSources.value.split(',').map(name => name.trim())
+      };
     } else {
       throw new Error("Unknown API type: " + apiType);
     }

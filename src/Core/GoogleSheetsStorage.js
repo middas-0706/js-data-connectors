@@ -356,64 +356,86 @@ var GoogleSheetsStorage = class GoogleSheetsStorage extends AbstractStorage {
      */
     addColumn(columnName, columnIndex = 1) {
 
-      // header of the column at the desider index is not empty
-      try {
-        if( this.SHEET.getRange(`A${columnIndex}`).getValue() != "" ) {
-          this.SHEET.insertColumns(columnIndex);
-        }
-      } catch (e) {
-        // If the column at the desider index is not empty, we need to insert a new column after the desider index
-        // It may happend if in first portion of data we haven't this column and we add it later
-        
-        // Get the number of columns in the sheet
-        const numColumns = this.SHEET.getMaxColumns();
-        
-        // Check if columnIndex is out of bounds
-        if (columnIndex <= 0 || columnIndex > numColumns + 1) {
-          throw new Error(`Column index ${columnIndex} is out of bounds (1-${numColumns+1})`);
-        }
-        
-        // Find an empty column header
-        let foundEmpty = false;
-        while(columnIndex <= numColumns) {
-          // Only check existing columns
-          if(this.SHEET.getRange(1, columnIndex).getValue() == "") {
-            foundEmpty = true;
-            break;
-          }
-          columnIndex++;
-        }
-        
-        // If we didn't find an empty column, create a new one
-        if (!foundEmpty) {
-          this.SHEET.insertColumnAfter(numColumns);
-          columnIndex = numColumns + 1;
-        } else {
-          // Otherwise, insert at the found position
+      // Get the number of columns in the sheet
+      const numColumns = this.SHEET.getMaxColumns();
+      
+      // Check if columnIndex is out of bounds
+      if (columnIndex <= 0 || columnIndex > numColumns + 1) {
 
-          this.SHEET.insertColumnBefore(columnIndex);
-        }
+        throw new Error(`Column index ${columnIndex} is out of bounds (1-${numColumns+1})`);
+
       }
-    
+      
+      // Check if column at the desired index exists and is empty
+      if (columnIndex <= numColumns) {
+
+        const headerValue = this.SHEET.getRange(1, columnIndex).getValue();
+        
+        if (headerValue !== "") {
+          // Header cell is not empty, need to insert a new column
+          // Look for an empty column
+          
+          // Helper function to find the first empty column
+          const findFirstEmptyColumn = (startIndex) => {
+            let index = startIndex;
+            let foundEmpty = false;
+            
+            while(index <= numColumns) {
+              if(this.SHEET.getRange(1, index).getValue() === "") {
+                foundEmpty = true;
+                break;
+              }
+              index++;
+            }
+            
+            return {
+              columnIndex: index,
+              foundEmpty: foundEmpty
+            };
+          };
+          
+          const result = findFirstEmptyColumn(columnIndex);
+          
+          if (!result.foundEmpty) {
+
+            // If no empty column was found, add one at the end
+            this.SHEET.insertColumnAfter(numColumns);
+            columnIndex = numColumns + 1;
+
+          } else {
+
+            // Empty column found, insert at that position
+            this.SHEET.insertColumnBefore(result.columnIndex);
+            columnIndex = result.columnIndex;
+
+          }
+        }
+      } else {
+
+        // Column index is beyond current sheet, add a new column at the end
+        this.SHEET.insertColumnAfter(numColumns);
+        columnIndex = numColumns + 1;
+
+      }
+
       this.SHEET.getRange(1, columnIndex).setValue(columnName); 
-    
-      // appling format to column if it is specified in schema
-      if( this.schema != null && "GoogleSheetsFormat" in this.schema[columnName] ) { 
-    
-          let columnLetter = String.fromCharCode(64 + columnIndex);
-          console.log(
-            columnName, 
-            this.schema[columnName]["GoogleSheetsFormat"],
-            this.SHEET.getRange(`${columnLetter}:${columnLetter}`).getA1Notation()
-          );
-          this.SHEET
-            .getRange(`${columnLetter}:${columnLetter}`)
-            .setNumberFormat(this.schema[columnName]["GoogleSheetsFormat"]);
-    
+
+      // applying format to column if it is specified in schema
+      if (this.schema != null && "GoogleSheetsFormat" in this.schema[columnName]) {
+
+        let columnLetter = String.fromCharCode(64 + columnIndex);
+        console.log(
+          columnName, 
+          this.schema[columnName]["GoogleSheetsFormat"],
+          this.SHEET.getRange(`${columnLetter}:${columnLetter}`).getA1Notation()
+        );
+        this.SHEET
+          .getRange(`${columnLetter}:${columnLetter}`)
+          .setNumberFormat(this.schema[columnName]["GoogleSheetsFormat"]);
+          
       }
       
       this.columnNames.push(columnName);
-      
     }
     //----------------------------------------------------------------
   

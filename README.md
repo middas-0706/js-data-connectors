@@ -14,15 +14,15 @@ With just a few clicks and no coding, you can easily set up automated data impor
 #### Data Sources
 | Name | Status | Links
 | ------------ | ------ | ----
-| Facebook Ads | 🟢 Public  | [Google Drive](https://drive.google.com/drive/u/0/folders/1_x556pta5lKtKbTltIrPEDkNqAn78jM4), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/FacebookMarketing)
-| TikTok Ads | 🟢 Public | [Google Drive](https://drive.google.com/drive/u/0/folders/1zYBdx4Lm496mrCmwSNG3t82weWZRJb0o), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/TikTokAds)
-| Open Exchange Rates | 🟢 Public | [Google Drive](https://drive.google.com/drive/u/0/folders/1akutchS-Txr5PwToMzHrikTXd_GTs-84), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/OpenExchangeRates)
-| Bank of Canada | 🟢 Public  | [Google Drive](https://drive.google.com/drive/u/0/folders/18c9OHHmdZs-evtU1bWd6pIqdXjnANRmv), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/BankOfCanada)
-| Criteo Ads | 🟡 In Development | [Branch](https://github.com/OWOX/js-data-connectors/tree/criteo-alpha), [Discussion](https://github.com/OWOX/js-data-connectors/discussions/54)
-| Bing Ads | 🟡 In Development | [Discussion](https://github.com/OWOX/js-data-connectors/tree/bing-ads-attempt-1)
+| Facebook Ads | 🟢 Public  | [Google Drive](https://drive.google.com/drive/u/0/folders/1_x556pta5lKtKbTltIrPEDkNqAn78jM4), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/FacebookMarketing), [Readme](https://github.com/OWOX/js-data-connectors/blob/main/src/Integrations/FacebookMarketing/README.md) 
+| Open Exchange Rates | 🟢 Public | [Google Drive](https://drive.google.com/drive/u/0/folders/1akutchS-Txr5PwToMzHrikTXd_GTs-84), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/OpenExchangeRates), [Readme](https://github.com/OWOX/js-data-connectors/blob/main/src/Integrations/OpenExchangeRates/README.md)
+| Bank of Canada | 🟢 Public  | [Google Drive](https://drive.google.com/drive/u/0/folders/18c9OHHmdZs-evtU1bWd6pIqdXjnANRmv), [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/BankOfCanada), [Readme](https://github.com/OWOX/js-data-connectors/blob/main/src/Integrations/BankOfCanada/README.md)
+| LinkedIn Ads | 🟡 In Development | [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/LinkedIn) | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/59)
+| TikTok Ads | 🟡 In Development | [Source Code](https://github.com/OWOX/js-data-connectors/tree/main/src/Integrations/TikTokAds) | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/62)
+| Criteo Ads | 🟡 In Development | [Branch](https://github.com/OWOX/js-data-connectors/tree/criteo-alpha), [Discussion](https://github.com/OWOX/js-data-connectors/discussions/54), [Readme](https://github.com/OWOX/js-data-connectors/blob/main/src/Integrations/Criteo/README.md)
+| Bing Ads | 🟡 In Development | [Branch](https://github.com/OWOX/js-data-connectors/tree/bing-ads-attempt-1), [Discussion](https://github.com/OWOX/js-data-connectors/tree/bing-ads-attempt-1)
 | Reddit Ads | 🟡 In Development | [Branch](https://github.com/OWOX/js-data-connectors/tree/reddit_connector_v0.1), [Discussion](https://github.com/OWOX/js-data-connectors/discussions/2)
 | Hotline | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/55)
-| LinkedIn Ads | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/59)
 | Twitter Ads | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/60)
 | Shopify Ads | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/63)
 | Google Business Profile | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/61)

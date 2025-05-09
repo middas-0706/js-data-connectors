@@ -247,7 +247,77 @@ var GoogleSheetsConfig = class GoogleSheetsConfig extends AbstractConfig {
       
     }
     //----------------------------------------------------------------
+
+  //---- updateDataSourcesSheet -------------------------------------------
+    /**
+     * Updating the content of the tables list to allow selection of tables only (not fields)
+     * @param {Object} params - Parameters object
+     * @param {AbstractConnector} params.connector - Connector instance
+     * @param {string} params.sheetName - Name of the sheet to update, Data Sources by default
+     */
+    updateDataSourcesSheet(connector, sheetName = "DataSources") {
+      var groups = connector.getFieldsSchema();
+      var data = [];
+      var checkboxRows = [];
+      for(var groupName in groups) {
+        data.push({
+          "id": groupName,
+          "✔️": false,
+          "name": groupName,
+          "description": groups[groupName].description || "",
+          "documentation": groups[groupName].documentation || ""
+        });
+        checkboxRows.push(groupName);
+        data.push({"id": `${groupName} zzz_separator`});
+      }
+      this._updateSheetWithData({data, sheetName, checkboxRows, groups});
+    }
+    //----------------------------------------------------------------
   
+  //---- _updateSheetWithData -------------------------------------------
+    /**
+     * Shared logic for updating a Google Sheet with provided data and formatting.
+     * @param {Object} params - Parameters object
+     * @param {Array} params.data - Array of row objects to write to the sheet
+     * @param {string} params.sheetName - Name of the sheet to update
+     * @param {Array} params.checkboxRows - Array of row IDs where checkboxes should be set
+     * @param {Object} params.groups - Groups object for formatting (optional)
+     * @todo use in updateFieldsSheet
+     */
+    _updateSheetWithData({data, sheetName, checkboxRows = [], groups = {}}) {
+      this.validate();
+
+      var configSheetStorage = new GoogleSheetsStorage(
+        this.mergeParameters({
+          DestinationSheetName: { value: sheetName }
+        }),
+        ["id"]
+      );
+
+      configSheetStorage.saveData(data);
+      configSheetStorage.SHEET.sort(configSheetStorage.getColumnIndexByName("id"));
+      configSheetStorage.loadDataFromSheet();
+
+      configSheetStorage.SHEET.hideColumns(configSheetStorage.getColumnIndexByName("id"));
+      configSheetStorage.SHEET.setColumnWidth(configSheetStorage.getColumnIndexByName("✔️"), 25);
+      configSheetStorage.SHEET.autoResizeColumn(3); // name
+      configSheetStorage.SHEET.autoResizeColumn(4); // description
+      configSheetStorage.SHEET.autoResizeColumn(5); // documentation
+
+      var checkboxRule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
+
+      for (const rowId of checkboxRows) {
+        var tableRow = configSheetStorage.getRecordByRecordFields({ "id": rowId });
+        if (tableRow !== null) {
+          var checkboxesColumnIndex = configSheetStorage.getColumnIndexByName("✔️");
+          configSheetStorage.SHEET.getRange(tableRow.rowIndex + 2, checkboxesColumnIndex).setDataValidation(checkboxRule);
+          var range = configSheetStorage.SHEET.getRange(`${tableRow.rowIndex+2}:${tableRow.rowIndex+2}`);
+          range.setBackground("#f3f3f3");
+        }
+      }
+    }
+    //----------------------------------------------------------------
+
   //---- getFieldsCountByGroupName -----------------------------------
     /**
      * @param GoogleSheetsConfig object
@@ -324,7 +394,7 @@ var GoogleSheetsConfig = class GoogleSheetsConfig extends AbstractConfig {
       
       let formattedDate = Utilities.formatDate(new Date(), this.Log.timeZone, "yyyy-MM-dd HH:mm:ss"); // Format the date
     
-      // Read the existing log message if it shouldn’t be removed
+      // Read the existing log message if it shouldn't be removed
       let currentLog = removeExistingMessage ? "" : this.Log.cell.getValue();
     
       currentLog ? currentLog += "\n" : "";

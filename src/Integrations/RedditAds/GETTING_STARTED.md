@@ -7,34 +7,38 @@ Fill in the required information:
 
 Data import begins on the selected **start date**. Note that selecting a long date range may prevent data from downloading due to large data volume.
 
-![Facebook Start Date](/src/Integrations/FacebookMarketing/res/fb_startdate.png)
+![Reddit Start Date](/src/Integrations/RedditAds/res/reddit_startdate.png)
 
-**Account ID** can be found on the Account Overview page in Meta AdsManager. 
+**Account ID** can be found on the homepage of your Reddit Advertising account. 
 
-![Facebook Account ID](/src/Integrations/FacebookMarketing/res/fb_accountid.png)
+![Reddit Account ID](/src/Integrations/RedditAds/res/reddit_accountid.png)
 
 Copy and paste the ID: 
 
-![Account ID](/src/Integrations/FacebookMarketing/res/fb_pasteid.png)
+![Account ID](/src/Integrations/RedditAds/res/reddit_pasteid.png)
 
 Some fields are already pre-filled. The **Fields** tab allows you to select additional fields to include by checking the corresponding checkboxes. 
 
-![Facebook Fileds](/src/Integrations/FacebookMarketing/res/fb_fields.png)
+![Reddit Fileds](/src/Integrations/RedditAds/res/reddit_fields.png)
 
 Then, press *OWOX -> Manage credentials*. 
 
-![Facebook Credentials](/src/Integrations/FacebookMarketing/res/fb_credentials.png)
+![Reddit Credentials](/src/Integrations/RedditAds/res/reddit_credentials.png)
 
-Add your Access Token received by this tutorial: [**How to obtain the access token for the Facebook connector**](https://github.com/OWOX/js-data-connectors/blob/main/src/Integrations/FacebookMarketing/CREDENTIALS.md)
+Add your credentials received by this tutorial: [**How to obtain the credentials for the Reddit Ads connector**](https://github.com/OWOX/js-data-connectors/blob/main/src/Integrations/RedditAds/CREDENTIALS.md).
 
-![Facebook Token](/src/Integrations/FacebookMarketing/res/fb_token.png)
+![Reddit Token](/src/Integrations/RedditAds/res/reddit_tokens.png)
 
-Press OK and then, press *OWOX -> Import New Data*.
+Press 'Check and Save' and then, press *OWOX -> Import New Data*.
 
-![Facebook Import Data](/src/Integrations/FacebookMarketing/res/fb_import.png)
+![Reddit Import Data](/src/Integrations/RedditAds/res/reddit_import.png)
 
 The import process is complete when the Log data displays **"Import is finished"**. Your data will be available in new tabs labeled with the corresponding data point names (e.g., *ad-account*, *ad-campaign*).
 
-![Facebook Finished](/src/Integrations/FacebookMarketing/res/fb_success.png)
+![Reddit Finished](/src/Integrations/RedditAds/res/reddit_success.png)
 
-To include more data, select the relevant checkboxes on the Fields tab, then click OWOX > Import New Data.
+To include more data, select the relevant checkboxes on the Fields tab, then click OWOX > Import New Data. 
+**Important!** If you want to change data range, first clear all previous data in the Status fields, and then change the Start Date / End Date, and click OWOX > Import New Data:
+
+![Reddit Clear](/src/Integrations/RedditAds/res/reddit_clear.png)
+

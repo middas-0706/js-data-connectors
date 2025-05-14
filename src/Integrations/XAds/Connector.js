@@ -68,16 +68,34 @@ var XAdsConnector = class XAdsConnector extends AbstractConnector {
         default: "12",
         displayName: "API Version",
         description: "X Ads API version"
+      },
+      DataMaxCount: {
+        requiredType: "number",
+        default: 1000,
+        displayName: "Max Data Count",
+        description: "Maximum number of records to fetch per request"
+      },
+      CardsMaxCountPerRequest: {
+        requiredType: "number",
+        default: 20,
+        displayName: "Max Cards Per Request",
+        description: "Maximum number of cards to fetch per request"
+      },
+      AdsApiDelay: {
+        requiredType: "number",
+        default: 3.65,
+        displayName: "API Delay (seconds)",
+        description: "Delay between API requests in seconds"
+      },
+      StatsMaxEntityIds: {
+        requiredType: "number",
+        default: 20,
+        displayName: "Max Stats Entity IDs",
+        description: "Maximum number of entity_ids allowed per request for stats endpoint"
       }
     }));
 
     this.fieldsSchema = XAdsFieldsSchema;
-
-    this.DATA_MAX_COUNT = 1000;
-    this.CARDS_MAX_COUNT_PER_REQUEST = 20;
-    this.ADS_API_DELAY = 3.65; // seconds
-    this.STATS_MAX_ENTITY_IDS = 20; // Maximum number of entity_ids allowed per request for stats endpoint
-
     this._tweetsCache = new Map(); // Cache for tweets data per account
     this._promotedTweetsCache = new Map(); // Cache for promoted tweets data per account
   }
@@ -104,7 +122,7 @@ var XAdsConnector = class XAdsConnector extends AbstractConnector {
    */
   fetchData(nodeName, accountId, params = {}) {
     // Add rate limiting delay
-    Utilities.sleep(this.ADS_API_DELAY * 1000);
+    Utilities.sleep(this.config.AdsApiDelay.value * 1000);
 
     switch (nodeName) {
       case 'accounts':
@@ -113,13 +131,13 @@ var XAdsConnector = class XAdsConnector extends AbstractConnector {
         return this.fetchAllPages({
           accountId,
           endpoint: 'campaigns',
-          params: { ...params, count: this.DATA_MAX_COUNT }
+          params: { ...params, count: this.config.DataMaxCount.value }
         });
       case 'line_items':
         return this.fetchAllPages({
           accountId,
           endpoint: 'line_items',
-          params: { ...params, count: this.DATA_MAX_COUNT }
+          params: { ...params, count: this.config.DataMaxCount.value }
         });
       case 'promoted_tweets':
         // If we have cached promoted tweets for this account, return them
@@ -131,7 +149,7 @@ var XAdsConnector = class XAdsConnector extends AbstractConnector {
         const promotedTweets = this.fetchAllPages({
           accountId,
           endpoint: 'promoted_tweets',
-          params: { count: this.DATA_MAX_COUNT }
+          params: { count: this.config.DataMaxCount.value }
         });
         console.log('setting promoted tweets cache')
         this._promotedTweetsCache.set(accountId, promotedTweets);
@@ -199,9 +217,9 @@ var XAdsConnector = class XAdsConnector extends AbstractConnector {
 
       const allCards = [];
 
-      // Split card URIs into chunks of CARDS_MAX_COUNT_PER_REQUEST (now 20)
-      for (let i = 0; i < cardUris.length; i += this.CARDS_MAX_COUNT_PER_REQUEST) {
-        const chunk = cardUris.slice(i, i + this.CARDS_MAX_COUNT_PER_REQUEST);
+      // Split card URIs into chunks
+      for (let i = 0; i < cardUris.length; i += this.config.CardsMaxCountPerRequest.value) {
+        const chunk = cardUris.slice(i, i + this.config.CardsMaxCountPerRequest.value);
         
         // Skip empty chunks
         if (!chunk.length) continue;
@@ -224,7 +242,7 @@ var XAdsConnector = class XAdsConnector extends AbstractConnector {
         }
         
         // Add rate limiting delay between chunks
-        Utilities.sleep(this.ADS_API_DELAY * 1000);
+        Utilities.sleep(this.config.AdsApiDelay.value * 1000);
       }
 
       return allCards;
@@ -260,9 +278,9 @@ var XAdsConnector = class XAdsConnector extends AbstractConnector {
     
     const allResults = [];
     
-    // Process in batches of 20 (API limit)
-    for (let i = 0; i < entityIds.length; i += this.STATS_MAX_ENTITY_IDS) {
-      const batch = entityIds.slice(i, i + this.STATS_MAX_ENTITY_IDS);
+    // Process in batches based on config
+    for (let i = 0; i < entityIds.length; i += this.config.StatsMaxEntityIds.value) {
+      const batch = entityIds.slice(i, i + this.config.StatsMaxEntityIds.value);
       
       // Common params for both placements
       const commonParams = {
@@ -310,7 +328,7 @@ var XAdsConnector = class XAdsConnector extends AbstractConnector {
       }
       
       // Add rate limiting delay between batches
-      Utilities.sleep(this.ADS_API_DELAY * 1000);
+      Utilities.sleep(this.config.AdsApiDelay.value * 1000);
     }
     
     return allResults;
@@ -324,12 +342,11 @@ var XAdsConnector = class XAdsConnector extends AbstractConnector {
    */
   makeRequest(endpoint, options = {}) {
     const url = `${this.config.BaseUrl.value}${this.config.Version.value}/${endpoint}`;
-    const method = options.method || 'GET';
     const params = options.params || {};
     
-    // Prepare URL with query parameters for GET requests
+    // Prepare URL with query parameters
     let finalUrl = url;
-    if (method === 'GET' && Object.keys(params).length > 0) {
+    if (Object.keys(params).length > 0) {
       const queryParams = Object.keys(params)
         .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
         .join('&');
@@ -338,24 +355,19 @@ var XAdsConnector = class XAdsConnector extends AbstractConnector {
     
     // Generate OAuth 1.0a header
     const oauthHeader = this._generateOAuthHeader({
-      method: method,
+      method: 'GET',
       url: url,
       params: params
     });
     
     const requestOptions = {
-      method: method,
+      method: 'GET',
       headers: {
         'Authorization': oauthHeader,
         'Content-Type': 'application/json'
       },
       muteHttpExceptions: true
     };
-    
-    // Add body for non-GET requests
-    if (method !== 'GET' && Object.keys(params).length > 0) {
-      requestOptions.payload = JSON.stringify(params);
-    }
 
     try {
       const response = UrlFetchApp.fetch(finalUrl, requestOptions);
@@ -382,6 +394,15 @@ var XAdsConnector = class XAdsConnector extends AbstractConnector {
    * @param {string} options.url - Request URL
    * @param {Object} options.params - Request parameters
    * @returns {string} Authorization header
+   * 
+   * TODO: Consider refactoring OAuth functionality:
+   * 1. Move OAuth logic to a separate AbstractOAuthConnector class that other OAuth-based connectors could reuse
+   * 2. Split into smaller methods for better testability:
+   *    - generateNonce()
+   *    - generateTimestamp()
+   *    - createSignatureBaseString()
+   *    - createSigningKey()
+   * 3. Create a separate OAuthUtils class for common OAuth operations like parameter encoding
    */
   _generateOAuthHeader({ method, url, params = {} }) {
     // Get credentials from config

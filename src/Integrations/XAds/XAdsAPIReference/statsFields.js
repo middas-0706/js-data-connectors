@@ -12,7 +12,8 @@ var statsFields = {
   },
   'date': {
     'description': 'The date for which the statistics were collected',
-    'type': 'string'
+    'type': 'string',
+    'GoogleSheetsFormat': '@'
   },
   'placement': {
     'description': 'The placement type (ALL_ON_TWITTER or PUBLISHER_NETWORK)',

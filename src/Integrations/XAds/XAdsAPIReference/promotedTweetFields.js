@@ -18,6 +18,14 @@ var promotedTweetFields = {
     'description': 'ID of the parent line item',
     'type': 'string'
   },
+  'entity_status': {
+    'description': 'Status of the promoted tweet (ACTIVE, PAUSED, etc.)',
+    'type': 'string'
+  },
+  'approval_status': {
+    'description': 'Approval status of the promoted tweet (ACCEPTED, REJECTED, etc.)',
+    'type': 'string'
+  },
   'created_at': {
     'description': 'When the promoted tweet was created',
     'type': 'datetime'

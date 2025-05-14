@@ -11,8 +11,32 @@ var tweetFields = {
     "type": "string",
     "required": true
   },
+  "full_text": {
+    "description": "The full text content of the tweet",
+    "type": "string"
+  },
   "text": {
-    "description": "The text content of the tweet",
+    "description": "The text content of the tweet (fallback for full_text)",
+    "type": "string"
+  },
+  "card_uri": {
+    "description": "URI of the card associated with the tweet",
+    "type": "string"
+  },
+  "nullcast": {
+    "description": "Whether the tweet is nullcasted (not shown on the user's timeline)",
+    "type": "boolean"
+  },
+  "tweet_type": {
+    "description": "Type of tweet (e.g., PUBLISHED)",
+    "type": "string"
+  },
+  "name": {
+    "description": "Name of the tweet",
+    "type": "string"
+  },
+  "created_at": {
+    "description": "When the tweet was created",
     "type": "string"
   },
   "entities": {
@@ -31,6 +55,14 @@ var tweetFields = {
             }
           }
         }
+      },
+      "hashtags": {
+        "description": "Hashtags mentioned in the tweet",
+        "type": "array"
+      },
+      "user_mentions": {
+        "description": "User mentions in the tweet",
+        "type": "array"
       }
     }
   }

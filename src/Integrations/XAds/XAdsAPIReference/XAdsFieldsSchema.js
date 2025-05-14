@@ -46,7 +46,7 @@ var XAdsFieldsSchema = {
     description: "Statistics and metrics for X Ads entities.",
     documentation: "https://developer.twitter.com/en/docs/twitter-ads-api/stats",
     fields: statsFields,
-    uniqueKeys: ["id"],
+    uniqueKeys: ["id", "date", "placement"],
     isTimeSeries: true
   },
   cards: {

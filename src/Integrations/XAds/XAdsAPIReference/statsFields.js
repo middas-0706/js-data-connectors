@@ -10,6 +10,15 @@ var statsFields = {
     'description': 'The unique identifier for the stats record',
     'type': 'string'
   },
+  'date': {
+    'description': 'The date for which the statistics were collected',
+    'type': 'string'
+  },
+  'placement': {
+    'description': 'The placement type (ALL_ON_TWITTER or PUBLISHER_NETWORK)',
+    'type': 'string',
+    'enum': ['ALL_ON_TWITTER', 'PUBLISHER_NETWORK']
+  },
   'id_data': {
     'description': 'Array of data points',
     'type': 'array',

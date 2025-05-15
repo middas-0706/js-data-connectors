@@ -32,14 +32,16 @@ var XAdsFieldsSchema = {
     description: "Tweets that are being promoted as ads.",
     documentation: "https://developer.twitter.com/en/docs/twitter-ads-api/promoted-tweets",
     fields: promotedTweetFields,
-    uniqueKeys: ["id"]
+    uniqueKeys: ["id"],
+    requiredFields: ["id"]
   },
   tweets: {
     overview: "X Ads Tweets",
     description: "Original tweets that can be promoted as ads.",
     documentation: "https://developer.twitter.com/en/docs/twitter-ads-api/tweets",
     fields: tweetFields,
-    uniqueKeys: ["id_str"]
+    uniqueKeys: ["id"],
+    requiredFields: ["card_uri"] 
   },
   stats: {
     overview: "X Ads Stats",

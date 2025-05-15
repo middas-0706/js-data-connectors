@@ -96,13 +96,12 @@ var XAdsConnector = class XAdsConnector extends AbstractConnector {
     }));
 
     this.fieldsSchema = XAdsFieldsSchema;
-    this._tweetsCache = new Map(); // Cache for tweets data per account
-    this._promotedTweetsCache = new Map(); // Cache for promoted tweets data per account
+    this._tweetsCache = new Map(); // Map<accountId, {data: Array, fields: Set}>
+    this._promotedTweetsCache = new Map(); // Map<accountId, {data: Array, fields: Set}>
   }
 
   /**
-   * Returns an object with credential fields used by this connector
-   * @returns {Object} Object with credential field configurations
+   * Returns credential fields for this connector
    */
   getCredentialFields() {
     return {
@@ -114,474 +113,376 @@ var XAdsConnector = class XAdsConnector extends AbstractConnector {
   }
 
   /**
-   * Get data from X Ads API based on the specified data source
-   * @param {string} nodeName - The node to fetch (e.g., accounts, campaigns)
-   * @param {string} accountId - Account ID
-   * @param {Object} params - Additional parameters for the request
-   * @returns {Array} API response
+   * Single entry point for *all* fetches.
+   * @param {Object} opts
+   * @param {string} opts.nodeName
+   * @param {string} opts.accountId
+   * @param {Array<string>} opts.fields
+   * @param {string} [opts.start_time]
+   * @param {string} [opts.end_time]
+   * @returns {Array<Object>}
    */
-  fetchData(nodeName, accountId, params = {}) {
-    // Add rate limiting delay
+  fetchData({ nodeName, accountId, fields = [], start_time, end_time }) {
     Utilities.sleep(this.config.AdsApiDelay.value * 1000);
 
     switch (nodeName) {
-      case 'accounts':
-        return this.fetchAccount(accountId);
+      case 'accounts': {
+        const resp = this._getData(`accounts/${accountId}`, 'accounts', fields);
+        return [resp.data];
+      }
       case 'campaigns':
-        const campaigns = this.fetchAllPages({
+      case 'line_items':
+      case 'promoted_tweets':
+      case 'tweets':
+        return this._catalogFetch({
+          nodeName,
           accountId,
-          endpoint: 'campaigns',
-          params: { ...params, count: this.config.DataMaxCount.value }
+          fields,
+          pageSize: this.config.DataMaxCount.value
         });
 
-        return campaigns.map(campaign => ({
-          ...campaign,
-          account_id: accountId
-        }));
-      case 'line_items':
-        return this.fetchAllPages({
-          accountId,
-          endpoint: 'line_items',
-          params: { ...params, count: this.config.DataMaxCount.value }
-        });
-      case 'promoted_tweets':
-        // If we have cached promoted tweets for this account, return them
-        if (this._promotedTweetsCache.has(accountId)) {
-          console.log('returning cached promoted tweets')
-          return this._promotedTweetsCache.get(accountId);
-        }
-        // Otherwise fetch and cache them
-        const promotedTweets = this.fetchAllPages({
-          accountId,
-          endpoint: 'promoted_tweets',
-          params: { count: this.config.DataMaxCount.value }
-        });
-        console.log('setting promoted tweets cache')
-        this._promotedTweetsCache.set(accountId, promotedTweets);
-        return promotedTweets;
-      case 'stats':
-        return this.fetchStats(accountId, params);
-      case 'tweets':
-        // If we have cached tweets for this account, return them
-        if (this._tweetsCache.has(accountId)) {
-          return this._tweetsCache.get(accountId);
-        }
-        // Otherwise fetch and cache them
-        const tweets = this.fetchAllPages({
-          accountId,
-          endpoint: 'tweets',
-          params: {
-            tweet_type: 'PUBLISHED',
-            timeline_type: 'NULLCAST',
-            trim_user: true
-          }
-        });
-        this._tweetsCache.set(accountId, tweets);
-        return tweets;
       case 'cards':
-        return this.fetchAllPages({
+        return this._catalogFetch({
+          nodeName,
           accountId,
-          endpoint: 'cards',
-          params: { count: 200 }
+          fields,
+          pageSize: this.config.CardsMaxCountPerRequest.value
         });
+
       case 'cards_all':
-        return this.fetchAllCards(accountId);
+        return this._fetchAllCards(accountId, fields);
+
+      case 'stats':
+        return this._timeSeriesFetch({ nodeName, accountId, fields, start_time, end_time });
+
       default:
         throw new ConfigurationError(`Unknown node: ${nodeName}`);
     }
   }
 
   /**
-   * Fetch a specific account by ID
-   * @param {string} accountId - Account ID to fetch
-   * @returns {Array} Array containing the account object
-   */
-  fetchAccount(accountId) {
-    const response = this.makeRequest(`accounts/${accountId}`);
-    return [response.data];
-  }
-
-  /**
-   * Fetch all cards data by first getting card URIs from tweets
-   * @param {string} accountId - Account ID
-   * @returns {Array} Array of raw card objects from the API
-   */
-  fetchAllCards(accountId) {
-    try {
-      // Get tweets data (fetchData handles caching)
-      const tweetsInfo = this.fetchData('tweets', accountId);
-      
-      // Extract card_uris from tweets, filtering out empty ones
-      const cardUris = tweetsInfo
-        .filter(tweet => tweet.card_uri && tweet.card_uri !== '')
-        .map(tweet => tweet.card_uri);
-        
-      if (!cardUris.length) {
-        return [];
-      }
-
-      const allCards = [];
-
-      // Split card URIs into chunks
-      for (let i = 0; i < cardUris.length; i += this.config.CardsMaxCountPerRequest.value) {
-        const chunk = cardUris.slice(i, i + this.config.CardsMaxCountPerRequest.value);
-        
-        // Skip empty chunks
-        if (!chunk.length) continue;
-        
-        try {
-          // Fetch from cards/all endpoint
-          const responseAll = this.makeRequest(`accounts/${accountId}/cards/all`, {
-            params: {
-              card_uris: chunk.join(','),
-              with_deleted: true
-            }
-          });
-          
-          // Add cards from cards/all endpoint
-          if (responseAll && responseAll.data && Array.isArray(responseAll.data)) {
-            allCards.push(...responseAll.data);
-          }
-        } catch (err) {
-          console.error(`Error fetching cards/all for chunk: ${err.message}`);
-        }
-        
-        // Add rate limiting delay between chunks
-        Utilities.sleep(this.config.AdsApiDelay.value * 1000);
-      }
-
-      return allCards;
-    } catch (error) {
-      console.error(`Error fetching cards_all data for account ${accountId}: [${error}]`);
-      return [];
-    }
-  }
-
-  /**
-   * Fetch stats from X Ads API for a specific date range
-   * @param {string} accountId - Account ID
-   * @param {Object} params - Request parameters including start_time and end_time
-   * @returns {Array} Array of stats objects from the API
-   */
-  fetchStats(accountId, params = {}) {
-    if (!params.start_time || !params.end_time) {
-      throw new ConfigurationError('Missing required parameters: start_time and end_time for stats');
-    }
-
-    // Get promoted tweets (fetchData handles caching)
-    const promotedTweets = this.fetchData('promoted_tweets', accountId);
-
-    const entityIds = promotedTweets.map(tweet => tweet.id);
-    
-    if (entityIds.length === 0) {
-      return [];
-    }
-
-    // Add one day to end_time to match PHP implementation
-    const endDate = new Date(params.end_time);
-    endDate.setDate(endDate.getDate() + 1);
-    
-    const allResults = [];
-    
-    // Process in batches based on config
-    for (let i = 0; i < entityIds.length; i += this.config.StatsMaxEntityIds.value) {
-      const batch = entityIds.slice(i, i + this.config.StatsMaxEntityIds.value);
-      
-      // Common params for both placements
-      const commonParams = {
-        entity: 'PROMOTED_TWEET',
-        entity_ids: batch.join(','),
-        granularity: 'DAY',
-        metric_groups: ['ENGAGEMENT', 'BILLING'].join(','),
-        start_time: params.start_time,
-        end_time: Utilities.formatDate(endDate, "UTC", "yyyy-MM-dd")
-      };
-      
-      // First, get stats for ALL_ON_TWITTER placement
-      const twitterStats = this.makeRequest(`stats/accounts/${accountId}`, {
-        params: {
-          ...commonParams,
-          placement: 'ALL_ON_TWITTER'
-        }
-      });
-      
-      // Then get stats for PUBLISHER_NETWORK placement
-      const publisherStats = this.makeRequest(`stats/accounts/${accountId}`, {
-        params: {
-          ...commonParams,
-          placement: 'PUBLISHER_NETWORK'
-        }
-      });
-      
-      // Process and add results from both placements
-      if (twitterStats && twitterStats.data && Array.isArray(twitterStats.data)) {
-        const enrichedTwitterStats = twitterStats.data.map(stat => {
-          const metrics = stat.id_data[0]?.metrics || {};
-          return {
-            id: stat.id,
-            date: params.start_time,
-            placement: 'ALL_ON_TWITTER',
-            impressions: metrics.impressions?.[0] || 0,
-            tweets_send: metrics.tweets_send?.[0] || 0,
-            billed_charge_local_micro: metrics.billed_charge_local_micro?.[0] || 0,
-            qualified_impressions: metrics.qualified_impressions?.[0] || 0,
-            follows: metrics.follows?.[0] || 0,
-            app_clicks: metrics.app_clicks?.[0] || 0,
-            retweets: metrics.retweets?.[0] || 0,
-            unfollows: metrics.unfollows?.[0] || 0,
-            likes: metrics.likes?.[0] || 0,
-            engagements: metrics.engagements?.[0] || 0,
-            clicks: metrics.clicks?.[0] || 0,
-            card_engagements: metrics.card_engagements?.[0] || 0,
-            poll_card_vote: metrics.poll_card_vote?.[0] || 0,
-            replies: metrics.replies?.[0] || 0,
-            url_clicks: metrics.url_clicks?.[0] || 0,
-            billed_engagements: metrics.billed_engagements?.[0] || 0,
-            carousel_swipes: metrics.carousel_swipes?.[0] || 0
-          };
-        });
-        allResults.push(...enrichedTwitterStats);
-      }
-      
-      if (publisherStats && publisherStats.data && Array.isArray(publisherStats.data)) {
-        const enrichedPublisherStats = publisherStats.data.map(stat => {
-          const metrics = stat.id_data[0]?.metrics || {};
-          return {
-            id: stat.id,
-            date: params.start_time,
-            placement: 'PUBLISHER_NETWORK',
-            impressions: metrics.impressions?.[0] || 0,
-            tweets_send: metrics.tweets_send?.[0] || 0,
-            billed_charge_local_micro: metrics.billed_charge_local_micro?.[0] || 0,
-            qualified_impressions: metrics.qualified_impressions?.[0] || 0,
-            follows: metrics.follows?.[0] || 0,
-            app_clicks: metrics.app_clicks?.[0] || 0,
-            retweets: metrics.retweets?.[0] || 0,
-            unfollows: metrics.unfollows?.[0] || 0,
-            likes: metrics.likes?.[0] || 0,
-            engagements: metrics.engagements?.[0] || 0,
-            clicks: metrics.clicks?.[0] || 0,
-            card_engagements: metrics.card_engagements?.[0] || 0,
-            poll_card_vote: metrics.poll_card_vote?.[0] || 0,
-            replies: metrics.replies?.[0] || 0,
-            url_clicks: metrics.url_clicks?.[0] || 0,
-            billed_engagements: metrics.billed_engagements?.[0] || 0,
-            carousel_swipes: metrics.carousel_swipes?.[0] || 0
-          };
-        });
-        allResults.push(...enrichedPublisherStats);
-      }
-      
-      // Add rate limiting delay between batches
-      Utilities.sleep(this.config.AdsApiDelay.value * 1000);
-    }
-    
-    return allResults;
-  }
-
-  /**
-   * Make an authenticated request to X Ads API
-   * @param {string} endpoint - API endpoint
-   * @param {Object} options - Request options
-   * @returns {Object|Array} API response with pagination info when available
-   */
-  makeRequest(endpoint, options = {}) {
-    const url = `${this.config.BaseUrl.value}${this.config.Version.value}/${endpoint}`;
-    const params = options.params || {};
-    
-    // Prepare URL with query parameters
-    let finalUrl = url;
-    if (Object.keys(params).length > 0) {
-      const queryParams = Object.keys(params)
-        .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
-        .join('&');
-      finalUrl = `${url}?${queryParams}`;
-    }
-    
-    // Generate OAuth 1.0a header
-    const oauthHeader = this._generateOAuthHeader({
-      method: 'GET',
-      url: url,
-      params: params
-    });
-    
-    const requestOptions = {
-      method: 'GET',
-      headers: {
-        'Authorization': oauthHeader,
-        'Content-Type': 'application/json'
-      },
-      muteHttpExceptions: true
-    };
-
-    try {
-      const response = UrlFetchApp.fetch(finalUrl, requestOptions);
-      const responseCode = response.getResponseCode();
-      const responseBody = response.getContentText();
-      
-      // Handle response based on status code
-      if (responseCode >= 200 && responseCode < 300) {
-        const result = JSON.parse(responseBody);        
-        return result;
-      } else {
-        throw new Error(`X Ads API request failed with status ${responseCode}: ${responseBody}`);
-      }
-    } catch (error) {
-      throw error instanceof Error ? error : new Error(`X Ads API request failed: ${error.message}`);
-    }
-  }
-
-  /**
-   * Generate OAuth 1.0a authorization header
+   * Get cached data if all requested fields are present
+   * @param {Map} cache - Cache map to check
+   * @param {string} accountId - Account ID to look up
+   * @param {Array<string>} fields - Required fields
+   * @returns {Array|null} - Cached data or null if not found/invalid
    * @private
-   * @param {Object} options - Options object
-   * @param {string} options.method - HTTP method
-   * @param {string} options.url - Request URL
-   * @param {Object} options.params - Request parameters
-   * @returns {string} Authorization header
-   * 
-   * TODO: Consider refactoring OAuth functionality:
-   * 1. Move OAuth logic to a separate AbstractOAuthConnector class that other OAuth-based connectors could reuse
-   * 2. Split into smaller methods for better testability:
-   *    - generateNonce()
-   *    - generateTimestamp()
-   *    - createSignatureBaseString()
-   *    - createSigningKey()
-   * 3. Create a separate OAuthUtils class for common OAuth operations like parameter encoding
+   */
+  _getCachedData(cache, accountId, fields) {
+    if (!cache.has(accountId)) return null;
+
+    const cached = cache.get(accountId);
+    const hasAllFields = fields.every(field => cached.fields.has(field));
+    
+    return hasAllFields ? cached.data : null;
+  }
+
+  /**
+   * Store data in cache with its fields
+   * @param {Map} cache - Cache map to store in
+   * @param {string} accountId - Account ID as key
+   * @param {Array} data - Data to cache
+   * @param {Array<string>} fields - Fields present in the data
+   * @private
+   */
+  _setCacheData(cache, accountId, data, fields) {
+    cache.set(accountId, {
+      data,
+      fields: new Set(fields)
+    });
+  }
+
+  /**
+   * Shared logic for non-time-series endpoints
+   */
+  _catalogFetch({ nodeName, accountId, fields, pageSize }) {
+    const uniqueKeys = this.fieldsSchema[nodeName].uniqueKeys || [];
+    const missingKeys = uniqueKeys.filter(key => !fields.includes(key));
+    
+    if (missingKeys.length > 0) {
+      throw new Error(`Missing required unique fields for endpoint '${nodeName}'. Missing fields: ${missingKeys.join(', ')}`);
+    }
+
+    if (nodeName === 'promoted_tweets') {
+      const cached = this._getCachedData(this._promotedTweetsCache, accountId, fields);
+      if (cached) {
+        console.log('returning cached promoted_tweets');
+        return cached;
+      };
+      console.log('deleting cached promoted_tweets');
+      this._promotedTweetsCache.delete(accountId);
+    }
+    
+    if (nodeName === 'tweets') {
+      const cached = this._getCachedData(this._tweetsCache, accountId, fields);
+      if (cached) {
+        console.log('returning cached tweets');
+        return cached;
+      };
+      console.log('deleting cached tweets');
+      this._tweetsCache.delete(accountId);
+    }
+
+    const all = this._fetchPages({
+      accountId,
+      nodeName,
+      fields,
+      extraParams: nodeName === 'tweets'
+        ? { tweet_type: 'PUBLISHED', timeline_type: 'NULLCAST', trim_user: true }
+        : {},
+      pageSize
+    });
+
+    if (nodeName === 'promoted_tweets') {
+      this._setCacheData(this._promotedTweetsCache, accountId, all, fields);
+    }
+    if (nodeName === 'tweets') {
+      this._setCacheData(this._tweetsCache, accountId, all, fields);
+    }
+
+    return all;
+  }
+
+  /**
+   * Shared pagination logic
+   */
+  _fetchPages({ accountId, nodeName, fields, extraParams = {}, pageSize }) {
+    const all = [];
+    let cursor = null;
+    const MAX_PAGES = 100;
+    let page = 1;
+
+    do {
+      const params = {
+        count: pageSize,
+        ...extraParams,
+        ...(cursor ? { cursor } : {})
+      };
+
+      const resp = this._getData(
+        `accounts/${accountId}/${nodeName}`,
+        nodeName,
+        fields,
+        params
+      );
+
+      if (Array.isArray(resp.data)) {
+        all.push(...resp.data);
+        cursor = resp.next_cursor || null;
+      } else {
+        all.push(resp.data);
+        break;
+      }
+      page++;
+    } while (cursor && page <= MAX_PAGES);
+
+    return all;
+  }
+
+  /**
+   * Fetch all cards by first collecting URIs from tweets,
+   * then calling the cards/all endpoint in chunks.
+   */
+  _fetchAllCards(accountId, fields) {
+    const tweets = this.fetchData({ nodeName: 'tweets', accountId, fields: ['id', 'card_uri'] });
+    const uris   = tweets.map(t => t.card_uri).filter(Boolean);
+    if (!uris.length) return [];
+
+    const all = [];
+    const chunkSize = this.config.CardsMaxCountPerRequest.value;
+    for (let i = 0; i < uris.length; i += chunkSize) {
+      const chunk = uris.slice(i, i + chunkSize);
+      const resp  = this._getData(
+        `accounts/${accountId}/cards/all`,
+        'cards_all',
+        fields,
+        { card_uris: chunk.join(','), with_deleted: true }
+      );
+      if (Array.isArray(resp.data)) {
+        all.push(...resp.data);
+      } else {
+        all.push(resp.data);
+      }
+    }
+
+    return all;
+  }
+
+  /**
+   * Stats are time-series and need flattening of `metrics`
+   */
+  _timeSeriesFetch({ nodeName, accountId, fields, start_time, end_time }) {
+    const uniqueKeys = this.fieldsSchema[nodeName].uniqueKeys || [];
+    const missingKeys = uniqueKeys.filter(key => !fields.includes(key));
+    
+    if (missingKeys.length > 0) {
+      throw new Error(`Missing required unique fields for endpoint '${nodeName}'. Missing fields: ${missingKeys.join(', ')}`);
+    }
+
+    // first get promoted tweet IDs
+    const promos = this.fetchData({ nodeName: 'promoted_tweets', accountId, fields: ['id'] });
+    const ids = promos.map(r => r.id);
+    if (!ids.length) return [];
+
+    // extend end_time by one day
+    const e = new Date(end_time);
+    e.setDate(e.getDate() + 1);
+    const endStr = Utilities.formatDate(e, 'UTC', 'yyyy-MM-dd');
+
+    const result = [];
+    for (let i = 0; i < ids.length; i += this.config.StatsMaxEntityIds.value) {
+      const batch = ids.slice(i, i + this.config.StatsMaxEntityIds.value).join(',');
+      const common = {
+        entity: 'PROMOTED_TWEET',
+        entity_ids: batch,
+        granularity: 'DAY',
+        metric_groups: 'ENGAGEMENT,BILLING',
+        start_time,
+        end_time: endStr
+      };
+
+      for (const placement of ['ALL_ON_TWITTER','PUBLISHER_NETWORK']) {
+        const raw = this._rawFetch(`stats/accounts/${accountId}`, { ...common, placement });
+        const arr = Array.isArray(raw.data) ? raw.data : [raw.data];
+
+        arr.forEach(h => {
+          const m = h.id_data?.[0]?.metrics || {};
+          const flat = {
+            id: h.id,
+            date: start_time,
+            placement,
+            impressions: m.impressions?.[0] || 0,
+            tweets_send: m.tweets_send?.[0] || 0,
+            billed_charge_local_micro: m.billed_charge_local_micro?.[0] || 0,
+            qualified_impressions: m.qualified_impressions?.[0] || 0,
+            follows: m.follows?.[0] || 0,
+            app_clicks: m.app_clicks?.[0] || 0,
+            retweets: m.retweets?.[0] || 0,
+            unfollows: m.unfollows?.[0] || 0,
+            likes: m.likes?.[0] || 0,
+            engagements: m.engagements?.[0] || 0,
+            clicks: m.clicks?.[0] || 0,
+            card_engagements: m.card_engagements?.[0] || 0,
+            poll_card_vote: m.poll_card_vote?.[0] || 0,
+            replies: m.replies?.[0] || 0,
+            url_clicks: m.url_clicks?.[0] || 0,
+            billed_engagements: m.billed_engagements?.[0] || 0,
+            carousel_swipes: m.carousel_swipes?.[0] || 0
+          };
+
+          result.push(this._filterBySchema([flat], 'stats', fields)[0]);
+        });
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Pull JSON from the Ads API (raw, no field-filter).
+   */
+  _rawFetch(path, params = {}) {
+    const url = `${this.config.BaseUrl.value}${this.config.Version.value}/${path}`;
+    const qs = Object.keys(params).length
+      ? '?' + Object.entries(params)
+          .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+          .join('&')
+      : '';
+    const finalUrl = url + qs;
+
+    const oauth = this._generateOAuthHeader({ method: 'GET', url, params });
+    const resp  = UrlFetchApp.fetch(finalUrl, {
+      method: 'GET',
+      headers: { Authorization: oauth, 'Content-Type': 'application/json' },
+      muteHttpExceptions: true
+    });
+
+    const code = resp.getResponseCode(), body = resp.getContentText();
+    if (code < 200 || code >= 300) {
+      throw new Error(`X Ads API error ${code}: ${body}`);
+    }
+    return JSON.parse(body);
+  }
+
+  _getData(path, nodeName, fields, extraParams = {}) {
+    const json = this._rawFetch(path, extraParams);
+    if (!json.data) return json;
+
+    const arr  = Array.isArray(json.data) ? json.data : [json.data];
+    const filtered = this._filterBySchema(arr, nodeName, fields);
+
+    json.data = Array.isArray(json.data) ? filtered : filtered[0];
+    return json;
+  }
+
+  /**
+   * Keep only requestedFields plus any schema-required keys.
+   * @param {Array<Object>} items
+   * @param {string} nodeName
+   * @param {Array<string>} requestedFields
+   * @returns {Array<Object>}
+   */
+  _filterBySchema(items, nodeName, requestedFields = []) {
+    const schema = this.fieldsSchema[nodeName];
+    const requiredFields = new Set(schema.requiredFields || []);
+    const keepFields = new Set([ ...requiredFields, ...requestedFields ]);
+
+    return items.map(item => {
+      const result = {};
+      for (const key of Object.keys(item)) {
+        if (keepFields.has(key)) {
+          result[key] = item[key];
+        }
+      }
+      return result;
+    });
+  }
+
+  /**
+   * Generate OAuth 1.0a header for requests
+   * * TODO: Consider refactoring OAuth functionality:
+   *   1. Move OAuth logic to a separate AbstractOAuthConnector class
+   *   2. Split into smaller methods for better testability
+   *   3. Create a separate OAuthUtils class for common OAuth operations
    */
   _generateOAuthHeader({ method, url, params = {} }) {
-    // Get credentials from config
-    const consumerKey = this.config.ConsumerKey.value;
-    const consumerSecret = this.config.ConsumerSecret.value;
-    const accessToken = this.config.AccessToken.value;
-    const accessTokenSecret = this.config.AccessTokenSecret.value;
-
-    // Create OAuth parameters
-    const oauthParams = {
-      oauth_consumer_key: consumerKey,
-      oauth_nonce: Utilities.getUuid().replace(/-/g, ''),
-      oauth_signature_method: 'HMAC-SHA1',
-      oauth_timestamp: Math.floor(Date.now() / 1000),
-      oauth_token: accessToken,
+    const { ConsumerKey, ConsumerSecret, AccessToken, AccessTokenSecret } = this.config;
+    const oauth = {
+      oauth_consumer_key: ConsumerKey.value,
+      oauth_nonce: Utilities.getUuid().replace(/-/g,''),
+      oauth_signature_method:'HMAC-SHA1',
+      oauth_timestamp: Math.floor(Date.now()/1000),
+      oauth_token: AccessToken.value,
       oauth_version: '1.0'
     };
-    
-    // For GET requests, include query parameters in the signature
-    const signatureParams = { ...oauthParams };
-    
-    // Add request params to signature parameters for GET requests
-    if (method === 'GET') {
-      Object.keys(params).forEach(key => {
-        signatureParams[key] = params[key];
-      });
-    }
-    
-    // Create signature base string
-    const baseStringParams = Object.keys(signatureParams)
-      .sort()
-      .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(signatureParams[key])}`)
-      .join('&');
-    
-    const signatureBaseString = [
+    const sigParams = { ...oauth, ...params };
+    const baseString= [
       method.toUpperCase(),
       encodeURIComponent(url),
-      encodeURIComponent(baseStringParams)
+      encodeURIComponent(
+        Object.keys(sigParams).sort()
+          .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(sigParams[k])}`)
+          .join('&')
+      )
     ].join('&');
-    
-    // Create signing key
-    const signingKey = `${encodeURIComponent(consumerSecret)}&${encodeURIComponent(accessTokenSecret)}`;
-    
-    // Generate signature
-    const signature = Utilities.base64Encode(
+    const signingKey = encodeURIComponent(ConsumerSecret.value) + '&' + encodeURIComponent(AccessTokenSecret.value);
+    oauth.oauth_signature = Utilities.base64Encode(
       Utilities.computeHmacSignature(
         Utilities.MacAlgorithm.HMAC_SHA_1,
-        signatureBaseString,
+        baseString,
         signingKey
       )
     );
-    
-    // Add signature to OAuth parameters
-    oauthParams.oauth_signature = signature;
-    
-    // Build authorization header
-    return 'OAuth ' + Object.keys(oauthParams)
-      .map(key => `${encodeURIComponent(key)}="${encodeURIComponent(oauthParams[key])}"`)
+    return 'OAuth ' + Object.keys(oauth)
+      .map(k => `${encodeURIComponent(k)}="${encodeURIComponent(oauth[k])}"`)
       .join(', ');
-  }
-  
-  /**
-   * Fetch data from an endpoint with pagination support
-   * @param {Object} options - Options for fetching data
-   * @param {string} options.accountId - Account ID
-   * @param {string} options.endpoint - API endpoint (without account prefix)
-   * @param {Object} options.params - Request parameters
-   * @returns {Array} Combined results from all pages
-   * @private
-   */
-  fetchAllPages({ accountId, endpoint, params = {} }) {
-    const allResults = [];
-    let cursor = null;
-    let page = 1;
-    const MAX_PAGES = 100; // Safety limit
-    
-    do {
-      console.log(`Fetching page ${page} for endpoint ${endpoint}`);
-      
-      // Add cursor to params if we have one
-      const pageParams = { ...params };
-      if (cursor) {
-        pageParams.cursor = cursor;
-      }
-      
-      // Make the request
-      const response = this.makeRequest(`accounts/${accountId}/${endpoint}`, { params: pageParams });
-      
-      // Add results to our collection
-      if (Array.isArray(response)) {
-        allResults.push(...response);
-        break; // No pagination for array responses
-      } else if (response.data) {
-        // Handle object response with data field (standard pagination format)
-        if (Array.isArray(response.data)) {
-          allResults.push(...response.data);
-        } else {
-          // Single object in data field (like account endpoint)
-          allResults.push(response.data);
-          break; // Account endpoint doesn't have pagination
-        }
-        
-        // Get next cursor if available
-        cursor = response.next_cursor || null;
-      } else {
-        // Unexpected response format
-        console.warn('Unexpected response format:', response);
-        break;
-      }
-      
-      page++;
-      
-      // Safety check to prevent infinite loops
-      if (page > MAX_PAGES) {
-        console.warn(`Reached maximum page limit (${MAX_PAGES}) for endpoint ${endpoint}`);
-        break;
-      }
-    } while (cursor);
-    
-    return allResults;
   }
 
   /**
-   * Clear tweets and promoted tweets cache for specific account
-   * @param {string} accountId - Account ID
-   */
+   * Clear tweet/promoted-tweet caches.
+   * */
   clearTweetsCache(accountId) {
-    if (this._tweetsCache.has(accountId)) {
-      this._tweetsCache.delete(accountId);
-      console.log(`Cleared tweets cache for account ${accountId}`);
-    }
-    if (this._promotedTweetsCache.has(accountId)) {
-      this._promotedTweetsCache.delete(accountId);
-      console.log(`Cleared promoted tweets cache for account ${accountId}`);
-    }
+    this._tweetsCache.delete(accountId);
+    this._promotedTweetsCache.delete(accountId);
   }
-}
+};

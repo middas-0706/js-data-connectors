@@ -7,17 +7,16 @@
 
 const XAdsHelper = {
   /**
-   * Parse data sources string into an object with source names as keys
-   * @param {string} sourcesString - Comma/semicolon separated list of data source names
-   * @return {Object} Object with data source names as keys and empty arrays as values
+   * Parse fields string into a structured object
+   * @param {string} fieldsString - Fields string in format "nodeName fieldName, nodeName fieldName"
+   * @return {Object} Object with node names as keys and arrays of field names as values
    */
-  parseDataSources(sourcesString) {
-    return String(sourcesString)
-      .split(/[,;]\s*/)
-      .reduce((obj, name) => {
-        obj[name.trim()] = [];
-        return obj;
-      }, {});
+  parseFields(fieldsString) {
+    return fieldsString.split(", ").reduce((acc, pair) => {
+      let [key, value] = pair.split(" ");
+      (acc[key] = acc[key] || []).push(value.trim());
+      return acc;
+    }, {});
   },
 
   /**

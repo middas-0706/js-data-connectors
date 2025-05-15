@@ -21,26 +21,18 @@ var XAdsPipeline = class XAdsPipeline extends AbstractPipeline {
    * Processes all nodes defined in the fields configuration
    */
   startImportProcess() {
-    const dataSources = XAdsHelper.parseDataSources(this.config.DataSources.value);    
+    const fields = XAdsHelper.parseFields(this.config.Fields.value);    
     const accountIds = XAdsHelper.parseAccountIds(this.config.AccountIDs.value);
 
-    // Process each account
     for (const accountId of accountIds) {
-      try {
-        // Process all nodes for this account
-        for (const nodeName in dataSources) {
-          this.processNode({
-            nodeName,
-            accountId,
-            fields: dataSources[nodeName] || []
-          });
-        }
-      } catch (error) {
-        console.error(`Error processing account ${accountId}:`, error);
-      } finally {
-        // Clear tweets cache after processing all nodes for this account
-        this.connector.clearTweetsCache(accountId);
+      for (const nodeName in fields) {
+        this.processNode({
+          nodeName,
+          accountId,
+          fields: fields[nodeName] || []
+        });
       }
+      this.connector.clearTweetsCache(accountId);
     }
   }
 
@@ -91,37 +83,15 @@ var XAdsPipeline = class XAdsPipeline extends AbstractPipeline {
       currentDate.setDate(currentDate.getDate() + i);
       
       const formattedDate = Utilities.formatDate(currentDate, "UTC", "yyyy-MM-dd");
-      
-      try {
-        const params = {
-          start_time: formattedDate,
-          end_time: formattedDate,
-          fields: fields
-        };
+
+      const data = this.connector.fetchData({ nodeName, accountId, start_time: formattedDate, end_time: formattedDate, fields });
   
-        const rawData = this.connector.fetchData(nodeName, accountId, params);
+      this.config.logMessage(`${data.length} rows of ${nodeName} were fetched for ${accountId} on ${formattedDate}`);
   
-        this.config.logMessage(
-          `${rawData.length} rows of ${nodeName} were fetched for ${accountId} on ${formattedDate}`
-        );
-  
-        if (rawData.length > 0) {
-          const schemaFields = Object.keys(this.connector.fieldsSchema[nodeName].fields);
-          const filtered = rawData.map(record =>
-            Object.fromEntries(
-              Object.entries(record)
-                .filter(([key]) => schemaFields.includes(key))
-            )
-          );
-          storage.saveData(filtered);
-        }
-      } catch (error) {
-        console.error(
-          `Error fetching ${nodeName} data for account ${accountId} on ${formattedDate}:`,
-          error
-        );
+      if (data.length > 0) {
+        storage.saveData(data);
       }
-  
+
       this.config.updateLastRequstedDate(currentDate);
     }
   }
@@ -135,22 +105,11 @@ var XAdsPipeline = class XAdsPipeline extends AbstractPipeline {
    * @param {Object} options.storage - Storage instance
    */
   processCatalogNode({ nodeName, accountId, fields, storage }) {
-    try {
-      const rawData = this.connector.fetchData(nodeName, accountId, { fields });
-      this.config.logMessage(`${rawData.length} rows of ${nodeName} were fetched for ${accountId}`);
+    const data = this.connector.fetchData({ nodeName, accountId, fields });
+    this.config.logMessage(`${data.length} rows of ${nodeName} were fetched for ${accountId}`);
 
-      if (rawData && rawData.length) {
-        const schemaFields = Object.keys(this.connector.fieldsSchema[nodeName].fields);
-        const filtered = rawData.map(record =>
-          Object.fromEntries(
-            Object.entries(record)
-              .filter(([key]) => schemaFields.includes(key))
-          )
-        );
-        storage.saveData(filtered);
-      }
-    } catch (error) {
-      console.error(`Error fetching ${nodeName} data for account ${accountId}:`, error);
+    if (data && data.length) {
+      storage.saveData(data);
     }
   }
 
@@ -184,4 +143,4 @@ var XAdsPipeline = class XAdsPipeline extends AbstractPipeline {
 
     return this.storages[nodeName];
   }
-} 
+}

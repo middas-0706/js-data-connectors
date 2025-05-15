@@ -21,7 +21,7 @@ Copy and paste the ID into the appropriate field in the spreadsheet:
 Some fields are pre-filled by default.  
 To include more fields, go to the **Fields** tab and check the boxes next to the fields you want to include.
 
-![Reddit Fileds](/src/Integrations/RedditAds/res/reddit_fields.png)
+![Reddit Fields](/src/Integrations/RedditAds/res/reddit_fields.png)
 
 Go to the menu: **OWOX → Manage Credentials**
 

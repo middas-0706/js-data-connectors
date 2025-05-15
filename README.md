@@ -27,10 +27,14 @@ With just a few clicks and no coding, you can easily set up automated data impor
 | Shopify Ads | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/63)
 | Google Business Profile | ⚪️ In Discussion | [Discussion](https://github.com/OWOX/js-data-connectors/discussions/61)
 
-#### Data Storages
+#### Data Destinations
 | Name | Status | Links
 | ------------ | ------ | ----
 | Google Sheets | 🟢 Public  | [Issues](https://github.com/OWOX/js-data-connectors/issues?q=is%3Aissue%20state%3Aopen%20label%3AGoogleSheets)
+
+#### Data Storages
+| Name | Status | Links
+| ------------ | ------ | ----
 | Google BigQuery | 🟢 Public | [Issues](https://github.com/OWOX/js-data-connectors/issues?q=state%3Aopen%20%20label%3AGoogleBigQuery)
 
 If you find an integration missing, you can share your use case and request it [here](https://github.com/OWOX/js-data-connectors/discussions)

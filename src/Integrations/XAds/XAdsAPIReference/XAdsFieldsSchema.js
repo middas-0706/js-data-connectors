@@ -63,4 +63,4 @@ var XAdsFieldsSchema = {
     fields: cardAllFields,
     uniqueKeys: ["id"]
   }
-}; 
+};

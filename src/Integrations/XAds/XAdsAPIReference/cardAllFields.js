@@ -6,7 +6,6 @@
  */
 
 var cardAllFields = {
-  // Core fields
   'id': {
     'description': 'The unique identifier for the card',
     'type': 'string'
@@ -24,29 +23,28 @@ var cardAllFields = {
     'type': 'string'
   },
   'created_at': {
-    'description': 'ISO‑8601 timestamp when the card was created',
+    'description': 'ISO-8601 timestamp when the card was created',
     'type': 'datetime'
   },
   'updated_at': {
-    'description': 'ISO‑8601 timestamp when the card was last updated',
+    'description': 'ISO-8601 timestamp when the card was last updated',
     'type': 'datetime'
   },
   'deleted': {
     'description': 'Whether the card is deleted',
     'type': 'boolean'
   },
-
-  // App‑download card fields
   'googleplay_app_id': {
     'description': 'Google Play application ID',
-    'type': 'string'
+    'type': 'string',
+    'GoogleSheetsFormat': '@'
   },
   'country_code': {
     'description': 'Country code associated with the app or destination',
     'type': 'string'
   },
   'wide_app_image': {
-    'description': 'URL to the wide‑aspect‑ratio image used by the app card',
+    'description': 'URL to the wide-aspect-ratio image used by the app card',
     'type': 'string'
   },
   'image_display_width': {
@@ -58,11 +56,9 @@ var cardAllFields = {
     'type': 'string'
   },
   'app_cta': {
-    'description': 'Call‑to‑action used on the app card (e.g. INSTALL, OPEN)',
+    'description': 'Call-to-action used on the app card (e.g. INSTALL, OPEN)',
     'type': 'string'
   },
-
-  // Website / common metadata
   'title': {
     'description': 'Title shown on the card',
     'type': 'string'
@@ -83,8 +79,6 @@ var cardAllFields = {
     'description': 'Shortened (t.co) URL placed in the card',
     'type': 'string'
   },
-
-  // Video‑specific fields
   'video_url': {
     'description': 'URL of the video file or VMAP',
     'type': 'string'
@@ -99,11 +93,13 @@ var cardAllFields = {
   },
   'video_content_id': {
     'description': 'Internal content identifier of the video',
-    'type': 'string'
+    'type': 'string',
+    'GoogleSheetsFormat': '@'
   },
   'video_owner_id': {
     'description': 'User ID of the video owner',
-    'type': 'string'
+    'type': 'string',
+    'GoogleSheetsFormat': '@'
   },
   'content_duration_seconds': {
     'description': 'Video duration in seconds',

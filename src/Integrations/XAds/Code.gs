@@ -6,7 +6,7 @@ function onOpen() {
     .addItem('▶ Import New Data', 'importNewData')
     .addItem('🔑 Manage Credentials', 'manageCredentials')
     .addItem('⏰ Schedule', 'scheduleRuns')
-    .addItem('📊 Update Data Sources Sheet', 'updateDataSourcesSheet')
+    .addItem('📊 Update Fields Sheet', 'updateFieldsSheet')
     .addToUi();
 }
 
@@ -25,10 +25,10 @@ function importNewData() {
   pipeline.run();
 } 
 
-function updateDataSourcesSheet() {
-  const config = new OWOX.GoogleSheetsConfig(CONFIG_RANGE);
-  
-  config.updateDataSourcesSheet(
+function updateFieldsSheet() {
+  const config = new OWOX.GoogleSheetsConfig( CONFIG_RANGE );
+
+  config.updateFieldsSheet(
     new OWOX.XAdsConnector(config.setParametersValues({
       "ConsumerKey": "undefined", 
       "ConsumerSecret": "undefined", 

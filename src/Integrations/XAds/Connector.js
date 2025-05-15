@@ -128,11 +128,16 @@ var XAdsConnector = class XAdsConnector extends AbstractConnector {
       case 'accounts':
         return this.fetchAccount(accountId);
       case 'campaigns':
-        return this.fetchAllPages({
+        const campaigns = this.fetchAllPages({
           accountId,
           endpoint: 'campaigns',
           params: { ...params, count: this.config.DataMaxCount.value }
         });
+
+        return campaigns.map(campaign => ({
+          ...campaign,
+          account_id: accountId
+        }));
       case 'line_items':
         return this.fetchAllPages({
           accountId,
@@ -308,22 +313,62 @@ var XAdsConnector = class XAdsConnector extends AbstractConnector {
         }
       });
       
-      // Add results from both placements
+      // Process and add results from both placements
       if (twitterStats && twitterStats.data && Array.isArray(twitterStats.data)) {
-        const enrichedTwitterStats = twitterStats.data.map(stat => ({
-          ...stat,
-          date: params.start_time,
-          placement: 'ALL_ON_TWITTER'
-        }));
+        const enrichedTwitterStats = twitterStats.data.map(stat => {
+          const metrics = stat.id_data[0]?.metrics || {};
+          return {
+            id: stat.id,
+            date: params.start_time,
+            placement: 'ALL_ON_TWITTER',
+            impressions: metrics.impressions?.[0] || 0,
+            tweets_send: metrics.tweets_send?.[0] || 0,
+            billed_charge_local_micro: metrics.billed_charge_local_micro?.[0] || 0,
+            qualified_impressions: metrics.qualified_impressions?.[0] || 0,
+            follows: metrics.follows?.[0] || 0,
+            app_clicks: metrics.app_clicks?.[0] || 0,
+            retweets: metrics.retweets?.[0] || 0,
+            unfollows: metrics.unfollows?.[0] || 0,
+            likes: metrics.likes?.[0] || 0,
+            engagements: metrics.engagements?.[0] || 0,
+            clicks: metrics.clicks?.[0] || 0,
+            card_engagements: metrics.card_engagements?.[0] || 0,
+            poll_card_vote: metrics.poll_card_vote?.[0] || 0,
+            replies: metrics.replies?.[0] || 0,
+            url_clicks: metrics.url_clicks?.[0] || 0,
+            billed_engagements: metrics.billed_engagements?.[0] || 0,
+            carousel_swipes: metrics.carousel_swipes?.[0] || 0
+          };
+        });
         allResults.push(...enrichedTwitterStats);
       }
       
       if (publisherStats && publisherStats.data && Array.isArray(publisherStats.data)) {
-        const enrichedPublisherStats = publisherStats.data.map(stat => ({
-          ...stat,
-          date: params.start_time,
-          placement: 'PUBLISHER_NETWORK'
-        }));
+        const enrichedPublisherStats = publisherStats.data.map(stat => {
+          const metrics = stat.id_data[0]?.metrics || {};
+          return {
+            id: stat.id,
+            date: params.start_time,
+            placement: 'PUBLISHER_NETWORK',
+            impressions: metrics.impressions?.[0] || 0,
+            tweets_send: metrics.tweets_send?.[0] || 0,
+            billed_charge_local_micro: metrics.billed_charge_local_micro?.[0] || 0,
+            qualified_impressions: metrics.qualified_impressions?.[0] || 0,
+            follows: metrics.follows?.[0] || 0,
+            app_clicks: metrics.app_clicks?.[0] || 0,
+            retweets: metrics.retweets?.[0] || 0,
+            unfollows: metrics.unfollows?.[0] || 0,
+            likes: metrics.likes?.[0] || 0,
+            engagements: metrics.engagements?.[0] || 0,
+            clicks: metrics.clicks?.[0] || 0,
+            card_engagements: metrics.card_engagements?.[0] || 0,
+            poll_card_vote: metrics.poll_card_vote?.[0] || 0,
+            replies: metrics.replies?.[0] || 0,
+            url_clicks: metrics.url_clicks?.[0] || 0,
+            billed_engagements: metrics.billed_engagements?.[0] || 0,
+            carousel_swipes: metrics.carousel_swipes?.[0] || 0
+          };
+        });
         allResults.push(...enrichedPublisherStats);
       }
       

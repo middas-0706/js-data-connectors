@@ -12,9 +12,8 @@ This guide will help you set up and start using the TikTok Ads Connector to impo
 
 ### 1. Copy the Template
 
-1. Open the TikTok Ads Connector template in Google Sheets (link to be added once published)
-2. Click on "File" > "Make a copy" to create your own version
-3. Rename the copy as desired
+1. Copy the [TikTok Ads Connector template in Google Sheets](https://docs.google.com/spreadsheets/d/1u0RwdhYS9DRkVNnHMQ31SsQHAkCnJtKgfVlWmVQnxwg/copy).
+2. Rename the copy as desired
 
 ### 2. Configure the Connector
 
@@ -23,7 +22,6 @@ This guide will help you set up and start using the TikTok Ads Connector to impo
    - **AccessToken**: Your TikTok Business API access token
    - **AdvertiserIDs**: Comma-separated list of advertiser IDs you want to pull data from
    - **Objects**: Comma-separated list of objects you want to import (e.g., "advertisers, campaigns, ad_groups, ads, ad_insights")
-   - **DataLevel**: Level of aggregation for ad_insights data (options: AUCTION_ADVERTISER, AUCTION_CAMPAIGN, AUCTION_ADGROUP, AUCTION_AD; default: AUCTION_AD)
    - **ReimportLookbackWindow**: Number of days to look back when reimporting data (default: 2)
    - **MaxFetchingDays**: Maximum number of days to fetch data for in a single run (default: 31)
 
@@ -47,19 +45,19 @@ This configuration will fetch:
 There are several ways to run the connector:
 
 1. **Manual Run**:
-   - From the custom menu, select "TikTok Ads Connector" > "Run Import Process"
+   - From the custom menu, select "OWOX" > "Run Import Process"
    - The import will start immediately and display progress in the "Logs" sheet
 
 2. **Scheduled Run**:
-   - To set up a daily run, select "TikTok Ads Connector" > "Create Daily Trigger"
-   - To set up an hourly run, select "TikTok Ads Connector" > "Create Hourly Trigger"
-   - To remove all scheduled runs, select "TikTok Ads Connector" > "Delete All Triggers"
+   - To set up a daily run, select "OWOX" > "Schedule" > "Set Daily Schedule"
+   - To set up an hourly run, select "OWOX" > "Schedule" > "Set Hourly Schedule"
+   - To remove all scheduled runs, select "OWOX" > "Schedule" > "Delete All Schedules"
 
 ### 4. View Available Objects
 
 To see all available objects and their fields that can be imported:
 
-1. From the custom menu, select "TikTok Ads Connector" > "Show Available Objects"
+1. From the custom menu, select "OWOX" > "Show Available Objects"
 2. A complete list of available objects and their fields will be displayed in the "Logs" sheet
 
 ## Data Import Details
@@ -107,6 +105,6 @@ To see all available objects and their fields that can be imported:
 If you encounter issues not covered in this guide:
 
 1. Check the "Logs" sheet for specific error messages
-2. Visit the [GitHub repository](https://github.com/OWOX/js-data-connectors) for community support
-3. Open an issue on GitHub if you've found a bug
-4. Join the discussion forum to ask questions or propose improvements 
+2. Please [visit Q&A](https://github.com/OWOX/js-data-connectors/discussions/categories/q-a) first
+3. If you want to report a bug, please [open an issue](https://github.com/OWOX/js-data-connectors/issues)
+4. Join the [discussion forum](https://github.com/OWOX/js-data-connectors/discussions) to ask questions or propose improvements 

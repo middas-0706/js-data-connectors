@@ -415,5 +415,17 @@ var GoogleSheetsConfig = class GoogleSheetsConfig extends AbstractConfig {
       this.updateLastImportDate();
     
     }
-    //----------------------------------------------------------------
-  }  
+
+    showCredentialsDialog(connector) {
+      const ui = SpreadsheetApp.getUi();
+      
+      const template = HtmlService.createTemplateFromFile('Views/credentials-input-dialog');
+      template.connector = connector;
+      
+      const html = template.evaluate()
+        .setWidth(400)
+        .setHeight(450);
+      
+      ui.showModalDialog(html, `${connector.constructor.name} Credentials`);
+    }
+}

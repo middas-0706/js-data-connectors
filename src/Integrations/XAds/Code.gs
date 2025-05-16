@@ -13,19 +13,7 @@ function onOpen() {
 function importNewData() {
   const config = new OWOX.GoogleSheetsConfig(CONFIG_RANGE);
   const properties = PropertiesService.getDocumentProperties().getProperties();
-  
-  // Get auth parameters from config and document properties
-  const authParams = {
-    apiKey: config.ApiKey.value,
-    apiSecret: config.ApiSecret.value,
-    accessToken: properties.AccessToken || '',
-    accessTokenSecret: properties.AccessTokenSecret || ''
-  };
-  
-  const connector = new OWOX.XAdsConnector(config.setParametersValues({
-    ...authParams,
-    Fields: properties.Fields || ''
-  }));
+  const connector = new OWOX.XAdsConnector(config.setParametersValues(properties));
 
   const pipeline = new OWOX.XAdsPipeline(
     config,
@@ -35,63 +23,48 @@ function importNewData() {
   );
 
   pipeline.run();
-}
+} 
 
 function updateFieldsSheet() {
-  const config = new OWOX.GoogleSheetsConfig(CONFIG_RANGE);
-  
-  // Get auth parameters from config and properties
-  const properties = PropertiesService.getDocumentProperties().getProperties();
-  const authParams = {
-    apiKey: config.ApiKey.value,
-    apiSecret: config.ApiSecret.value,
-    accessToken: properties.AccessToken || '',
-    accessTokenSecret: properties.AccessTokenSecret || ''
-  };
+  const config = new OWOX.GoogleSheetsConfig( CONFIG_RANGE );
 
   config.updateFieldsSheet(
     new OWOX.XAdsConnector(config.setParametersValues({
-      ...authParams,
-      Fields: "undefined"
+      "ConsumerKey": "undefined", 
+      "ConsumerSecret": "undefined", 
+      "AccessToken": "undefined", 
+      "AccessTokenSecret": "undefined", 
+      "DataSources": "undefined"
     }))
   );
 }
 
-function manageCredentials() {
+function manageCredentials(credentials) {
   const ui = SpreadsheetApp.getUi();
-  const Properties = PropertiesService.getDocumentProperties();
-  
-  // Access Token management
-  manageCredential(ui, Properties, 'AccessToken', 'Access Token', 
-    'To import data from X Ads API, you need to add an Access Token. Please refer to the documentation for instructions.');
-  
-  // Access Token Secret management
-  manageCredential(ui, Properties, 'AccessTokenSecret', 'Access Token Secret', 
-    'To import data from X Ads API, you need to add an Access Token Secret. Please refer to the documentation for instructions.');
-}
+  const props = PropertiesService.getDocumentProperties();
 
-function manageCredential(ui, Properties, propertyName, displayName, description) {
-  const currentValue = Properties.getProperty(propertyName);
-  const response = ui.prompt(
-    currentValue ? `Update your ${displayName}` : `Add your ${displayName}`,
-    description,
-    ui.ButtonSet.OK_CANCEL
-  );
+  if (!credentials) {
+    // Show credentials dialog
+    const config = new OWOX.GoogleSheetsConfig(CONFIG_RANGE);
+    const connector = new OWOX.XAdsConnector(config);
+    return config.showCredentialsDialog(connector, props);
+  }
 
-  // Check the user's response
-  if (response.getSelectedButton() === ui.Button.OK) {
-    const newValue = response.getResponseText(); 
-
-    if (currentValue && newValue === "") {
-      Properties.deleteProperty(propertyName);
-      ui.alert(`☑️ Saved ${displayName} was deleted`);
-    } else if (!/^[A-Za-z0-9\-_\.]+$/.test(newValue)) {
-      ui.alert(`❌ The provided ${displayName} has an incorrect format`);
-    } else {
-      // Save the input to document properties
-      Properties.setProperty(propertyName, newValue);
-      ui.alert(`✅ ${displayName} saved successfully`);
-    }
+  try {
+    // Save credentials in the spreadsheet-bound properties
+    Object.entries(credentials).forEach(([key, value]) => {
+      if (value) {
+        props.setProperty(key, value);
+      } else {
+        props.deleteProperty(key);
+      }
+    });
+    
+    console.log('Saved properties:', props.getProperties());
+    ui.alert('✅ Credentials saved successfully');
+  } catch (e) {
+    console.error('Error saving credentials:', e);
+    ui.alert('❌ Error saving credentials: ' + e.message);
   }
 }
 

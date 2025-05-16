@@ -146,7 +146,7 @@ var adAnalyticsFields = {
     'GoogleBigQueryType': 'numeric'
   },
   'impressions': {
-    'description': 'This is the count of ""impressions"" for Sponsored Content and ""sends"" for Sponsored Messaging.',
+    'description': 'This is the count of impressions for Sponsored Content and sends for Sponsored Messaging.',
     'type': 'long',
     'GoogleBigQueryType': 'numeric'
   },

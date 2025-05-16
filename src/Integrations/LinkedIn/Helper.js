@@ -47,20 +47,6 @@ var LinkedInHelper = {
   },
   
   /**
-   * Parse data sources string into an object with source names as keys
-   * @param {string} sourcesString - Comma/semicolon separated list of data source names
-   * @return {Object} Object with data source names as keys and null as values
-   */
-  parseDataSources: function(sourcesString) {
-    return String(sourcesString)
-      .split(/[,;]\s*/)
-      .reduce((obj, name) => {
-        obj[name.trim()] = null;
-        return obj;
-      }, {});
-  },
-  
-  /**
    * Format an array of field names for use in API URLs
    * @param {Array<string>} fields - Array of field names
    * @return {string} Comma-separated string of URL-encoded field names

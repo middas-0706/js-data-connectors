@@ -47,7 +47,7 @@ var LinkedInPipeline = class LinkedInPipeline extends AbstractPipeline {
     } else if (apiType === LinkedInApiTypes.PAGES) {
       return {
         urns: LinkedInHelper.parseUrns(this.config.OrganizationURNs.value, {prefix: 'urn:li:organization:'}),
-        dataSources: LinkedInHelper.parseDataSources(this.config.DataSources.value)
+        dataSources: LinkedInHelper.parseFields(this.config.Fields.value)
       };
     } else {
       throw new Error("Unknown API type: " + apiType);
@@ -99,12 +99,12 @@ var LinkedInPipeline = class LinkedInPipeline extends AbstractPipeline {
       
       const params = this.prepareRequestParams({ fields, isTimeSeriesNode, startDate, endDate });
       const data = this.connector.fetchData(nodeName, urn, params);
-      console.log(`Fetched ${data.length} rows for ${nodeName}`);
+      const preparedData = this.addMissingFieldsToData(data, fields);
       
       this.saveDataToStorage({ 
         nodeName, 
         urn, 
-        data, 
+        data: preparedData, 
         ...(isTimeSeriesNode && { startDate, endDate })
       });
     }

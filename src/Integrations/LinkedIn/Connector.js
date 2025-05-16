@@ -41,6 +41,14 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
         requiredType: "date",
         default: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
       },
+      Fields: {
+        isRequired: true
+      },
+      MaxFieldsPerRequest: {
+        requiredType: "number",
+        isRequired: true,
+        default: 20
+      }
     }));
     
     if (this.config.AccountURNs) {
@@ -49,14 +57,6 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
       this.config = this.config.mergeParameters({
         AccountURNs: {
           isRequired: true
-        },
-        Fields: {
-          isRequired: true
-        },
-        MaxFieldsPerRequest: {
-          requiredType: "number",
-          isRequired: true,
-          default: 20
         }
       });
     } else if (this.config.OrganizationURNs) {
@@ -65,9 +65,6 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
       this.config = this.config.mergeParameters({
         OrganizationURNs: {
           isRequired: true
-        },
-        DataSources: {
-          isRequired: true,
         }
       });
     } else {
@@ -83,6 +80,14 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
    * @returns {Array} - Array of fetched data objects
    */
   fetchData(nodeName, urn, params = {}) {
+    const fields = params.fields || [];
+    const uniqueKeys = this.fieldsSchema[nodeName]?.uniqueKeys || [];
+    const missingKeys = uniqueKeys.filter(key => !fields.includes(key));
+    
+    if (missingKeys.length > 0) {
+      throw new Error(`Missing required unique fields for endpoint '${nodeName}'. Missing fields: ${missingKeys.join(', ')}`);
+    }
+    
     switch (this.apiType) {
       case LinkedInApiTypes.ADS:
         return this.fetchAdsData(nodeName, urn, params);
@@ -133,7 +138,7 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
           endpoint: "organizationalEntityFollowerStatistics",
           entityParam: "organizationalEntity",
           formatter: this.transformFollowerStatistics.bind(this),
-          ...params
+          params
         });
       case "follower_statistics_time_bound":
         return this.fetchOrganizationStats({
@@ -142,7 +147,7 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
           endpoint: "organizationalEntityFollowerStatistics",
           entityParam: "organizationalEntity",
           formatter: this.transformFollowerStatisticsTimeBound.bind(this),
-          ...params
+          params
         });
       default:
         throw new Error(`Unknown node: ${nodeName}`);
@@ -157,25 +162,26 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
    * @param {string} options.endpoint - API endpoint name
    * @param {string} options.entityParam - Parameter name for the organization URN
    * @param {Function} options.formatter - Function to format the response data
-   * @param {Date} [options.startDate] - Start date for time-bound data
-   * @param {Date} [options.endDate] - End date for time-bound data
+   * @param {Date} [options.params.startDate] - Start date for time-bound data
+   * @param {Date} [options.params.endDate] - End date for time-bound data
+   * @param {Array} [options.params.fields] - Additional parameters including fields
    * @returns {Array} - Processed statistics data
    */
   fetchOrganizationStats(options) {
-    const { urn, nodeName, endpoint, entityParam, formatter, startDate, endDate } = options;
+    const { urn, nodeName, endpoint, entityParam, formatter, params } = options;
     const orgUrn = `urn:li:organization:${urn}`;
     const encodedUrn = encodeURIComponent(orgUrn);
     
     let url = `${this.config.BaseUrl.value}${endpoint}?q=${entityParam}&${entityParam}=${encodedUrn}`;
     
     const isTimeSeries = this.fieldsSchema[nodeName].isTimeSeries;
-    
-    if (isTimeSeries && startDate && endDate) {
-      const startTimestamp = new Date(startDate).getTime();
-      const endTimestamp = new Date(endDate).getTime();
+
+    if (isTimeSeries && params.startDate && params.endDate) {
+      const startTimestamp = new Date(params.startDate).getTime();
+      const endTimestamp = new Date(params.endDate).getTime();
       url += `&timeIntervals=(timeRange:(start:${startTimestamp},end:${endTimestamp}),timeGranularityType:DAY)`;
     }
-    
+
     const response = this.makeRequest(url);
     const elements = response.elements || [];
     
@@ -186,10 +192,25 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
     return formatter({
       elements,
       orgUrn,
-      options
+      fields: params.fields
     });
   }
   
+  /**
+   * Filter object properties by allowed field names
+   * @param {Object} dataObj - Original data object
+   * @param {Array} fields - Array of allowed field names
+   * @returns {Object} - Filtered object with only allowed fields
+   */
+  filterDataByFields(dataObj, fields) {
+    return Object.keys(dataObj)
+      .filter(key => fields.includes(key))
+      .reduce((obj, key) => {
+        obj[key] = dataObj[key];
+        return obj;
+      }, {});
+  }
+
   /**
    * Process time-bound statistics data
    * @param {Object} params - Parameters object
@@ -198,21 +219,25 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
    * @param {Object} params.options - Original options passed to fetchOrganizationStats
    * @returns {Array} - Processed time-bound statistics
    */
-  transformFollowerStatisticsTimeBound({ elements }) {
-    return elements.map(element => ({
-      organization_urn: element.organizationalEntity,
-      time_range_start: element.timeRange.start,
-      time_range_end: element.timeRange.end,
-      organic_follower_gain: element.followerGains?.organicFollowerGain || 0,
-      paid_follower_gain: element.followerGains?.paidFollowerGain || 0,
-      follower_counts_by_association_type: element.followerCountsByAssociationType || [],
-      follower_counts_by_seniority: element.followerCountsBySeniority || [],
-      follower_counts_by_industry: element.followerCountsByIndustry || [],
-      follower_counts_by_function: element.followerCountsByFunction || [],
-      follower_counts_by_staff_count_range: element.followerCountsByStaffCountRange || [],
-      follower_counts_by_geo_country: element.followerCountsByGeoCountry || [],
-      follower_counts_by_geo: element.followerCountsByGeo || []
-    }));
+  transformFollowerStatisticsTimeBound({ elements, orgUrn, fields }) {    
+    return elements.map(element => {
+      const dataObj = {
+        organization_urn: element.organizationalEntity,
+        time_range_start: element.timeRange.start,
+        time_range_end: element.timeRange.end,
+        organic_follower_gain: element.followerGains?.organicFollowerGain || 0,
+        paid_follower_gain: element.followerGains?.paidFollowerGain || 0,
+        follower_counts_by_association_type: element.followerCountsByAssociationType || [],
+        follower_counts_by_seniority: element.followerCountsBySeniority || [],
+        follower_counts_by_industry: element.followerCountsByIndustry || [],
+        follower_counts_by_function: element.followerCountsByFunction || [],
+        follower_counts_by_staff_count_range: element.followerCountsByStaffCountRange || [],
+        follower_counts_by_geo_country: element.followerCountsByGeoCountry || [],
+        follower_counts_by_geo: element.followerCountsByGeo || []
+      };
+      
+      return this.filterDataByFields(dataObj, fields);
+    });
   }
   
   /**
@@ -247,7 +272,7 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
    * @param {Object} params.options - Original options passed to fetchOrganizationStats
    * @returns {Array} - Denormalized follower statistics
    */
-  transformFollowerStatistics({ elements, orgUrn }) {
+  transformFollowerStatistics({ elements, orgUrn, fields }) {
     const results = [];
     const element = elements[0];
     const organizationUrn = element.organizationalEntity || orgUrn;
@@ -256,14 +281,16 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
     categoryTypes.forEach(category => {
       const items = element[category.type] || [];
       items.forEach(item => {
-        results.push({
+        const dataObj = {
           organization_urn: organizationUrn,
           category_type: category.type,
           segment_name: category.segmentName,
           segment_value: item[category.segmentName],
           organic_follower_count: item.followerCounts?.organicFollowerCount || 0,
           paid_follower_count: item.followerCounts?.paidFollowerCount || 0
-        });
+        };
+        
+        results.push(this.filterDataByFields(dataObj, fields));
       });
     });
     
@@ -389,7 +416,32 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
       allResults = this.mergeAnalyticsResults(allResults, elements);
     }
     
-    return allResults;
+    // Transform complex dateRange objects to simple Date objects
+    return this.transformAnalyticsDateRanges(allResults);
+  }
+  
+  /**
+   * Transform complex dateRange objects to simple Date objects in analytics data
+   * @param {Array} analyticsData - Array of analytics data records
+   * @returns {Array} - Transformed analytics data
+   */
+  transformAnalyticsDateRanges(analyticsData) {
+    if (!analyticsData || !analyticsData.length) {
+      return analyticsData;
+    }
+
+    const pad = n => String(n).padStart(2, '0');
+
+    return analyticsData.map(item => {
+      const res = { ...item };
+
+      if (res.dateRange?.start) {
+        const { year, month, day } = res.dateRange.start;
+        res.dateRange = `${year}-${pad(month)}-${pad(day)}`;
+      }
+
+      return res;
+    });
   }
   
   /**
@@ -406,7 +458,7 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
     return `${this.config.BaseUrl.value}adAnalytics?q=statistics` +
       `&dateRange=(start:${LinkedInHelper.formatDateForUrl(startDate)},` +
       `end:${LinkedInHelper.formatDateForUrl(endDate)})` +
-      `&pivots=List(CREATIVE,CAMPAIGN)` +
+      `&pivots=List(CREATIVE,CAMPAIGN,CAMPAIGN_GROUP,ACCOUNT)` +
       `&timeGranularity=DAILY` +
       `&accounts=List(${encodedUrn})` +
       `&fields=${LinkedInHelper.formatFields(fields)}`;

@@ -7,7 +7,6 @@ function onOpen() {
     .addItem('🔑 Manage Credentials', 'manageCredentials')
     .addItem('⏰ Schedule', 'scheduleRuns')
     .addItem('📋 Update Fields Sheet', 'updateFieldsSheet')
-    // .addItem('📊 Update Data Sources Sheet', 'updateDataSourcesSheet')
     .addToUi();
 }
 
@@ -19,13 +18,13 @@ function importNewData() {
   const pipeline = new OWOX.LinkedInPipeline(
     config,
     connector,
-    "GoogleBigQueryStorage"
+    "GoogleSheetsStorage"
+    // "GoogleBigQueryStorage"
   );
 
   pipeline.run();
 }
 
-// LinkedIn Ads
 function updateFieldsSheet() {
   const config = new OWOX.GoogleSheetsConfig( CONFIG_RANGE );
 
@@ -33,15 +32,6 @@ function updateFieldsSheet() {
     new OWOX.LinkedInConnector( config.setParametersValues( {"AccessToken": "undefined", "Fields": "undefined"} ))
   );
 }
-
-// LinkedIn Pages
-// function updateDataSourcesSheet() {
-//   const config = new OWOX.GoogleSheetsConfig( CONFIG_RANGE );
-// 
-//   config.updateDataSourcesSheet(
-//     new OWOX.LinkedInConnector(config.setParametersValues({"AccessToken": "undefined", "DataSources": "undefined"}))
-//   );
-// }
 
 function manageCredentials() {
   const ui = SpreadsheetApp.getUi();

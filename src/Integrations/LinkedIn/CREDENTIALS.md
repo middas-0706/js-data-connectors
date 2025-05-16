@@ -38,12 +38,9 @@ Approval can take up to 24 hours. You will receive an email when your request is
 Select the following scopes:
     - `r_ads`
     - `r_ads_reporting`  
- ![LinkedIn Scopes Error](/src/Integrations/LinkedIn/res/linkedin_error.png)
-
-Then, click **Request access token**.  
  ![LinkedIn Scopes](/src/Integrations/LinkedIn/res/linkedin_scope.png)
 
-Press the Request access token button.
+Then, click **Request access token**.  
  ![LinkedIn Request token](/src/Integrations/LinkedIn/res/linkedin_requesttoken.png)
 
 11. On the next screen, click **Allow** to grant access.  

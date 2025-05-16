@@ -6,3 +6,4 @@
 !Core/GoogleSheets*.js
 !Core/Exceptions.js
 !Constants/*.js
+!Views/**/*

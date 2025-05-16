@@ -418,113 +418,14 @@ var GoogleSheetsConfig = class GoogleSheetsConfig extends AbstractConfig {
 
     showCredentialsDialog(connector) {
       const ui = SpreadsheetApp.getUi();
-      const html = HtmlService
-        .createHtmlOutput(this._getDialogHtml(connector))
+      
+      const template = HtmlService.createTemplateFromFile('Views/credentials-input-dialog');
+      template.connector = connector;
+      
+      const html = template.evaluate()
         .setWidth(400)
         .setHeight(450);
+      
       ui.showModalDialog(html, `${connector.constructor.name} Credentials`);
-    }
-  
-    /**
-     * Generate HTML for credentials dialog with empty inputs
-     * @param {AbstractConnector} connector
-     * @returns {string}
-     */
-    _getDialogHtml(connector) {
-      return `
-        <style>${this._getDialogStyles()}</style>
-        <h3>${connector.constructor.name} Credentials</h3>
-        <p>Please enter your API credentials below:</p>
-        <form id="credentialsForm">
-          ${this._getFieldsHtml(connector)}
-          <div class="buttons">
-            <button type="button" class="btn btn-secondary" id="cancelBtn">Cancel</button>
-            <button type="button" class="btn btn-primary" id="saveBtn">Save</button>
-          </div>
-          <div class="loading" id="loadingIndicator">
-            <div class="spinner"></div>
-            <span>Saving credentials...</span>
-          </div>
-        </form>
-        <script>
-          const cancelBtn = document.getElementById('cancelBtn');
-          const saveBtn = document.getElementById('saveBtn');
-          
-          cancelBtn.addEventListener('click', () => google.script.host.close());
-          saveBtn.addEventListener('click', saveCredentials);
-          
-          function setLoading(isLoading) {
-            saveBtn.disabled = isLoading;
-            cancelBtn.disabled = isLoading;
-            const loadingIndicator = document.getElementById('loadingIndicator');
-            loadingIndicator.classList.toggle('visible', isLoading);
-          }
-        
-          function saveCredentials() {
-            setLoading(true);
-            const credentials = {};
-            ${this._getCredentialsCollectionScript(connector)}
-            google.script.run
-              .withSuccessHandler(() => google.script.host.close())
-              .withFailureHandler(err => {
-                setLoading(false);
-                console.error(err);
-              })
-              .manageCredentials(credentials);
-          }
-        </script>
-      `;
-    }
-  
-    /**
-     * CSS styles for dialog
-     * @returns {string}
-     */
-    _getDialogStyles() {
-      return `
-        body { font-family: Arial; margin: 20px; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; font-weight: bold; margin-bottom: 5px; }
-        input { width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ccc; }
-        .buttons { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-        .btn { padding: 8px 24px; border: none; border-radius: 4px; cursor: pointer; }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        .btn-primary { background: #4285f4; color: #fff; }
-        .btn-secondary { background: #f1f3f4; color: #3c4043; }
-        .loading { display: none; align-items: center; gap: 8px; margin-top: 8px; }
-        .loading.visible { display: flex; }
-        .spinner { width: 16px; height: 16px; border: 2px solid #4285f4; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
-        .field-description { font-size: 12px; color: #666; margin-top: 4px; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `;
-    }
-  
-    /**
-     * Generate empty input fields for each credential
-     * @param {AbstractConnector} connector
-     * @returns {string}
-     */
-    _getFieldsHtml(connector) {
-      const fields = connector.getCredentialFields();
-      return Object.keys(fields)
-        .map(field => `
-          <div class="form-group">
-            <label for="${field}">${fields[field].displayName || field}:</label>
-            <input type="text" id="${field}" name="${field}" value="" autocomplete="off" />
-            <div class="field-description">${fields[field].description || ''}</div>
-          </div>
-        `)
-        .join('');
-    }
-  
-    /**
-     * JS snippet to collect user input values
-     * @param {AbstractConnector} connector
-     * @returns {string}
-     */
-    _getCredentialsCollectionScript(connector) {
-      return Object.keys(connector.getCredentialFields())
-        .map(field => `credentials['${field}'] = document.getElementById('${field}').value.trim();`)
-        .join('\n          ');
     }
 }

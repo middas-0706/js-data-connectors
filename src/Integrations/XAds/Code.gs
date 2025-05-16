@@ -6,7 +6,7 @@ function onOpen() {
     .addItem('▶ Import New Data', 'importNewData')
     .addItem('🔑 Manage Credentials', 'manageCredentials')
     .addItem('⏰ Schedule', 'scheduleRuns')
-    .addItem('📊 Update Fields Sheet', 'updateFieldsSheet')
+    .addItem('📋 Update Fields Sheet', 'updateFieldsSheet')
     .addToUi();
 }
 

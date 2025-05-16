@@ -12,26 +12,34 @@ To use the TikTok Ads connector, you need to obtain an access token from the Tik
 
 ### 1. Create a Developer App
 
-1. Go to the [TikTok for Developers](https://developers.tiktok.com/) portal
+1. Go to the [TikTok for Business Developers](https://business-api.tiktok.com/portal) portal
 2. Log in with your TikTok for Business account credentials
-3. Navigate to "My Apps" and click "Create App"
+3. Press "Become a Developer"
 4. Fill in the required information:
-   - App Name
-   - App Description
-   - Select "Business" as the app type
-   - Choose the "Advertising" category
-   - Provide a website URL (can be your company website)
-5. Complete the application and wait for approval
+   - First Name
+   - Last Name
+   - Communication Email
+   - Type of your company
+5. Press "Next" and complete the application
+
+![TikTok Become a Developer](/src/Integrations/TikTokAds/res/tiktok_developer.png)
 
 ### 2. Configure the App
 
-1. Once your app is approved, go to "My Apps" and select your app
-2. Navigate to the "App Settings" section
-3. Under the "Permissions" tab, request access to the following scopes:
-   - `ads.read` - Required to read advertising data
-   - `advertiser.read` - Required to access advertiser information
-4. Add a redirect URI (this can be a placeholder like `https://localhost` if you're just generating a token)
-5. Save your changes
+1. Go to ["My Apps"](https://business-api.tiktok.com/portal/apps) and press "Create an App"
+2. Fill in the required information:
+   - App name
+   - App description
+   - Advertiser redirect URL ((this can be a placeholder like `https://localhost:8080` if you're just generating a token))
+3. Chose access to the following scopes of permission:
+   - Read Ad Account Information
+   - Read Campaigns
+   - Read Ad Groups
+   - Read Ads
+   - Read Custom Audiences
+4. Press "Submit"
+
+![TikTok Create App](/src/Integrations/TikTokAds/res/tiktok_createapp.png)
 
 ### 3. Generate an Access Token
 

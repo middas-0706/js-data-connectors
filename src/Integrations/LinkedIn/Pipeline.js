@@ -99,6 +99,7 @@ var LinkedInPipeline = class LinkedInPipeline extends AbstractPipeline {
       
       const params = this.prepareRequestParams({ fields, isTimeSeriesNode, startDate, endDate });
       const data = this.connector.fetchData(nodeName, urn, params);
+      console.log(`Fetched ${data.length} rows for ${nodeName}`);
       const preparedData = this.addMissingFieldsToData(data, fields);
       
       this.saveDataToStorage({ 

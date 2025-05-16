@@ -129,7 +129,7 @@ class AbstractPipeline {
     }
     //----------------------------------------------------------------
     
-  //---- ensureSelectedFieldsPresent ---------------------------------
+  //---- addMissingFieldsToData ---------------------------------
     /**
      * Ensures all fields selected in the configuration are present in each data record.
      * This is useful when API returns data without some fields that were selected.

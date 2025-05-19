@@ -1,4 +1,4 @@
-## How to obtain the credentials for the LinkedIn Ads connector
+## How to obtain the Access Token for Linkedin Ads and Linkedin Pages Connectors
 
 1. Visit the [LinkedIn Developer portal](https://developer.linkedin.com/ ).
 
@@ -46,6 +46,7 @@
     > ![LinkedIn Scopes Error](/src/Integrations/LinkedIn/res/linkedin_error.png)
 
    Select the following scopes:
+
     - `r_ads`
     - `r_ads_reporting`  
 
@@ -64,3 +65,5 @@
  ![LinkedIn Copy token](/src/Integrations/LinkedIn/res/linkedin_copytoken.png)
 
 Once you have the access token, you can use it as described in the [Getting Started guide](/src/Integrations/LinkedIn/GETTING_STARTED.md).
+
+

@@ -22,28 +22,33 @@ var LinkedInPipeline = class LinkedInPipeline extends AbstractPipeline {
    */
   startImportProcess() {
     const apiType = this.connector.apiType;
-    const fields = LinkedInHelper.parseFields(this.config.Fields.value);
-    console.log('Fields:', fields);
+    const { urns, dataSources } = this.determineApiResources(apiType);
     
-    const urns = this.determineUrns(apiType);
-    
-    for (const nodeName in fields) {
+    for (const nodeName in dataSources) {
       this.processNode({
         nodeName,
         urns,
-        fields: fields[nodeName]
+        fields: dataSources[nodeName] || []
       });
     }
   }
   
   /**
-   * Determine URNs based on API type
-   * @param {string} apiType - Type of API (e.g., "Ads")
-   * @returns {Array} - Array of URNs to process
+   * Determine API resources (URNs and fields/tables) based on API type
+   * @param {string} apiType - Type of API (LinkedInApiTypes.ADS or LinkedInApiTypes.PAGES)
+   * @returns {Object} - Object containing URNs and data sources (fields for Ads, tables for Pages)
    */
-  determineUrns(apiType) {
-    if (apiType === "Ads") {
-      return LinkedInHelper.parseAccountUrns(this.config.AccountURNs.value);
+  determineApiResources(apiType) {
+    if (apiType === LinkedInApiTypes.ADS) {
+      return {
+        urns: LinkedInHelper.parseUrns(this.config.AccountURNs.value, {prefix: 'urn:li:sponsoredAccount:'}),
+        dataSources: LinkedInHelper.parseFields(this.config.Fields.value)
+      };
+    } else if (apiType === LinkedInApiTypes.PAGES) {
+      return {
+        urns: LinkedInHelper.parseUrns(this.config.OrganizationURNs.value, {prefix: 'urn:li:organization:'}),
+        dataSources: LinkedInHelper.parseFields(this.config.Fields.value)
+      };
     } else {
       throw new Error("Unknown API type: " + apiType);
     }
@@ -67,7 +72,7 @@ var LinkedInPipeline = class LinkedInPipeline extends AbstractPipeline {
     this.fetchAndSaveData({
       nodeName, 
       urns, 
-      fields, 
+      fields,
       isTimeSeriesNode,
       ...dateInfo
     });
@@ -95,11 +100,12 @@ var LinkedInPipeline = class LinkedInPipeline extends AbstractPipeline {
       const params = this.prepareRequestParams({ fields, isTimeSeriesNode, startDate, endDate });
       const data = this.connector.fetchData(nodeName, urn, params);
       console.log(`Fetched ${data.length} rows for ${nodeName}`);
+      const preparedData = this.addMissingFieldsToData(data, fields);
       
       this.saveDataToStorage({ 
         nodeName, 
         urn, 
-        data, 
+        data: preparedData, 
         ...(isTimeSeriesNode && { startDate, endDate })
       });
     }

@@ -7,31 +7,30 @@
 
 var LinkedInHelper = {
   /**
-   * Format LinkedIn account URN to a numeric ID
-   * @param {string|number} accountId - Account ID or URN
-   * @return {number} Numeric account ID
+   * Universal URN formatter: extracts numeric ID from URN or returns number if already numeric
+   * @param {string|number} urn
+   * @param {Object} options
+   * @param {string} options.prefix - URN prefix, e.g. 'urn:li:organization:'
+   * @return {number} Numeric ID
    */
-  formatAccountUrn: function(accountId) {
-    if (!isNaN(accountId)) {
-      return parseInt(accountId);
+  formatUrn: function(urn, {prefix}) {
+    if (typeof urn === 'string' && urn.startsWith(prefix)) {
+      return parseInt(urn.replace(prefix, ''));
     }
-    
-    if (accountId.startsWith('urn:li:sponsoredAccount:')) {
-      return parseInt(accountId.replace('urn:li:sponsoredAccount:', ''));
-    }
-    
-    return parseInt(accountId);
+    return parseInt(urn);
   },
 
   /**
-   * Parse multiple account URNs from a comma or semicolon separated string
-   * @param {string} accountUrnsString - Comma/semicolon separated list of account IDs/URNs
-   * @return {Array<number>} Array of numeric account IDs
+   * Universal URN parser: parses comma/semicolon separated string to array of numeric IDs
+   * @param {string} urnsString - Comma/semicolon separated list of IDs/URNs
+   * @param {Object} options
+   * @param {string} options.prefix - URN prefix, e.g. 'urn:li:organization:'
+   * @return {Array<number>} Array of numeric IDs
    */
-  parseAccountUrns: function(accountUrnsString) {
-    return String(accountUrnsString)
+  parseUrns: function(urnsString, {prefix}) {
+    return String(urnsString)
       .split(/[,;]\s*/)
-      .map(id => this.formatAccountUrn(id.trim()));
+      .map(urn => this.formatUrn(urn.trim(), {prefix}));
   },
 
   /**

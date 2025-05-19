@@ -83,7 +83,9 @@ var adAnalyticsFields = {
   },
   'dateRange': {
     'description': 'Date range covered by the report data point. Date is specified in UTC. Start and end date are inclusive. Start date is required. End date is optional and defaults to today.',
-    'type': 'object'
+    'type': 'string',
+    'GoogleSheetsFormat': '@',
+    'GoogleBigQueryType': 'date'
   },
   'documentCompletions': {
     'description': 'The number of times users reached 100% of the document\'s length, including those that skipped to this point. This metric is only available for document ads and not all dimensions.',
@@ -146,7 +148,7 @@ var adAnalyticsFields = {
     'GoogleBigQueryType': 'numeric'
   },
   'impressions': {
-    'description': 'This is the count of ""impressions"" for Sponsored Content and ""sends"" for Sponsored Messaging.',
+    'description': 'This is the count of impressions for Sponsored Content and sends for Sponsored Messaging.',
     'type': 'long',
     'GoogleBigQueryType': 'numeric'
   },
@@ -315,166 +317,207 @@ var adAnalyticsFields = {
   },
   'viralCardClicks': {
     'description': 'Non-demographic pivots only (i.e. not MEMBER_). The number of viralClicks for each card of a carousel ad. The first viralCardClick of the carousel ad results in an immediate viralCardClick and viralClick, whereas scrolling to other cards and clicking will count as additional viralCardClick.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralCardImpressions': {
     'description': 'Non-demographic pivots only (i.e. not MEMBER_). The number of viralImpressions shown for each card of a carousel ad. The first card of the carousel ad results in an immediate viralCardImpression and viralImpression, whereas scrolling to other cards will count as additional viralCardImpressions.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralClicks': {
     'description': 'The count of clicks on viral impressions. See viral impressions definition. Sponsored Content only.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralCommentLikes': {
     'description': 'The count of likes on comments from viral impressions for this activity. See viral impressions definition. Sponsored Content only.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralComments': {
     'description': 'The count of comments from viral impressions for this activity. See viral impressions definition. Sponsored Content only.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralCompanyPageClicks': {
     'description': 'The count of clicks to view the company page from viral impressions for this activity. See viral impressions definition. Sponsored Content only.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralDocumentCompletions': {
     'description': 'The number of times users reached 100% of the document\'s length on a viral post, including those that skipped to this point. This metric is only available for document ads.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralDocumentFirstQuartileCompletions': {
     'description': 'The number of times users reached the first quartile of the document\'s length on a viral post, including those that skipped to this point. This metric is only available for document ads.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralDocumentMidpointCompletions': {
     'description': 'The number of times users reached the second quartile of the document\'s length on a viral post, including those that skipped to this point. This metric is only available for document ads.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralDocumentThirdQuartileCompletions': {
     'description': 'The number of times users reached the third quartile of the document\'s length on a viral post, including those that skipped to this point. This metric is only available for document ads.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralDownloadClicks': {
     'description': 'The number of times users have indicated the intent to download the media in a viral ad by clicking the download icon. This may or may not result in an actual download (e.g. if the user rejects a browser download prompt). Only available for ads supporting media downloads.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralExternalWebsiteConversions': {
     'description': 'The count of conversions that are attributed to your ads driven by a viral event. See viral impressions definition.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralExternalWebsitePostClickConversions': {
     'description': 'The count of post-click conversions that are attributed to your ads driven by a viral click. See viral impressions definition.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralExternalWebsitePostViewConversions': {
     'description': 'The count of post-view conversions that are attributed to your ads driven by a viral impression. See viral impressions definition.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralFollows': {
     'description': 'The count of follows from viral impressions for this activity. See viral impressions definition. Sponsored Content only.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralFullScreenPlays': {
     'description': 'Number of times members click on the full screen button or on the video(mobile only) to go into full screen mode. See viralImpressions definition.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralImpressions': {
     'description': 'The count of viral impressions for this activity. Viral impressions are those resulting from users sharing sponsored content to their own network of connections. Viral impressions are not counted as regular impressions. Sponsored Content only.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralJobApplications': {
     'description': 'The number of times a member completed a job application after viewing or clicking on a viral ad. Currently, this metric is broken down into viralPostViewJobApplications (if the member performed the action after viewing the viral ad) and viralPostClickJobApplications (if the member performed the action after clicking the viral ad).',
-    'type': 'number'
+    'type': 'number',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralJobApplyClicks': {
     'description': 'The number of times a member clicked on the job\'s apply button on an LinkedIn jobs page after viewing or clicking on a viral ad which has a LinkedIn job landing page during the date range.Currently, this metric is broken down into viralPostViewJobApplyClicks (if the member performed the action after viewing the viral ad) and viralPostClickJobApplyClicks (if the member performed the action after clicking the viral ad).',
-    'type': 'number'
+    'type': 'number',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralLandingPageClicks': {
     'description': 'The count of clicks on viral impressions to take the user to the creative landing page. See viral impressions definition. Sponsored Content only.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralLikes': {
     'description': 'The count of likes from viral impressions for this activity. See viral impressions definition. Sponsored Content only.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralOneClickLeadFormOpens': {
     'description': 'The count of times users opened the lead form for viral impressions from a Lead Gen campaign. See viral impressions definition.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralOneClickLeads': {
     'description': 'The count of leads generated through One Click Lead Gen from viral impressions for this activity. See viral impressions definition.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralOtherEngagements': {
     'description': 'The count of user interactions with viral impressions that do not fit into any other more specific category. See viral impressions definition. Sponsored Content only.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralPostClickJobApplications': {
     'description': 'The number of times a member completed a job application after clicking on a viral ad.',
-    'type': 'number'
+    'type': 'number',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralPostClickJobApplyClicks': {
     'description': 'The number of times a member clicked on the job\'s apply button on an LinkedIn jobs page after clicking on a viral ad which has a LinkedIn job landing page.',
-    'type': 'number'
+    'type': 'number',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralPostClickRegistrations': {
     'description': 'The number of times a member has registered for an event or seminar after clicking on a viral ad which has a LinkedIn landing page. See viralImpressions definition. This includes gross registrations and does not account for a user unregistering.',
-    'type': 'number'
+    'type': 'number',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralPostViewJobApplications': {
     'description': 'The number of times a member completed a job application after viewing a viral ad.',
-    'type': 'number'
+    'type': 'number',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralPostViewJobApplyClicks': {
     'description': 'The number of times a member clicked on the job\'s apply button on an LinkedIn jobs page after viewing a viral ad which has a LinkedIn job landing page.',
-    'type': 'number'
+    'type': 'number',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralPostViewRegistrations': {
     'description': 'The number of times a member has registered for an event or seminar after viewing a viral ad which has a LinkedIn event landing page. See viralImpressions definition. This includes gross registrations and does not account for a user unregistering.',
-    'type': 'number'
+    'type': 'number',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralReactions': {
     'description': 'The count of positive reactions on viral Sponsored Content which can capture like, interest, praise, and other responses. See viral impressions definition for details on viral engagements.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralRegistrations': {
     'description': 'The number of times a member has registered for an event or seminar after viewing or clicking on a viral ad which has a LinkedIn event landing page. See viralImpressions definition. This includes gross registrations and does not account for a user unregistering.',
-    'type': 'number'
+    'type': 'number',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralShares': {
     'description': 'The count of shares from viral impressions for this activity. See viral impressions definition. Sponsored Content only.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralSubscriptionClicks': {
     'description': 'The count of viral clicks to subscribe to a series, such as a Newsletter.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralTotalEngagements': {
     'description': 'The count of all user interactions with a viral ad unit. See viral impressions definition. Sponsored Content only.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralVideoCompletions': {
     'description': 'The count of viral video ads that played 97-100% of the video. This includes watches that skipped to this point. See viralImpressions definition.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralVideoFirstQuartileCompletions': {
     'description': 'The count of viral video ads that played through the first quartile of the video. This includes watches that skipped to this point. See viralImpressions definition.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralVideoMidpointCompletions': {
     'description': 'The count of viral video ads that played through the midpoint of the video. This includes watches that skipped to this point. See viralImpressions definition.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralVideoStarts': {
     'description': 'The count of viral video ads that were started by users. See viralImpressions definition. Since viral videos are automatically played for ON_SITE, this will be the same as viralImpressions if the servingLocation is ON_SITE.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralVideoThirdQuartileCompletions': {
     'description': 'The count of viral video ads that played through the third quartile of the video. This includes watches that skipped to this point. See viralImpressions definition',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
   },
   'viralVideoViews': {
     'description': 'A viral video ad playing for at least 2 continuous seconds 50% in-view, or a click on the CTA, whichever comes first. An interaction with the video (like going to full screen mode) does not count as a view. See viralImpressions definition.',
-    'type': 'long'
+    'type': 'long',
+    'GoogleBigQueryType': 'numeric'
     }
 } 

@@ -13,8 +13,8 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
         requiredType: "string"
       },
       ApiType: {
-        requiredType: "string",
-        default: "Ads"
+        requiredType: "number",
+        default: LinkedInApiTypes.ADS
       },
       Version: {
         requiredType: "string",
@@ -36,24 +36,35 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
       BaseUrl: {
         requiredType: "string",
         default: "https://api.linkedin.com/rest/"
+      },
+      StartDate: {
+        requiredType: "date",
+        default: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+      },
+      Fields: {
+        isRequired: true
+      },
+      MaxFieldsPerRequest: {
+        requiredType: "number",
+        isRequired: true,
+        default: 20
       }
     }));
     
-    // Determine API type and setup connector
-    if (this.config.AccountURNs && this.config.AccountURNs.value) {
-      this.apiType = "Ads";
+    if (this.config.AccountURNs) {
+      this.apiType = LinkedInApiTypes.ADS;
       this.fieldsSchema = LinkedInAdsFieldsSchema;
       this.config = this.config.mergeParameters({
         AccountURNs: {
           isRequired: true
-        },
-        Fields: {
+        }
+      });
+    } else if (this.config.OrganizationURNs) {
+      this.apiType = LinkedInApiTypes.PAGES;
+      this.fieldsSchema = LinkedInPagesFieldsSchema;
+      this.config = this.config.mergeParameters({
+        OrganizationURNs: {
           isRequired: true
-        },
-        MaxFieldsPerRequest: {
-          requiredType: "number",
-          isRequired: true,
-          default: 20
         }
       });
     } else {
@@ -69,9 +80,19 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
    * @returns {Array} - Array of fetched data objects
    */
   fetchData(nodeName, urn, params = {}) {
+    const fields = params.fields || [];
+    const uniqueKeys = this.fieldsSchema[nodeName]?.uniqueKeys || [];
+    const missingKeys = uniqueKeys.filter(key => !fields.includes(key));
+    
+    if (missingKeys.length > 0) {
+      throw new Error(`Missing required unique fields for endpoint '${nodeName}'. Missing fields: ${missingKeys.join(', ')}`);
+    }
+    
     switch (this.apiType) {
-      case "Ads":
+      case LinkedInApiTypes.ADS:
         return this.fetchAdsData(nodeName, urn, params);
+      case LinkedInApiTypes.PAGES:
+        return this.fetchPagesData(nodeName, urn, params);
       default:
         throw new Error(`API type ${this.apiType} is not supported`);
     }
@@ -99,6 +120,181 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
       default:
         throw new Error(`Unknown node: ${nodeName}`);
     }
+  }
+
+  /**
+   * LinkedIn Pages API implementation of fetchData
+   * @param {string} nodeName - Type of resource to fetch
+   * @param {string|number} urn - Organization ID (numeric)
+   * @param {Object} params - Additional parameters for the request
+   * @returns {Array} - Array of processed data objects
+   */
+  fetchPagesData(nodeName, urn, params = {}) {
+    switch (nodeName) {
+      case "follower_statistics":
+        return this.fetchOrganizationStats({
+          urn, 
+          nodeName,
+          endpoint: "organizationalEntityFollowerStatistics",
+          entityParam: "organizationalEntity",
+          formatter: this.transformFollowerStatistics.bind(this),
+          params
+        });
+      case "follower_statistics_time_bound":
+        return this.fetchOrganizationStats({
+          urn, 
+          nodeName,
+          endpoint: "organizationalEntityFollowerStatistics",
+          entityParam: "organizationalEntity",
+          formatter: this.transformFollowerStatisticsTimeBound.bind(this),
+          params
+        });
+      default:
+        throw new Error(`Unknown node: ${nodeName}`);
+    }
+  }
+
+  /**
+   * Fetch organization statistics from LinkedIn Pages API
+   * @param {Object} options - Options for the request
+   * @param {string|number} options.urn - Organization ID (numeric)
+   * @param {string} options.nodeName - The node name from the schema
+   * @param {string} options.endpoint - API endpoint name
+   * @param {string} options.entityParam - Parameter name for the organization URN
+   * @param {Function} options.formatter - Function to format the response data
+   * @param {Date} [options.params.startDate] - Start date for time-bound data
+   * @param {Date} [options.params.endDate] - End date for time-bound data
+   * @param {Array} [options.params.fields] - Additional parameters including fields
+   * @returns {Array} - Processed statistics data
+   */
+  fetchOrganizationStats(options) {
+    const { urn, nodeName, endpoint, entityParam, formatter, params } = options;
+    const orgUrn = `urn:li:organization:${urn}`;
+    const encodedUrn = encodeURIComponent(orgUrn);
+    
+    let url = `${this.config.BaseUrl.value}${endpoint}?q=${entityParam}&${entityParam}=${encodedUrn}`;
+    
+    const isTimeSeries = this.fieldsSchema[nodeName].isTimeSeries;
+
+    if (isTimeSeries && params.startDate && params.endDate) {
+      const startTimestamp = new Date(params.startDate).getTime();
+      const endTimestamp = new Date(params.endDate).getTime();
+      url += `&timeIntervals=(timeRange:(start:${startTimestamp},end:${endTimestamp}),timeGranularityType:DAY)`;
+    }
+
+    const response = this.makeRequest(url);
+    const elements = response.elements || [];
+    
+    if (elements.length === 0) {
+      return [];
+    }
+    
+    return formatter({
+      elements,
+      orgUrn,
+      fields: params.fields
+    });
+  }
+  
+  /**
+   * Filter object properties by allowed field names
+   * @param {Object} dataObj - Original data object
+   * @param {Array} fields - Array of allowed field names
+   * @returns {Object} - Filtered object with only allowed fields
+   */
+  filterDataByFields(dataObj, fields) {
+    return Object.keys(dataObj)
+      .filter(key => fields.includes(key))
+      .reduce((obj, key) => {
+        obj[key] = dataObj[key];
+        return obj;
+      }, {});
+  }
+
+  /**
+   * Process time-bound statistics data
+   * @param {Object} params - Parameters object
+   * @param {Array} params.elements - API response elements
+   * @param {string} params.orgUrn - Organization URN
+   * @param {Object} params.options - Original options passed to fetchOrganizationStats
+   * @returns {Array} - Processed time-bound statistics
+   */
+  transformFollowerStatisticsTimeBound({ elements, orgUrn, fields }) {    
+    return elements.map(element => {
+      const dataObj = {
+        organization_urn: element.organizationalEntity,
+        time_range_start: element.timeRange.start,
+        time_range_end: element.timeRange.end,
+        organic_follower_gain: element.followerGains?.organicFollowerGain || 0,
+        paid_follower_gain: element.followerGains?.paidFollowerGain || 0,
+        follower_counts_by_association_type: element.followerCountsByAssociationType || [],
+        follower_counts_by_seniority: element.followerCountsBySeniority || [],
+        follower_counts_by_industry: element.followerCountsByIndustry || [],
+        follower_counts_by_function: element.followerCountsByFunction || [],
+        follower_counts_by_staff_count_range: element.followerCountsByStaffCountRange || [],
+        follower_counts_by_geo_country: element.followerCountsByGeoCountry || [],
+        follower_counts_by_geo: element.followerCountsByGeo || []
+      };
+      
+      return this.filterDataByFields(dataObj, fields);
+    });
+  }
+  
+  /**
+   * Extract category types from the API response element
+   * @param {Object} element - The API response element
+   * @returns {Array} - Array of category type descriptors
+   */
+  extractCategoryTypes(element) {
+    return Object.keys(element)
+      .filter(key => 
+        // Check if the property is an array containing elements with followerCounts
+        Array.isArray(element[key]) && 
+        element[key].length > 0 && 
+        element[key][0]?.followerCounts !== undefined
+      )
+      .map(type => {
+        // Get the first item from the array, or empty object as fallback
+        const firstItem = element[type][0] || {};
+        
+        // Find a key that is not 'followerCounts' to use as segment name
+        const segmentKeys = Object.keys(firstItem).filter(key => key !== 'followerCounts');
+                  
+        return { type, segmentName: segmentKeys[0] };
+      });
+  }
+  
+  /**
+   * Transform follower statistics into a denormalized format
+   * @param {Object} params - Parameters object
+   * @param {Array} params.elements - Response elements from the API
+   * @param {string} params.orgUrn - Organization URN
+   * @param {Object} params.options - Original options passed to fetchOrganizationStats
+   * @returns {Array} - Denormalized follower statistics
+   */
+  transformFollowerStatistics({ elements, orgUrn, fields }) {
+    const results = [];
+    const element = elements[0];
+    const organizationUrn = element.organizationalEntity || orgUrn;
+    const categoryTypes = this.extractCategoryTypes(element);
+    
+    categoryTypes.forEach(category => {
+      const items = element[category.type] || [];
+      items.forEach(item => {
+        const dataObj = {
+          organization_urn: organizationUrn,
+          category_type: category.type,
+          segment_name: category.segmentName,
+          segment_value: item[category.segmentName],
+          organic_follower_count: item.followerCounts?.organicFollowerCount || 0,
+          paid_follower_count: item.followerCounts?.paidFollowerCount || 0
+        };
+        
+        results.push(this.filterDataByFields(dataObj, fields));
+      });
+    });
+    
+    return results;
   }
 
   /**
@@ -220,7 +416,32 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
       allResults = this.mergeAnalyticsResults(allResults, elements);
     }
     
-    return allResults;
+    // Transform complex dateRange objects to simple Date objects
+    return this.transformAnalyticsDateRanges(allResults);
+  }
+  
+  /**
+   * Transform complex dateRange objects to simple Date objects in analytics data
+   * @param {Array} analyticsData - Array of analytics data records
+   * @returns {Array} - Transformed analytics data
+   */
+  transformAnalyticsDateRanges(analyticsData) {
+    if (!analyticsData || !analyticsData.length) {
+      return analyticsData;
+    }
+
+    const pad = n => String(n).padStart(2, '0');
+
+    return analyticsData.map(item => {
+      const res = { ...item };
+
+      if (res.dateRange?.start) {
+        const { year, month, day } = res.dateRange.start;
+        res.dateRange = `${year}-${pad(month)}-${pad(day)}`;
+      }
+
+      return res;
+    });
   }
   
   /**
@@ -237,7 +458,7 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
     return `${this.config.BaseUrl.value}adAnalytics?q=statistics` +
       `&dateRange=(start:${LinkedInHelper.formatDateForUrl(startDate)},` +
       `end:${LinkedInHelper.formatDateForUrl(endDate)})` +
-      `&pivots=List(CREATIVE,CAMPAIGN)` +
+      `&pivots=List(CREATIVE,CAMPAIGN,CAMPAIGN_GROUP,ACCOUNT)` +
       `&timeGranularity=DAILY` +
       `&accounts=List(${encodedUrn})` +
       `&fields=${LinkedInHelper.formatFields(fields)}`;
@@ -305,9 +526,9 @@ var LinkedInConnector = class LinkedInConnector extends AbstractConnector {
       } else {
         // If no matching element exists, add the new element to the results
         mergedResults.push(newElem);
-        }
-      });
-      
+      }
+    });
+    
     return mergedResults;
   }
 };

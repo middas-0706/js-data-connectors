@@ -24,22 +24,17 @@ var TikTokAdsConnector = class TikTokAdsConnector extends AbstractConnector {
       AdvertiserIDs: {
         isRequired: true,
       },
-      Objects: {
-        isRequired: true,
-        type: "string",
-        description: "Comma-separated list of objects to fetch from TikTok Ads API (e.g., 'advertisers, campaigns, ad_groups, ads, ad_insights')",
-      },
       DataLevel: {
         requiredType: "string", 
         default: "AUCTION_AD",
         description: "Data level for ad_insights reports (AUCTION_ADVERTISER, AUCTION_CAMPAIGN, AUCTION_ADGROUP, AUCTION_AD)"
       },
       StartDate: {
-        requiredType: "string",
+        requiredType: "date",
         description: "Start date for data import in YYYY-MM-DD format"
       },
       EndDate: {
-        requiredType: "string",
+        requiredType: "date",
         description: "End date for data import in YYYY-MM-DD format"
       },
       ReimportLookbackWindow: {
@@ -71,82 +66,8 @@ var TikTokAdsConnector = class TikTokAdsConnector extends AbstractConnector {
     this.apiVersion = "v1.3"; // TikTok Ads API version
     
     // Initialize app_id and app_secret from the configuration
-    this.appId = config.AppId && config.AppId.value ? config.AppId.value : null;
-    this.appSecret = config.AppSecret && config.AppSecret.value ? config.AppSecret.value : null;
-  }
-
-  /**
-   * Returns connector parameters schema
-   * @return {object} Schema of the connector parameters in format {"paramName": "param description", ...}
-   */
-  get parameters() {
-    return {
-      "AccessToken": {
-        isRequired: true,
-        type: "string",
-        description: "TikTok Ads API access token",
-      },
-      "AppId": {
-        isRequired: true,
-        type: "string",
-        description: "TikTok Ads API app ID",
-      },
-      "AppSecret": {
-        isRequired: true,
-        type: "string",
-        description: "TikTok Ads API app secret",
-      },
-      "AdvertiserIDs": {
-        isRequired: true,
-        type: "string",
-        description: "Comma or semicolon-separated list of advertiser IDs",
-      },
-      "Objects": {
-        isRequired: true,
-        type: "string",
-        description: "Comma-separated list of objects to fetch from TikTok Ads API (e.g., 'advertisers, campaigns, ad_groups, ads, ad_insights')",
-      },
-      "DataLevel": {
-        isRequired: false,
-        type: "string",
-        description: "Data level for ad_insights reports (AUCTION_ADVERTISER, AUCTION_CAMPAIGN, AUCTION_ADGROUP, AUCTION_AD). Default is AUCTION_AD.",
-      },
-      "MaxFetchingDays": {
-        isRequired: false,
-        type: "string",
-        description: "Maximum number of days to fetch. Default value is 31 days.",
-      },
-      "ReimportLookbackWindow": {
-        isRequired: false,
-        type: "string",
-        description: "How many days back to reimport data for each run. Default value is 7 days.",
-      },
-      "CleanUpToKeepWindow": {
-        isRequired: false,
-        type: "string",
-        description: "How many days of historical data to keep. Older data will be deleted. Leave empty to keep all data.",
-      },
-      "IncludeDeleted": {
-        isRequired: false,
-        type: "string", 
-        description: "Whether to include deleted objects (true/false). Default is false.",
-      },
-      "SandboxMode": {
-        isRequired: false,
-        type: "string", 
-        description: "Whether to use sandbox data (true/false). Default is false.",
-      },
-      "StartDate": {
-        isRequired: false,
-        type: "string",
-        description: "Start date of data import in YYYY-MM-DD format. If not specified, the lookback window will be used.",
-      },
-      "EndDate": {
-        isRequired: false,
-        type: "string",
-        description: "End date of data import in YYYY-MM-DD format. If not specified, the current date will be used.",
-      }
-    };
+    // this.appId = config.AppId && config.AppId.value ? config.AppId.value : null;
+    // this.appSecret = config.AppSecret && config.AppSecret.value ? config.AppSecret.value : null;
   }
 
   /**
@@ -202,11 +123,26 @@ var TikTokAdsConnector = class TikTokAdsConnector extends AbstractConnector {
    * @return {array} - Array of data objects
    */
   fetchData(nodeName, advertiserId, fields, startDate = null, endDate = null) {
+    // Check if the node schema exists
+    if (!this.fieldsSchema[nodeName]) {
+      throw new Error(`Unknown node type: ${nodeName}`);
+    }
+    
+    // Validate that required unique fields are included
+    if (this.fieldsSchema[nodeName].uniqueKeys) {
+      const uniqueKeys = this.fieldsSchema[nodeName].uniqueKeys;
+      const missingKeys = uniqueKeys.filter(key => !fields.includes(key));
+      
+      if (missingKeys.length > 0) {
+        throw new Error(`Missing required unique fields for endpoint '${nodeName}'. Missing fields: ${missingKeys.join(', ')}`);
+      }
+    }
+    
     // Initialize the API provider
     const provider = new TiktokMarketingApiProvider(
-      this.appId,
+      this.config.AppId.value,
       this.config.AccessToken.value,
-      this.appSecret,
+      this.config.AppSecret.value,
       this.config.SandboxMode && this.config.SandboxMode.value === true
     );
     
@@ -503,4 +439,14 @@ var TikTokAdsConnector = class TikTokAdsConnector extends AbstractConnector {
     return processedRecord;
   }
 
-}; 
+  /**
+   * Returns credential fields for this connector
+   */
+  getCredentialFields() {
+    return {
+      AccessToken: this.config.AccessToken,
+      AppId: this.config.AppId,
+      AppSecret: this.config.AppSecret
+    };
+  }
+};

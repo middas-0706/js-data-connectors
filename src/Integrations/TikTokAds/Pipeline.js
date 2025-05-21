@@ -6,45 +6,37 @@
  */
 
 var TikTokAdsPipeline = class TikTokAdsPipeline extends AbstractPipeline {
+  constructor(config, connector, storageName = "GoogleSheetsStorage") {
+    super(config.mergeParameters({
+      DestinationTableNamePrefix: {
+        default: "tiktok_ads_"
+      }
+    }), connector);
+
+    this.storageName = storageName;
+  }
 
   startImportProcess() {
     try {
-      // Getting advertiser IDs by splitting the configuration value by commas or semicolons
-      let advertiserIds = String(this.config.AdvertiserIDs.value || "").split(/[,;]\s*/);
+      let advertiserIds = TikTokAdsHelper.parseAdvertiserIds(this.config.AdvertiserIDs.value || "");
       
-      if (!advertiserIds || advertiserIds.length === 0 || (advertiserIds.length === 1 && !advertiserIds[0])) {
+      if (!advertiserIds || advertiserIds.length === 0) {
         this.config.logMessage("❌ No advertiser IDs specified. Please configure AdvertiserIDs parameter.");
         return;
       }
 
-      // Getting an object of nodes whose fields array needs to be fetched from
-      let objects = String(this.config.Objects.value || "").split(/[,;]\s*/);
-      
-      if (!objects || objects.length === 0 || (objects.length === 1 && !objects[0])) {
-        this.config.logMessage("❌ No objects specified. Please configure Objects parameter.");
-        return;
-      }
-      
-      console.log("Objects to fetch:", objects);
-      
+      // Parse fields from the config
+      let fields = TikTokAdsHelper.parseFields(this.config.Fields.value || "");
       let timeSeriesNodes = {};
       let catalogNodes = {};
       
       // Categorize nodes into time-series and catalog types
-      for (var i = 0; i < objects.length; i++) {
-        let nodeName = objects[i].trim();
-        
+      for (const nodeName in fields) {
         // Skip empty node names
         if (!nodeName) continue;
         
-        // Fix common naming issues
-        if (nodeName === "advertisers") {
-          nodeName = "advertiser";
-          this.config.logMessage(`Converting 'advertisers' to 'advertiser' for API compatibility`);
-        }
-        
-        // Get all available fields for this node - use empty array to get all fields
-        let nodeFields = [];
+        // Get fields for this node
+        let nodeFields = fields[nodeName];
         
         // Ensure schema exists for this node
         if (!this.connector.fieldsSchema || !this.connector.fieldsSchema[nodeName]) {
@@ -100,7 +92,7 @@ var TikTokAdsPipeline = class TikTokAdsPipeline extends AbstractPipeline {
       
       // Clean up old data if configured
       try {
-        this.cleanupOldData();
+        this.cleanUpExpiredData();
       } catch (error) {
         this.config.logMessage(`❌ Error during data cleanup: ${error.message}`);
         console.error(error.stack);
@@ -326,16 +318,18 @@ var TikTokAdsPipeline = class TikTokAdsPipeline extends AbstractPipeline {
       let uniqueFields = this.connector.fieldsSchema[nodeName]["uniqueKeys"];
 
       // Create storage instance (Google Sheets is the default storage)
-      this.storages[nodeName] = new GoogleSheetsStorage(
+      this.storages[nodeName] = new globalThis[ this.storageName ](
         this.config.mergeParameters({ 
           DestinationSheetName: { value: nodeName },
+          DestinationTableName: {value: this.config.DestinationTableNamePrefix.value + nodeName},
           currentValues: { 
             // Pass any values that might be needed for default values
             advertiser_id: this.connector.currentAdvertiserId
           }
         }),
         uniqueFields,
-        this.connector.fieldsSchema[nodeName]["fields"] || {}
+        this.connector.fieldsSchema[nodeName]["fields"] || {},
+        `${this.connector.fieldsSchema[ nodeName ]["description"]} ${this.connector.fieldsSchema[ nodeName ]["documentation"]}`
       );
     }
 
@@ -345,7 +339,7 @@ var TikTokAdsPipeline = class TikTokAdsPipeline extends AbstractPipeline {
   /**
    * Clean up old data based on CleanUpToKeepWindow configuration
    */
-  cleanupOldData() {
+  cleanUpExpiredData() {
     // Check if cleanup window is configured
     if (!this.config.CleanUpToKeepWindow || !this.config.CleanUpToKeepWindow.value) {
       return;

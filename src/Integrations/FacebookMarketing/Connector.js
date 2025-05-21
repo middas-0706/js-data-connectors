@@ -8,9 +8,9 @@
 var FacebookMarketingConnector = class FacebookMarketingConnector extends AbstractConnector {
 
   //---- constructor -------------------------------------------------
-    constructor( config ) {
+    constructor(config) {
   
-      super( config.mergeParameters({
+      super(config.mergeParameters({
         AccessToken:{
           isRequired: true,
           requiredType: "string",
@@ -40,6 +40,40 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
   
     }
     
+  //---- isValidToRetry ----------------------------------------------
+    /**
+     * Determines if a Facebook API error is valid for retry
+     * Based on Facebook error codes
+     * 
+     * @param {HttpRequestException} error - The error to check
+     * @return {boolean} True if the error should trigger a retry, false otherwise
+     */
+    isValidToRetry(error) {
+      console.log(`isValidToRetry() called`);
+      console.log(`error.statusCode =`, error.statusCode);
+      console.log(`error.payload =`, error.payload);
+      if (error.statusCode && error.statusCode >= HTTP_STATUS.SERVER_ERROR_MIN) {
+        return true;
+      }
+
+      if (!error.payload || !error.payload.error) {
+        return false;
+      }
+
+      const fbErr = error.payload.error;
+      const code = Number(fbErr.code);
+      const subcode = Number(fbErr.error_subcode);
+
+      console.log(`FB error.code = ${code}`);
+      console.log(`FB error.error_subcode = ${subcode}`);
+      console.log(`is_transient = ${fbErr.is_transient}`);
+      console.log(`code in retry list = ${FB_RETRYABLE_ERROR_CODES.includes(code)}`);
+      console.log(`subcode in retry list = ${FB_RETRYABLE_ERROR_CODES.includes(subcode)}`);
+
+      return fbErr.is_transient === true
+             || FB_RETRYABLE_ERROR_CODES.includes(code)
+             || FB_RETRYABLE_ERROR_CODES.includes(subcode);
+    }
   
   //---- fetchData -------------------------------------------------
     /*
@@ -75,20 +109,20 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
           break;
   
         case 'ad-account/ads':
-          url += `act_${accountId}/ads?limit=100&time_range=${timeRange}`;
+          url += `act_${accountId}/ads?time_range=${timeRange}&limit=${this.fieldsSchema[nodeName].limit}`;
           break;
   
         case 'ad-account/adcreatives':
-          url += `act_${accountId}/adcreatives?limit=100&fields=${fields.join(",")}`;
+          url += `act_${accountId}/adcreatives?fields=${fields.join(",")}&limit=${this.fieldsSchema[nodeName].limit}`;
           break;
   
         case 'ad-account/insights':
-          url += `act_${accountId}/insights?level=ad&period=day&time_range=${timeRange}&fields=${fields.join(",")}`;
+          url += `act_${accountId}/insights?level=ad&period=day&time_range=${timeRange}&fields=${fields.join(",")}&limit=${this.fieldsSchema[nodeName].limit}`;
           break;
           // ad, adset, campaign, account
   
         case 'ad-group':
-          url += `act_${accountId}/ads?&time_range=${timeRange}&fields=${fields.join(",")}`;
+          url += `act_${accountId}/ads?&time_range=${timeRange}&fields=${fields.join(",")}&limit=${this.fieldsSchema[nodeName].limit}`;
           break;
   
         default:
@@ -104,7 +138,7 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
         // Fetch data from the JSON URL
         console.log(nextPageURL);
         
-        var response = UrlFetchApp.fetch(nextPageURL);
+        var response = this.urlFetchWithRetry(nextPageURL);
         
         var jsonData = JSON.parse(response.getContentText());
   

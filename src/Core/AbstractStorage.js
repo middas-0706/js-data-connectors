@@ -54,7 +54,13 @@ class AbstractStorage {
           throw Error(`'${columnName}' value is required for Unique Key, but it is missing in a record`);
         }
     
-        accumulator += `|${record[columnName]}`;      // Append the corresponding value from the row
+        let value = record[columnName];
+        
+        if (typeof value === 'object' && value !== null) {
+          value = JSON.stringify(value);
+        }
+    
+        accumulator += `|${value}`;
         return accumulator;
       }, []);
     
@@ -145,7 +151,7 @@ class AbstractStorage {
         // cheking if data column is exists in this.columnNames
         } else if ( this.uniqueKeyColumns.some(column => !this.columnNames.includes( dateColumn )) )  {
       
-          throw new Error(`Cannot clean up expired data because the column ‘${dateColumn}’ is missing in the data storage`);
+          throw new Error(`Cannot clean up expired data because the column '${dateColumn}' is missing in the data storage`);
     
         // stat cleaning process
         } else {

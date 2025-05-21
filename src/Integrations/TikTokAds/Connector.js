@@ -64,10 +64,7 @@ var TikTokAdsConnector = class TikTokAdsConnector extends AbstractConnector {
 
     this.fieldsSchema = TikTokAdsFieldsSchema;
     this.apiVersion = "v1.3"; // TikTok Ads API version
-    
-    // Initialize app_id and app_secret from the configuration
-    // this.appId = config.AppId && config.AppId.value ? config.AppId.value : null;
-    // this.appSecret = config.AppSecret && config.AppSecret.value ? config.AppSecret.value : null;
+
   }
 
   /**

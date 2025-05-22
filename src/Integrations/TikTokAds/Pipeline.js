@@ -64,26 +64,14 @@ var TikTokAdsPipeline = class TikTokAdsPipeline extends AbstractPipeline {
       // Then import time-series data (performance metrics)
       if (Object.keys(timeSeriesNodes).length > 0) {
         try {
-          // Determine date range based on configuration
-          const dateRangeResult = this.getDateRange();
-          if (!dateRangeResult || dateRangeResult.length < 3) {
-            this.config.logMessage("❌ Failed to determine date range. Skipping time series data import.");
+          const [startDate, daysToFetch] = this.getStartDateAndDaysToFetch();
+
+          if (!startDate) {
+            this.config.logMessage("❌ There is nothing to import in this data range");
             return;
           }
           
-          const [startDate, endDate, daysToFetch] = dateRangeResult;
-          
-          if (!startDate || isNaN(startDate.getTime())) {
-            this.config.logMessage("❌ Invalid start date. Skipping time series data import.");
-            return;
-          }
-          
-          if (daysToFetch <= 0) {
-            this.config.logMessage("⚠️ Days to fetch is zero or negative. Skipping time series data import.");
-            return;
-          }
-          
-          this.startImportProcessOfTimeSeriesData(advertiserIds, timeSeriesNodes, startDate, endDate, daysToFetch);
+          this.startImportProcessOfTimeSeriesData(advertiserIds, timeSeriesNodes, startDate, daysToFetch);
         } catch (error) {
           this.config.logMessage(`❌ Error determining date range: ${error.message}`);
           console.error(error.stack);
@@ -100,93 +88,6 @@ var TikTokAdsPipeline = class TikTokAdsPipeline extends AbstractPipeline {
     } catch (error) {
       this.config.logMessage(`❌ Error during import process: ${error.message}`);
       console.error(error.stack);
-    }
-  }
-
-  /**
-   * Determines the date range for data import based on configuration
-   * Uses StartDate and EndDate if provided, otherwise falls back to lookback window
-   * 
-   * @return {Array} - [startDate, endDate, daysToFetch] tuple
-   */
-  getDateRange() {
-    try {
-      let startDate, endDate, daysToFetch;
-      
-      // Check if custom date range is specified
-      const hasStartDate = this.config.StartDate && this.config.StartDate.value;
-      const hasEndDate = this.config.EndDate && this.config.EndDate.value;
-      
-      if (hasStartDate) {
-        // Parse start date from configuration
-        try {
-          startDate = new Date(this.config.StartDate.value);
-          if (isNaN(startDate.getTime())) {
-            throw new Error("Invalid date format");
-          }
-        } catch (error) {
-          this.config.logMessage(`⚠️ Invalid StartDate format: ${this.config.StartDate.value}. Using default date range.`);
-          const [defaultStartDate, defaultDaysToFetch] = this.getStartDateAndDaysToFetch();
-          return [defaultStartDate, null, defaultDaysToFetch];
-        }
-        
-        // Parse end date from configuration or use current date
-        if (hasEndDate) {
-          try {
-            endDate = new Date(this.config.EndDate.value);
-            if (isNaN(endDate.getTime())) {
-              throw new Error("Invalid date format");
-            }
-          } catch (error) {
-            this.config.logMessage(`⚠️ Invalid EndDate format: ${this.config.EndDate.value}. Using current date as end date.`);
-            endDate = new Date(); // Today
-          }
-        } else {
-          endDate = new Date(); // Today if not specified
-        }
-        
-        // Calculate days between start and end dates
-        const diffTime = Math.abs(endDate - startDate);
-        daysToFetch = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both start and end dates
-        
-        // Check if dates are in the correct order
-        if (startDate > endDate) {
-          this.config.logMessage("⚠️ StartDate is after EndDate. Swapping dates.");
-          [startDate, endDate] = [endDate, startDate];
-        }
-        
-        // Limit to max fetching days if needed
-        const maxDays = this.config.MaxFetchingDays && this.config.MaxFetchingDays.value ? 
-                       parseInt(this.config.MaxFetchingDays.value, 10) : 31;
-        if (daysToFetch > maxDays) {
-          this.config.logMessage(`⚠️ Date range exceeds maximum ${maxDays} days. Limiting to the first ${maxDays} days.`);
-          daysToFetch = maxDays;
-        }
-        
-      } else {
-        // Use default date range based on reimport lookback window
-        try {
-          [startDate, daysToFetch] = this.getStartDateAndDaysToFetch();
-          endDate = new Date(startDate);
-          endDate.setDate(endDate.getDate() + daysToFetch - 1);
-        } catch (error) {
-          // Fallback to safe defaults if getStartDateAndDaysToFetch fails
-          this.config.logMessage(`⚠️ Error calculating date range: ${error.message}. Using past 7 days as fallback.`);
-          startDate = new Date();
-          startDate.setDate(startDate.getDate() - 7);
-          daysToFetch = 7;
-          endDate = new Date();
-        }
-      }
-      
-      return [startDate, endDate, daysToFetch];
-    } catch (error) {
-      // Final fallback - if anything fails, use the past 7 days
-      this.config.logMessage(`⚠️ Unexpected error in getDateRange: ${error.message}. Using past 7 days as fallback.`);
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - 7);
-      const endDate = new Date();
-      return [startDate, endDate, 7];
     }
   }
 
@@ -223,7 +124,8 @@ var TikTokAdsPipeline = class TikTokAdsPipeline extends AbstractPipeline {
           this.config.logMessage(`${data.length} rows of ${nodeName} were fetched for advertiser ${advertiserId}`);
 
           try {
-            this.getStorageByNode(nodeName, fields).saveData(data);
+            const preparedData = this.addMissingFieldsToData(data, fields);
+            this.getStorageByNode(nodeName, fields).saveData(preparedData);
           } catch (storageError) {
             this.config.logMessage(`❌ Error saving data to storage: ${storageError.message}`);
             console.error(`Error details: ${storageError.stack}`);
@@ -245,19 +147,13 @@ var TikTokAdsPipeline = class TikTokAdsPipeline extends AbstractPipeline {
    * @param {array} advertiserIds - List of advertiser IDs
    * @param {object} timeSeriesNodes - Object of properties, each is array of fields
    * @param {Date} startDate - Start date
-   * @param {Date} endDate - End date
-   * @param {number} daysToFetch - Days to import
+   * @param {number} daysToFetch - Number of days to fetch
    */
-  startImportProcessOfTimeSeriesData(advertiserIds, timeSeriesNodes, startDate, endDate, daysToFetch = 1) {
+  startImportProcessOfTimeSeriesData(advertiserIds, timeSeriesNodes, startDate, daysToFetch) {
     // Start requesting data day by day from startDate to startDate + daysToFetch
     for (var daysShift = 0; daysShift < daysToFetch; daysShift++) {
       const currentDate = new Date(startDate);
       currentDate.setDate(currentDate.getDate() + daysShift);
-      
-      // Don't fetch data beyond end date
-      if (endDate && currentDate > endDate) {
-        break;
-      }
       
       const formattedDate = Utilities.formatDate(currentDate, "UTC", "yyyy-MM-dd");
       
@@ -279,7 +175,8 @@ var TikTokAdsPipeline = class TikTokAdsPipeline extends AbstractPipeline {
             } else {
               this.config.logMessage(`${data.length} records were fetched`);
               try {
-                this.getStorageByNode(nodeName, timeSeriesNodes[nodeName]).saveData(data);
+                const preparedData = this.addMissingFieldsToData(data, timeSeriesNodes[nodeName]);
+                this.getStorageByNode(nodeName, timeSeriesNodes[nodeName]).saveData(preparedData);
               } catch (storageError) {
                 this.config.logMessage(`❌ Error saving data to storage: ${storageError.message}`);
                 console.error(`Error details: ${storageError.stack}`);
@@ -402,73 +299,4 @@ var TikTokAdsPipeline = class TikTokAdsPipeline extends AbstractPipeline {
       }
     }
   }
-
-  /**
-   * Gets the start date and days to fetch based on the last requested date and lookback window
-   * 
-   * @return {Array} - [startDate, daysToFetch] tuple
-   */
-  getStartDateAndDaysToFetch() {
-    try {
-      // Default to reimport window of 2 days if not specified
-      const lookbackWindow = this.config.ReimportLookbackWindow && this.config.ReimportLookbackWindow.value ? 
-                            parseInt(this.config.ReimportLookbackWindow.value) : 2;
-      
-      // Default to fetching 30 days if not specified
-      const maxFetchingDays = this.config.MaxFetchingDays && this.config.MaxFetchingDays.value ? 
-                             parseInt(this.config.MaxFetchingDays.value) : 30;
-      
-      // Try to get the last requested date from the config
-      let lastRequestedDate = null;
-      if (this.config.LastRequestedDate && this.config.LastRequestedDate.value) {
-        try {
-          lastRequestedDate = new Date(this.config.LastRequestedDate.value);
-          if (isNaN(lastRequestedDate.getTime())) {
-            this.config.logMessage("⚠️ Invalid LastRequestedDate format. Using current date minus lookback window.");
-            lastRequestedDate = null;
-          }
-        } catch (error) {
-          this.config.logMessage(`⚠️ Error parsing LastRequestedDate: ${error.message}. Using current date minus lookback window.`);
-          lastRequestedDate = null;
-        }
-      }
-      
-      // If we have a valid last requested date, use it minus lookback window
-      // Otherwise, fetch from current date minus maxFetchingDays
-      let startDate;
-      let daysToFetch;
-      
-      if (lastRequestedDate) {
-        // Start from the last requested date minus lookback window
-        startDate = new Date(lastRequestedDate);
-        startDate.setDate(startDate.getDate() - lookbackWindow);
-        
-        // Calculate days between last requested date and start date
-        const currentDate = new Date();
-        const diffTime = Math.abs(currentDate - startDate);
-        daysToFetch = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include start date
-        
-        // Cap the days to fetch by maxFetchingDays
-        if (daysToFetch > maxFetchingDays) {
-          this.config.logMessage(`⚠️ Days to fetch (${daysToFetch}) exceeds MaxFetchingDays (${maxFetchingDays}). Limiting to ${maxFetchingDays} days.`);
-          startDate = new Date();
-          startDate.setDate(startDate.getDate() - maxFetchingDays + 1);
-          daysToFetch = maxFetchingDays;
-        }
-      } else {
-        // No last requested date, fetch from current date minus maxFetchingDays
-        startDate = new Date();
-        startDate.setDate(startDate.getDate() - maxFetchingDays + 1);
-        daysToFetch = maxFetchingDays;
-      }
-      
-      return [startDate, daysToFetch];
-    } catch (error) {
-      // Fallback to safe defaults if any error occurs
-      this.config.logMessage(`⚠️ Error calculating date range: ${error.message}. Using past 7 days as fallback.`);
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - 7);
-      return [startDate, 7];
-    }
-  }
-}; 
+};

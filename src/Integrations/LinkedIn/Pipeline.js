@@ -9,7 +9,7 @@ var LinkedInPipeline = class LinkedInPipeline extends AbstractPipeline {
   constructor(config, connector, storageName = "GoogleSheetsStorage") {
     super(config.mergeParameters({
       DestinationTableNamePrefix: {
-        default: ""
+        default: connector.apiType === LinkedInApiTypes.ADS ? "linkedin_ads_" : "linkedin_pages_"
       }
     }), connector);
 
@@ -150,7 +150,7 @@ var LinkedInPipeline = class LinkedInPipeline extends AbstractPipeline {
       this.storages[nodeName] = new globalThis[this.storageName](
         this.config.mergeParameters({
           DestinationSheetName: { value: nodeName },
-          DestinationTableName: { value: this.config.DestinationTableNamePrefix.value + nodeName.replace(/[^a-zA-Z0-9_]/g, "_") }
+          DestinationTableName: { value: this.config.DestinationTableNamePrefix.value + LinkedInHelper.toSnakeCase(nodeName) }
         }),
         uniqueFields,
         this.connector.fieldsSchema[nodeName]["fields"],

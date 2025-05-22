@@ -85,7 +85,8 @@ var adAnalyticsFields = {
     'description': 'Date range covered by the report data point. Date is specified in UTC. Start and end date are inclusive. Start date is required. End date is optional and defaults to today.',
     'type': 'string',
     'GoogleSheetsFormat': '@',
-    'GoogleBigQueryType': 'date'
+    'GoogleBigQueryType': 'date',
+    'GoogleBigQueryPartitioned': true
   },
   'documentCompletions': {
     'description': 'The number of times users reached 100% of the document\'s length, including those that skipped to this point. This metric is only available for document ads and not all dimensions.',

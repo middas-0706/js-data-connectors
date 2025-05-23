@@ -49,7 +49,7 @@ At this point, you have:
 
 Go to [https://ads.microsoft.com/](https://ads.microsoft.com/) and log in to your Bing Ads account. The **URL** of your account contains the **Account ID** and **Customer ID**. Copy both values.
 
-![Bing Ad Account](/src/Integrations/BingAds/res/bing_addaccount.png)
+![Bing Add Account](/src/Integrations/BingAds/res/bing_addaccount.png)
 
 7. In the Bing Ads interface, go to **Settings → Developer Settings**.
 

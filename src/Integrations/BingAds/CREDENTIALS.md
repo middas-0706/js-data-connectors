@@ -2,12 +2,12 @@
 
 During this process, you will obtain the following credentials required for the Bing Ads connector:
 
-1. **Account ID**  
-2. **Customer ID**  
-3. **Developer Token**  
-4. **Client ID**  
-5. **Client Secret**  
-6. **Refresh Token**
+- **Account ID**  
+- **Customer ID**  
+- **Developer Token**  
+- **Client ID**  
+- **Client Secret**  
+- **Refresh Token**
 
 1. If you haven’t already, [sign up for Microsoft Azure](https://azure.microsoft.com/) and log in to the [Azure Portal](https://portal.azure.com/).
 
@@ -60,10 +60,11 @@ Go to [https://ads.microsoft.com/](https://ads.microsoft.com/) and log in to you
 ![Bing Request](/src/Integrations/BingAds/res/bing_request.png)
 
 9. Great! Create a URL by replacing `CLIENTID` with your **Client ID**:
-https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=CLIENTID&response_type=code&redirect_uri=http://localhost:8080&scope=https://ads.microsoft.com/msads.manage offline_access
+`https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=CLIENTID&response_type=code&redirect_uri=http://localhost:8080&scope=https://ads.microsoft.com/msads.manage offline_access`
 
 Open the URL in your browser. Log in and authorize the app by clicking **Accept**. After authorization, you will be redirected to:  
-  `http://localhost:8080/?code=YOUR_CODE`  
+`http://localhost:8080/?code=YOUR_CODE`  
+
 Copy the `code` value from the URL.
 
 > Example:  
@@ -73,7 +74,7 @@ Copy the `code` value from the URL.
 >`M.C519_BAY.2.U.0a895e39-774a-e677-b4bb-8589ce3e0beb`
 
 10. Exchange this code for a refresh token by making a GET request to 
-`https://login.microsoftonline.com/common/oauth2/v2.0/token`
+`https://login.microsoftonline.com/common/oauth2/v2.0/token` 
 with the following parameters (as form data or in the body of the request):
 - `client_id` = `YOUR_CLIENT_ID`  
 - `client_secret` = `YOUR_CLIENT_SECRET`  

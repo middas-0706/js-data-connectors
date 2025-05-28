@@ -5,6 +5,7 @@
  * @property {function(): string|Buffer} getContent
  * @property {function(): string} getContentText
  * @property {function(): number} getResponseCode
+ * @property {function(): any} getBlob
  */
 
 /**
@@ -218,6 +219,47 @@ class EnvironmentAdapter {
     }
 
     /**
+     * Parse CSV string into array of arrays
+     * 
+     * @param {string} csvString - The CSV string to parse
+     * @param {string} [delimiter=','] - The delimiter to use for parsing CSV
+     * @returns {Array<Array<string>>} Parsed CSV data
+     * @throws {UnsupportedEnvironmentException} If the environment is not supported
+     */
+    static parseCsv(csvString, delimiter = ',') {
+        if (this.getEnvironment() === ENVIRONMENT.APPS_SCRIPT) {
+            return Utilities.parseCsv(csvString, delimiter);
+        } else if (this.getEnvironment() === ENVIRONMENT.NODE) {
+            return csvString
+                .split('\n')
+                .map(line => line.split(delimiter)
+                .map(cell => cell.trim()));
+        } else {
+            throw new UnsupportedEnvironmentException("Unsupported environment");
+        }
+    }
+
+    /**
+     * Unzip a blob/buffer
+     * 
+     * @param {Blob|Buffer} data - The data to unzip
+     * @returns {Array<{getDataAsString: Function}>} Array of file-like objects with getDataAsString method
+     * @throws {UnsupportedEnvironmentException} If the environment is not supported
+     */
+    static unzip(data) {
+        if (this.getEnvironment() === ENVIRONMENT.APPS_SCRIPT) {
+            return Utilities.unzip(data);
+        } else if (this.getEnvironment() === ENVIRONMENT.NODE) {
+            const zip = new AdmZip(data);
+            return zip.getEntries().map(entry => ({
+                getDataAsString: () => entry.getData().toString('utf8')
+            }));
+        } else {
+            throw new UnsupportedEnvironmentException("Unsupported environment");
+        }
+    }
+
+    /**
      * Wraps the response from the Apps Script environment.
      * Not use directly, only for internal purposes.
      * 
@@ -233,6 +275,7 @@ class EnvironmentAdapter {
             },
             getContent: () => response.getContent(),
             getContentText: () => response.getContentText(),
+            getBlob: () => response.getBlob(),
             getResponseCode: () => response.getResponseCode()
         };
     }
@@ -255,9 +298,9 @@ class EnvironmentAdapter {
             },
             getContent: () => text,
             getContentText: () => text,
+            getBlob: () => response.body,
             getResponseCode: () => response.statusCode
         };
     }
 
 }
-

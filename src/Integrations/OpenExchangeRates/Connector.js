@@ -1,45 +1,50 @@
+/**
+ * Copyright (c) OWOX, Inc.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
 // API Documentation: https://docs.openexchangerates.org/reference/historical-json
 
 var OpenExchangeRatesConnector = class OpenExchangeRatesConnector extends AbstractConnector {
 
-  constructor(config) {
-  
-    super( config.mergeParameters({
-        AppId: {
-          isRequired: true,
-          requiredType: "string",
-          errorMessage: "You need to add App Id first. Go to Google Sheets Menu ⟩ OWOX ⟩ 🔑 Manage Credentials'"
-        },
-        StartDate: {
-          isRequired: true,
-          requiredType: "date",
-          value: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-        },
-        EndDate: {
-          isRequired: true,
-          requiredType: "date",
-          value: new Date()
-        },
-        ReimportLookbackWindow: {
-          requiredType: "number",
-          isRequired: true,
-          value: 1
-        },
-        MaxFetchingDays: {
-          requiredType: "number",
-          isRequired: true,
-          value: 30
-        },
-        Symbols: {
-          requiredType: "string",
-          requiredPattern: "" // @TODO: add support or regexp check of parameters value ^([A-Z]{3}|[A-Z]{3}(, ?[A-Z]{3})*)$
-        },
-        base: { // Please note: changing the API `base` currency is available for Developer, Enterprise and Unlimited plan clients
-          requiredType: "string",
-          isRequired: true,
-          value: "USD"
-        }
-      }) );
+constructor(config) {
+
+  super( config.mergeParameters({
+      AppId: {
+        isRequired: true,
+        requiredType: "string",
+        errorMessage: "You need to add App Id first. Go to Google Sheets Menu ⟩ OWOX ⟩ 🔑 Manage Credentials'"
+      },
+      StartDate: {
+        isRequired: true,
+        requiredType: "date",
+        default: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+      },
+      EndDate: {
+        requiredType: "date",
+      },
+      ReimportLookbackWindow: {
+        requiredType: "number",
+        isRequired: true,
+        value: 1
+      },
+      MaxFetchingDays: {
+        requiredType: "number",
+        isRequired: true,
+        default: 30
+      },
+      Symbols: {
+        requiredType: "string",
+        requiredPattern: "" // @TODO: add support or regexp check of parameters value ^([A-Z]{3}|[A-Z]{3}(, ?[A-Z]{3})*)$
+      },
+      base: { // Please note: changing the API `base` currency is available for Developer, Enterprise and Unlimited plan clients
+        requiredType: "string",
+        isRequired: true,
+        value: "USD"
+      }
+    }) );
   
   }
   
@@ -59,17 +64,17 @@ var OpenExchangeRatesConnector = class OpenExchangeRatesConnector extends Abstra
   
     // Limit results to specific currencies (comma-separated list of 3-letter codes)
     if( this.config.Symbols.value ) {
-      symbols = '&symbols=' + this.config.Symbols.value.replace(/[^A-Z,]/g,"");
+      symbols = '&symbols=' + String(this.config.Symbols.value).replace(/[^A-Z,]/g,"");
     }
    
-    var date = Utilities.formatDate(date, "UTC", "yyyy-MM-dd"); // The requested date in YYYY-MM-DD format (required)
+    var date = EnvironmentAdapter.formatDate(date, "UTC", "yyyy-MM-dd"); // The requested date in YYYY-MM-DD format (required)
     const url = `https://openexchangerates.org/api/historical/${date}.json?base=${base}${symbols}&app_id=${app_id}`;
     
     this.config.logMessage(`🔄 Fetching rates for ${date}`);
   
     console.log(url);
   
-    var response = UrlFetchApp.fetch(url, {'method': 'get', 'muteHttpExceptions': true} );
+    var response = EnvironmentAdapter.fetch(url, {'method': 'get', 'muteHttpExceptions': true} );
     var historical = JSON.parse( response.getContentText() );
   
     for (var currency in historical["rates"]) {

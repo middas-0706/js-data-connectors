@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) OWOX, Inc.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
 var OpenExchangeRatesPipeline = class OpenExchangeRatesPipeline extends AbstractPipeline {
 
 
@@ -8,29 +15,12 @@ A method for invoking importNewData() to determine the parameters required for f
 */
 startImportProcess() {
 
-  var startDate = this.config.StartDate.value;
-  
-  // data wasn't fetched earlier
-  if ( !this.config.LastRequestedDate.value ) {
-    var lastRequestedDate = new Date(this.config.StartDate.value.getTime() );
-
-  } else {
-    var lastRequestedDate = new Date( this.config.LastRequestedDate.value.getTime() );
-    lastRequestedDate.setDate( this.config.LastRequestedDate.value.getDate() - this.config.ReimportLookbackWindow.value );
-  }
-  // The earliest date that can be requested is the start date
-  if( startDate.getTime() < lastRequestedDate.getTime() ) {
-    var startDate = lastRequestedDate;
-  }
-
-  // ensuring that data will not be requested for future 
-  const MaxFetchingDays = Math.min (
-    Math.floor( ( (new Date()).getTime() - startDate.getTime() ) / (1000 * 60 * 60 * 24) ), // days from startDate until today
-    this.config.MaxFetchingDays.value 
-  )
+  let startDate = null;
+  let daysToFetch = null;
+  [startDate, daysToFetch] = this.getStartDateAndDaysToFetch();
 
   // start requesting data day by day from startDate to startDate + MaxFetchingDays
-  for(var daysShift = 0; daysShift < MaxFetchingDays; daysShift++) {
+  for(var daysShift = 0; daysShift < daysToFetch; daysShift++) {
 
     // fetching new data from a data source  
     let data = this.connector.fetchData(startDate);

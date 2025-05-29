@@ -20,12 +20,12 @@ var CriteoAdsHelper = {
   },
 
   /**
-   * Parse account IDs from configuration
-   * @param {string} accountIdsString - Comma/semicolon separated list of account IDs
-   * @returns {Array<string>} Array of account IDs
+   * Parse advertiser IDs from configuration
+   * @param {string} advertiserIdsString - Comma/semicolon separated list of advertiser IDs
+   * @returns {Array<string>} Array of advertiser IDs
    */
-  parseAccountIds(accountIdsString) {
-    return String(accountIdsString)
+  parseAdvertiserIds(advertiserIdsString) {
+    return String(advertiserIdsString)
       .split(/[,;]\s*/)
       .map(id => id.trim());
   }

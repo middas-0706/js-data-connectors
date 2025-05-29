@@ -5,7 +5,7 @@
  * file that was distributed with this source code.
  */
 
-var statisticsFields = {
+var adStatisticsFields = {
   'Clicks': {
     'description': 'The number of clicks driven by your ads.',
     'type': 'Integer',
@@ -739,5 +739,9 @@ var statisticsFields = {
     'description': 'The unique identifier for the ad.',
     'type': 'String',
     'fieldType': 'dimension'
+  },
+  'Currency': {
+    'description': 'The currency of the advertiser cost.',
+    'type': 'String'
   }
 };

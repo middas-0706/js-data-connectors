@@ -21,13 +21,13 @@ var CriteoAdsPipeline = class CriteoAdsPipeline extends AbstractPipeline {
    */
   startImportProcess() {
     const fields = CriteoAdsHelper.parseFields(this.config.Fields?.value || "");    
-    const accountIds = CriteoAdsHelper.parseAccountIds(this.config.AccountIDs?.value || "");
+    const advertiserIds = CriteoAdsHelper.parseAdvertiserIds(this.config.AdvertiserIDs?.value || "");
 
-    for (const accountId of accountIds) {
+    for (const advertiserId of advertiserIds) {
       for (const nodeName in fields) {
         this.processNode({
           nodeName,
-          accountId,
+          advertiserId,
           fields: fields[nodeName] || []
         });
       }
@@ -35,17 +35,17 @@ var CriteoAdsPipeline = class CriteoAdsPipeline extends AbstractPipeline {
   }
 
   /**
-   * Process a single node for a specific account
+   * Process a single node for a specific advertiser
    * @param {Object} options - Processing options
    * @param {string} options.nodeName - Name of the node to process
-   * @param {string} options.accountId - Account ID
+   * @param {string} options.advertiserId - Advertiser ID
    * @param {Array<string>} options.fields - Array of fields to fetch
    */
-  processNode({ nodeName, accountId, fields }) {
+  processNode({ nodeName, advertiserId, fields }) {
     const storage = this.getStorageByNode(nodeName);
     this.processTimeSeriesNode({
       nodeName,
-      accountId,
+      advertiserId,
       fields,
       storage
     });
@@ -55,11 +55,11 @@ var CriteoAdsPipeline = class CriteoAdsPipeline extends AbstractPipeline {
    * Process a time series node with date-based logic
    * @param {Object} options - Processing options
    * @param {string} options.nodeName - Name of the node
-   * @param {string} options.accountId - Account ID
+   * @param {string} options.advertiserId - Advertiser ID
    * @param {Array<string>} options.fields - Array of fields to fetch
    * @param {Object} options.storage - Storage instance
    */
-  processTimeSeriesNode({ nodeName, accountId, fields, storage }) {
+  processTimeSeriesNode({ nodeName, advertiserId, fields, storage }) {
     const [startDate, daysToFetch] = this.getStartDateAndDaysToFetch();
   
     if (daysToFetch <= 0) {
@@ -75,12 +75,12 @@ var CriteoAdsPipeline = class CriteoAdsPipeline extends AbstractPipeline {
 
       const data = this.connector.fetchData({ 
         nodeName, 
-        accountId, 
+        accountId: advertiserId, 
         date: currentDate, 
         fields 
       });
 
-      this.config.logMessage(`${data.length} rows of ${nodeName} were fetched for ${accountId} on ${formattedDate}`);
+      this.config.logMessage(`${data.length} rows of ${nodeName} were fetched for ${advertiserId} on ${formattedDate}`);
 
       if (data.length > 0) {
         const preparedData = this.addMissingFieldsToData(data, fields);

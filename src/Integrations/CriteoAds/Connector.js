@@ -10,14 +10,6 @@ var CriteoAdsConnector = class CriteoAdsConnector extends AbstractConnector {
   constructor(configRange) {
 
     super(configRange.mergeParameters({
-      StandardSource: {
-        isRequired: true,
-        requiredType: "string",
-      },
-      StandardMedium: {
-        isRequired: true,
-        requiredType: "string",
-      },
       StartDate: {
         isRequired: true,
         requiredType: "date",
@@ -26,7 +18,7 @@ var CriteoAdsConnector = class CriteoAdsConnector extends AbstractConnector {
         isRequired: false,
         requiredType: "date",
       },
-      AccountIDs: {
+      AdvertiserIDs: {
         isRequired: true,
       },
       AccessToken: {
@@ -42,11 +34,13 @@ var CriteoAdsConnector = class CriteoAdsConnector extends AbstractConnector {
       },
       ClientId: {
         isRequired: true,
-        requiredType: "string"
+        requiredType: "string",
+        description: "Your Criteo API Client Id"
       },
       ClientSecret: {
         isRequired: true,
-        requiredType: "string"
+        requiredType: "string",
+        description: "Your Criteo API Client Secret"
       },
       MaxFetchingDays: {
         requiredType: "number",
@@ -97,34 +91,33 @@ var CriteoAdsConnector = class CriteoAdsConnector extends AbstractConnector {
    * @private
    */
   _fetchStatistics({ accountId, fields, date }) {
-    const nodeName = 'statistics';
-    const uniqueKeys = this.fieldsSchema[nodeName].uniqueKeys || [];
+    const uniqueKeys = this.fieldsSchema.statistics.uniqueKeys || [];
     const missingKeys = uniqueKeys.filter(key => !fields.includes(key));
     
     if (missingKeys.length > 0) {
-      throw new Error(`Missing required unique fields for endpoint '${nodeName}'. Missing fields: ${missingKeys.join(', ')}`);
+      throw new Error(`Missing required unique fields for endpoint 'statistics'. Missing fields: ${missingKeys.join(', ')}`);
     }
 
     this.getAccessToken();
     
-    const requestBody = this._buildStatisticsRequestBody(accountId, fields, date, nodeName);
+    const requestBody = this._buildStatisticsRequestBody({ accountId, fields, date });
     const response = this._makeApiRequest(requestBody);
     const jsonObject = JSON.parse(response.getContentText());
     
-    return this.parseApiResponse(jsonObject, date);
+    return this.parseApiResponse({ apiResponse: jsonObject, date, accountId, fields });
   }
 
   /**
    * Build request body for statistics API
-   * @param {string} accountId - Account ID
-   * @param {Array<string>} fields - Fields to fetch
-   * @param {Date} date - Date to fetch data for
-   * @param {string} nodeName - Node name to get dimensions from schema
+   * @param {Object} options - Request parameters
+   * @param {string} options.accountId - Account ID
+   * @param {Array<string>} options.fields - Fields to fetch
+   * @param {Date} options.date - Date to fetch data for
    * @returns {Object} - Request body
    * @private
    */
-  _buildStatisticsRequestBody(accountId, fields, date, nodeName) {
-    const fieldsSchema = this.fieldsSchema[nodeName].fields;
+  _buildStatisticsRequestBody({ accountId, fields, date }) {
+    const fieldsSchema = this.fieldsSchema.statistics.fields;
     
     // Filter fields into dimensions and metrics based on fieldType
     const dimensions = fields.filter(field => 
@@ -161,13 +154,14 @@ var CriteoAdsConnector = class CriteoAdsConnector extends AbstractConnector {
         'content-type': 'application/json',
         authorization: "Bearer " + this.config.AccessToken.value
       },
-      payload: JSON.stringify(requestBody)
+      payload: JSON.stringify(requestBody),
+      body: JSON.stringify(requestBody) // TODO: body is for Node.js; refactor to centralize JSON option creation
     };
 
-    const response = urlFetchWithRetry.fetch(apiUrl, options);
+    const response = this.urlFetchWithRetry(apiUrl, options);
     const responseCode = response.getResponseCode();
     
-    if (responseCode === 200) {
+    if (responseCode === HTTP_STATUS.OK) {
       return response;
     } else {
       throw new Error(`API Error (${responseCode}): ${response.getContentText()}`);
@@ -184,22 +178,26 @@ var CriteoAdsConnector = class CriteoAdsConnector extends AbstractConnector {
     }
 
     const tokenUrl = 'https://api.criteo.com/oauth2/token';
+    const form = {
+      grant_type: 'client_credentials',
+      client_id: this.config.ClientId.value,
+      client_secret: this.config.ClientSecret.value
+    };
     const options = {
       method: 'post',
       headers: {
         accept: 'application/json',
         'content-type': 'application/x-www-form-urlencoded'
       },
-      payload: {
-        grant_type: 'client_credentials',
-        client_id: this.config.ClientId.value,
-        client_secret: this.config.ClientSecret.value
-      },
+      payload: form,
+      body: Object.entries(form)
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+        .join('&'), // TODO: body is for Node.js; refactor to centralize JSON option creation
       muteHttpExceptions: true
     };
     
     try {
-      const response = urlFetchWithRetry.fetch(tokenUrl, options);
+      const response = this.urlFetchWithRetry(tokenUrl, options);
       const responseData = JSON.parse(response.getContentText());
       const accessToken = responseData["access_token"];
       
@@ -237,21 +235,18 @@ var CriteoAdsConnector = class CriteoAdsConnector extends AbstractConnector {
 
   /**
    * Parse API response and add date field
-   * @param {Object} apiResponse - API response
-   * @param {Date} date - Date to add to each row
+   * @param {Object} options - Parsing options
+   * @param {Object} options.apiResponse - API response
+   * @param {Date} options.date - Date to add to each row
+   * @param {string} options.accountId - Account ID
+   * @param {Array<string>} options.fields - Fields to include in the result
    * @returns {Array<Object>} - Parsed and enriched data
    */
-  parseApiResponse(apiResponse, date) {
-    if (!apiResponse.data || !Array.isArray(apiResponse.data)) {
+  parseApiResponse({ apiResponse, date, accountId, fields }) {
+    if (!apiResponse.Rows || !Array.isArray(apiResponse.Rows)) {
       return [];
     }
 
-    const formattedDate = EnvironmentAdapter.formatDate(date, "UTC", "yyyy-MM-dd");
-    const processedData = apiResponse.data.map(rowData => ({
-      ...rowData,
-      Day: formattedDate
-    }));
-
-    return this._filterBySchema(processedData, 'statistics', Object.keys(processedData[0] || {}));
+    return this._filterBySchema(apiResponse.Rows, 'statistics', fields);
   }
 }

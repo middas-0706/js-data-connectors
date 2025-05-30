@@ -10,7 +10,7 @@ Just JavaScript + full control for you.
 We believe every **data analyst should have the power to automate their data collection & reporting** — without begging for engineering help, paying for expensive SaaS tools, or exposing credentials to vendors.
 We want to empower **every business to become data owners** by importing their data into Spreadsheets or data warehouses.
 
-OWOX Data Marts is a growing library of JavaScript-based connectors that:
+OWOX Data Marts is a growing library of JavaScript-based **connectors** that:
 - Pull data from **any APIs** like Facebook, TikTok, LinkedIn, etc.
 - Run inside Google Sheets (via Apps Script) or Google Cloud (for BigQuery)
 - Require **no external platforms** or credentials sharing
@@ -59,7 +59,7 @@ If you experience any **issues** or want to report a bug, please open an [issue]
 
 **To get support**, please [visit Q&A](https://github.com/OWOX/owox-data-marts/discussions/categories/q-a) first. 
 
-## 🧑‍💻Contribute or Build Your Own
+## 🧑‍💻 Contribute or Build Your Own
 Want to build a connector? 
 We’d love your help.
 **To contribute to existing integrations or create a new one**:
@@ -71,7 +71,7 @@ No software installation is required on your computer.
 
 Whether you're adding a new API, tweaking one, or improving docs, we’ll support and **spotlight you**.
 
-## 🌍Join the Community
+## 🌍 Join the Community
 Need help or want to connect with others?
 - 💬 [Join our Community](https://github.com/OWOX/owox-data-marts/discussions)
 - 🗨️ Ask questions or suggest features

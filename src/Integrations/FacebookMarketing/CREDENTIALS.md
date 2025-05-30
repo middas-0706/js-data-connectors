@@ -52,7 +52,7 @@ After submitting the form, the review process may take up to **2 business days**
 
 ![Facebook Submitted](/src/Integrations/FacebookMarketing/res/facebook_submitted.png)
 
-11. Once your business is successfully verified, return to the [Meta for Developers Portal](https://developers.facebook.com/).  
+11. Once your business is successfully verified, return to the [Developers Portal](https://developers.facebook.com/).  
 In your app dashboard, locate **Marketing API** and click **Set Up**.  
 
 ![Facebook Marketing API set up](/src/Integrations/FacebookMarketing/res/facebook_setup.png)

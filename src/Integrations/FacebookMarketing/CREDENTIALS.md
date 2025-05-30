@@ -2,13 +2,17 @@
 
 1. Visit the [Meta for Developers](https://developers.facebook.com/) site and log in with your Facebook account.
 
+![Facebook login portal](/src/Integrations/FacebookMarketing/res/facebook_login_portal.png)
+
 ![Facebook login page](/src/Integrations/FacebookMarketing/res/facebook_login.png)
 
 2. Navigate to **My Apps** and click the **Create App** button.
 
+![Facebook My apps](/src/Integrations/FacebookMarketing/res/facebook_myapps.png)
+
 ![Facebook creating app](/src/Integrations/FacebookMarketing/res/facebook_createapp.png)
 
-3. Enter the **App Name** and **App Contact Email** in the provided fields.
+3. Enter the **App Name** in the provided field.
 
 ![Facebook app name](/src/Integrations/FacebookMarketing/res/facebook_appname.png)
 
@@ -16,19 +20,44 @@
 
 ![Facebook Other use case](/src/Integrations/FacebookMarketing/res/facebook_other.png)
 
-5. Choose the **Business** app type and click **Next**.
+5. Select **Business** as the app type and click **Next**.  
 
 ![Facebook Business app type](/src/Integrations/FacebookMarketing/res/facebook_business.png)
 
-6. Select the relevant **Business Portfolio**, then click the **Create App** button.
+6. Choose the appropriate **Business Portfolio**, then click the **Create App** button.  
 
 ![Facebook Business portfolio option](/src/Integrations/FacebookMarketing/res/facebook_portfolio.png)
 
-7. In the app dashboard, locate **Marketing API** and click **Set Up**.  
+7. Navigate to **App Settings → Basic**, and initiate the **Business Verification** process. 
+
+![Facebook Business Verification](/src/Integrations/FacebookMarketing/res/facebook_verification.png)
+
+8. If prompted, connect your app to a business portfolio. 
+
+![Facebook Connect](/src/Integrations/FacebookMarketing/res/facebook_connect.png)
+
+Click **Start Business Verification**.  
+
+![Facebook Start Verification](/src/Integrations/FacebookMarketing/res/facebook_start_verification.png)
+
+9. On the next page, locate the **Business Verification** section and click the button to proceed with the verification process.  
+
+![Facebook Portfolio Verification](/src/Integrations/FacebookMarketing/res/facebook_portver.png)
+
+10. Fill in the form with accurate **contact** and **organizational** information about your business.
+
+> 📌 Make sure your submission meets [Meta's verification requirements](https://business.facebook.com/business/help/159334372093366).
+
+After submitting the form, the review process may take up to **2 business days**.  
+
+![Facebook Submitted](/src/Integrations/FacebookMarketing/res/facebook_submitted.png)
+
+11. Once your business is successfully verified, return to the [Developers Portal](https://developers.facebook.com/).  
+In your app dashboard, locate **Marketing API** and click **Set Up**.  
 
 ![Facebook Marketing API set up](/src/Integrations/FacebookMarketing/res/facebook_setup.png)
 
-8. Grant the required token permissions: 
+12. Grant the required token permissions: 
     - `ads_read`  
     - `read_insights`  
    
@@ -36,13 +65,20 @@
 
 ![Facebook permissions granting](/src/Integrations/FacebookMarketing/res/facebook_checkbox.png)
 
-9. Click the **Get Token** button.
+13. Click the **Get Token** button.
 
 ![Facebook getting token](/src/Integrations/FacebookMarketing/res/facebook_gettoken.png)
 
-10. Copy and securely save the generated access token.  
+14. Copy and securely save the generated access token.  
     If needed, you can regenerate it later by navigating to **Marketing API > Tools**.
 
 ![Facebook saving token](/src/Integrations/FacebookMarketing/res/facebook_token.png)
 
 11. Once you have the access token, you can use it as described in the [Getting Started guide](/src/Integrations/FacebookMarketing/GETTING_STARTED.md).
+
+If you encounter any issues:
+
+1. Check the "Logs" sheet for specific error messages
+2. Please [visit Q&A](https://github.com/OWOX/owox-data-marts/discussions/categories/q-a) first
+3. If you want to report a bug, please [open an issue](https://github.com/OWOX/owox-data-marts/issues)
+4. Join the [discussion forum](https://github.com/OWOX/owox-data-marts/discussions) to ask questions or propose improvements 

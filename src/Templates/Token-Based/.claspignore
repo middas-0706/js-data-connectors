@@ -1,6 +1,6 @@
 **/**
-!Integrations/PublicEndPoint/*.js
-!Integrations/PublicEndPoint/**/*.js
+!Integrations/Token-Based/*.js
+!Integrations/Token-Based/**/*.js
 !appsscript.json
 !Core/Abstract*.js
 !Core/*Storage.js

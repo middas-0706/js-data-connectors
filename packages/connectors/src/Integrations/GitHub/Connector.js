@@ -58,8 +58,8 @@ var GitHubConnector = class GitHubConnector extends AbstractConnector {
     const contribData = JSON.parse(contribResponse.getContentText());
     const contributors = contribData.length;
 
-    Logger.log(`Stars: ${stars}`);
-    Logger.log(`Contributors: ${contributors}`);
+    console.log(`Stars: ${stars}`);
+    console.log(`Contributors: ${contributors}`);
     
     const now = new Date();
     const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());

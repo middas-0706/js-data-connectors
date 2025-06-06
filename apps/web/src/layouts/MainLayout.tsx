@@ -1,17 +1,21 @@
 import { Outlet } from 'react-router-dom';
-import Navigation from '../components/Navigation';
+import { SidebarInset, SidebarProvider, SidebarTrigger } from '@owox/ui/components/sidebar';
+import { AppSidebar } from '../components/app-sidebar';
+import { ThemeProvider } from '../components/theme-provider';
 
 function MainLayout() {
   return (
-    <div className="flex min-h-screen flex-col">
-      <Navigation />
-      <main className="flex-grow">
-        <Outlet />
-      </main>
-      <footer className="bg-gray-700 p-4 text-center text-white">
-        <p>© 2025 OWOX. All rights reserved.</p>
-      </footer>
-    </div>
+    <ThemeProvider>
+      <SidebarProvider>
+        <AppSidebar variant="inset" collapsible="icon" />
+        <SidebarInset>
+          <div className="flex h-full w-full justify-between p-4">
+            <SidebarTrigger />
+            <Outlet />
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+    </ThemeProvider>
   );
 }
 

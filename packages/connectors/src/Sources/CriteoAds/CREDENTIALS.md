@@ -1,4 +1,4 @@
-## How to obtain the credentials for the Criteo connector
+## How to obtain the credentials for the Criteo source
 
 To connect to the Criteo API, follow the steps below to create an app and generate the necessary credentials.
 

@@ -55,7 +55,7 @@ Open the menu: **OWOX → Manage Credentials**
 
 ![Bing Credentials](res/bing_credentials.png)
 
-Enter your credentials obtained by following this guide: [**How to obtain the credentials for the Bing Ads connector**](CREDENTIALS.md)
+Enter your credentials obtained by following this guide: [**How to obtain the credentials for the Bing Ads source**](CREDENTIALS.md)
 
 ![Bing Token](res/bing_creds.png)
 

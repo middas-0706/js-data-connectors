@@ -5,7 +5,6 @@
   "private": true,
   "description": "Git hooks, lint-staged, and commit validation for OWOX Data Marts workspace",
   "exports": {
-    "./husky": "./husky.js",
     "./lint-staged": "./lint-staged.js"
   },
   "scripts": {

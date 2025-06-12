@@ -10,7 +10,7 @@ import {
   SidebarMenuButton,
   SidebarRail,
 } from '@owox/ui/components/sidebar';
-import { Home } from 'lucide-react';
+import { Home, Plus } from 'lucide-react';
 import { createElement } from 'react';
 import { ThemeToggle } from './theme-toggle';
 import { SidebarHeaderDropdown } from './sidebar-header-dropdown';
@@ -24,12 +24,13 @@ interface AppSidebarProps {
 const items = [
   {
     title: 'Home',
-    url: '#',
+    url: '/data-marts/',
     icon: Home,
   },
 ];
 
 export function AppSidebar({ variant = 'inset', collapsible = 'icon' }: AppSidebarProps) {
+  const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
   return (
     <Sidebar variant={variant} collapsible={collapsible}>
       <SidebarHeader>
@@ -39,17 +40,48 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon' }: AppSideb
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
+            <button
+              type='button'
+              data-sidebar='menu-button'
+              data-size='md'
+              className={`peer/menu-button ring-sidebar-ring bg-brand-blue-500 hover:bg-brand-blue-600 text-brand-blue-500-foreground hover:text-brand-blue-600-foreground flex h-8 w-full items-center gap-2 overflow-hidden rounded-full p-2 text-left text-sm outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-0! focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0`}
+            >
+              <div className='flex aspect-square size-8 items-center justify-center'>
+                <Plus className='size-4 shrink-0' />
+              </div>
+
+              <div className='grid flex-1 text-left text-sm leading-tight'>
+                <span className='truncate font-medium'>Create new data mart</span>
+              </div>
+            </button>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupContent>
             <SidebarMenu>
-              {items.map(item => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
-                    <a href={item.url}>
-                      {createElement(item.icon)}
-                      <span>{item.title}</span>
-                    </a>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {items.map(item => {
+                const isActive = pathname === item.url;
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild>
+                      <a
+                        href={item.url}
+                        className={`flex items-center gap-2 rounded-md p-2 transition-colors ${
+                          isActive
+                            ? 'bg-sidebar-active text-sidebar-active-foreground hover:bg-sidebar-active hover:text-sidebar-active-foreground font-medium shadow-sm'
+                            : 'hover:bg-sidebar-active hover:text-sidebar-active-foreground'
+                        }`}
+                      >
+                        {createElement(item.icon, {
+                          className: 'size-4 shrink-0 transition-all ',
+                          strokeWidth: isActive ? 2.25 : 2,
+                        })}
+                        <span>{item.title}</span>
+                      </a>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

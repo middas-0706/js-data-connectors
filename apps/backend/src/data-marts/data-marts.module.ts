@@ -20,6 +20,8 @@ import { DataMartService } from './services/data-mart.service';
 import { PublishDataMartService } from './use-cases/publish-data-mart.service';
 import { UpdateDataMartDescriptionService } from './use-cases/update-data-mart-description.service';
 import { UpdateDataMartTitleService } from './use-cases/update-data-mart-title.service';
+import { ListDataStoragesService } from './use-cases/list-data-storages.service';
+import { DeleteDataStorageService } from './use-cases/delete-data-storage.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([DataMart, DataStorage])],
@@ -38,6 +40,8 @@ import { UpdateDataMartTitleService } from './use-cases/update-data-mart-title.s
     DataMartMapper,
     DataStorageService,
     DataStorageMapper,
+    ListDataStoragesService,
+    DeleteDataStorageService,
     GetDataStorageService,
     CreateDataStorageService,
     UpdateDataStorageService,

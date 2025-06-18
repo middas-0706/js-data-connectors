@@ -36,13 +36,12 @@ owox-data-marts/
 │   │
 │   ├── eslint-config/     # Shared ESLint configurations
 │   │
-│   ├── linter-config/     # Shared linting configurations
-│   │
 │   ├── prettier-config/   # Shared Prettier configurations
 │   │
 │   └── typescript-config/ # Shared TypeScript configurations
 │
-└── docs/                # Project documentation
+├── tools/                 # Additinal scripts for project
+└── docs/                  # Project documentation
 ```
 
 ## Applications (`apps/`)
@@ -86,12 +85,6 @@ owox-data-marts/
 
 - Core logic for connector execution
 - Used by backend and CLI
-
-### Linter Config (`packages/linter-config/`)
-
-- Shared ESLint and Prettier configurations
-- Used by all apps and packages
-- Ensures consistent code style
 
 ## Development Workflow
 

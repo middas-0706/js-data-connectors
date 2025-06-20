@@ -1,18 +1,8 @@
 import { useForm, Controller } from 'react-hook-form';
 import { Input } from '@owox/ui/components/input';
-import { Textarea } from '@owox/ui/components/textarea';
 import { DataStorageType } from '../../../shared';
 import { Separator } from '@owox/ui/components/separator';
 import { Label } from '@owox/ui/components/label';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@owox/ui/components/select';
 import {
   Tooltip,
   TooltipContent,
@@ -21,12 +11,23 @@ import {
 } from '@owox/ui/components/tooltip';
 import { Info } from 'lucide-react';
 import type { DataStorageFormData } from '../../../shared/types/data-storage.schema.ts';
+import { googleBigQueryLocationOptions } from '../../../shared';
+import { Combobox } from '../../../../../shared/components/Combobox/combobox.tsx';
+import { SecureJsonInput } from './SecureJsonInput.tsx';
 
 interface GoogleBigQueryFieldsProps {
   form: ReturnType<typeof useForm<DataStorageFormData>>;
 }
 
 export const GoogleBigQueryFields = ({ form }: GoogleBigQueryFieldsProps) => {
+  const sensitiveKeys = [
+    'private_key',
+    'private_key_id',
+    'client_email',
+    'client_id',
+    'client_x509_cert_url',
+  ];
+
   const {
     register,
     formState: { errors },
@@ -66,65 +67,14 @@ export const GoogleBigQueryFields = ({ form }: GoogleBigQueryFieldsProps) => {
               defaultValue='US'
               rules={{ required: true }}
               render={({ field }) => (
-                <Select onValueChange={field.onChange} value={field.value}>
-                  <SelectTrigger id='location' className='flex w-full items-center'>
-                    <SelectValue placeholder='Select a location' />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectLabel>North America</SelectLabel>
-                      <SelectItem value='US'>US (multiple regions)</SelectItem>
-                      <SelectItem value='northamerica-northeast1'>Montréal</SelectItem>
-                      <SelectItem value='northamerica-northeast2'>Toronto</SelectItem>
-                      <SelectItem value='us-central1'>Iowa</SelectItem>
-                      <SelectItem value='us-east1'>South Carolina</SelectItem>
-                      <SelectItem value='us-east4'>Northern Virginia</SelectItem>
-                      <SelectItem value='us-east5'>Columbus</SelectItem>
-                      <SelectItem value='us-west1'>Oregon</SelectItem>
-                      <SelectItem value='us-west2'>Los Angeles</SelectItem>
-                      <SelectItem value='us-west3'>Salt Lake City</SelectItem>
-                      <SelectItem value='us-west4'>Las Vegas</SelectItem>
-                    </SelectGroup>
-                    <SelectGroup>
-                      <SelectLabel>Europe</SelectLabel>
-                      <SelectItem value='EU'>EU (multiple regions)</SelectItem>
-                      <SelectItem value='europe-central2'>Warsaw</SelectItem>
-                      <SelectItem value='europe-north1'>Finland</SelectItem>
-                      <SelectItem value='europe-southwest1'>Madrid</SelectItem>
-                      <SelectItem value='europe-west1'>Belgium</SelectItem>
-                      <SelectItem value='europe-west2'>London</SelectItem>
-                      <SelectItem value='europe-west3'>Frankfurt</SelectItem>
-                      <SelectItem value='europe-west4'>Netherlands</SelectItem>
-                      <SelectItem value='europe-west6'>Zurich</SelectItem>
-                      <SelectItem value='europe-west8'>Milan</SelectItem>
-                      <SelectItem value='europe-west9'>Paris</SelectItem>
-                      <SelectItem value='europe-west12'>Turin</SelectItem>
-                    </SelectGroup>
-                    <SelectGroup>
-                      <SelectLabel>Asia Pacific</SelectLabel>
-                      <SelectItem value='asia-east1'>Taiwan</SelectItem>
-                      <SelectItem value='asia-east2'>Hong Kong</SelectItem>
-                      <SelectItem value='asia-northeast1'>Tokyo</SelectItem>
-                      <SelectItem value='asia-northeast2'>Osaka</SelectItem>
-                      <SelectItem value='asia-northeast3'>Seoul</SelectItem>
-                      <SelectItem value='asia-south1'>Mumbai</SelectItem>
-                      <SelectItem value='asia-south2'>Delhi</SelectItem>
-                      <SelectItem value='asia-southeast1'>Singapore</SelectItem>
-                      <SelectItem value='asia-southeast2'>Jakarta</SelectItem>
-                      <SelectItem value='australia-southeast1'>Sydney</SelectItem>
-                      <SelectItem value='australia-southeast2'>Melbourne</SelectItem>
-                    </SelectGroup>
-                    <SelectGroup>
-                      <SelectLabel>Other</SelectLabel>
-                      <SelectItem value='southamerica-east1'>São Paulo</SelectItem>
-                      <SelectItem value='southamerica-west1'>Santiago</SelectItem>
-                      <SelectItem value='me-central1'>Doha</SelectItem>
-                      <SelectItem value='me-central2'>Dammam</SelectItem>
-                      <SelectItem value='me-west1'>Tel Aviv</SelectItem>
-                      <SelectItem value='africa-south1'>Johannesburg</SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  options={googleBigQueryLocationOptions}
+                  value={field.value}
+                  onValueChange={field.onChange}
+                  placeholder='Select a location'
+                  emptyMessage='No locations found'
+                  className='w-full'
+                />
               )}
             />
             {errors.config && 'location' in errors.config && (
@@ -145,7 +95,7 @@ export const GoogleBigQueryFields = ({ form }: GoogleBigQueryFieldsProps) => {
               htmlFor='service-account-key'
               className='block text-sm font-medium text-gray-700'
             >
-              Service Account Key
+              Service Account JSON
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -165,11 +115,12 @@ export const GoogleBigQueryFields = ({ form }: GoogleBigQueryFieldsProps) => {
                 </Tooltip>
               </TooltipProvider>
             </Label>
-            <Textarea
-              id='service-account-key'
-              placeholder={'Paste your service account key here.'}
-              {...register('credentials.serviceAccount', { required: true })}
-              className='mt-1 block min-h-[120px] w-full resize-none'
+            <SecureJsonInput
+              value={form.watch('credentials.serviceAccount')}
+              onChange={value => {
+                form.setValue('credentials.serviceAccount', value);
+              }}
+              keysToMask={sensitiveKeys}
             />
             {errors.credentials && 'serviceAccount' in errors.credentials && (
               <p className='mt-1 text-sm text-red-600'>

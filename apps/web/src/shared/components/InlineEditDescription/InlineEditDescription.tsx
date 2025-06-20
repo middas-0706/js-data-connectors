@@ -62,6 +62,7 @@ export function InlineEditDescription({
       const newDescription = trimmedDescription === '' ? null : trimmedDescription;
       await onUpdate(newDescription);
       setIsEditing(false);
+      toast.success('Description updated');
     } catch (error) {
       console.error('Failed to update description:', error);
       toast.error('Failed to update description');
@@ -92,9 +93,13 @@ export function InlineEditDescription({
           onBlur={() => void handleSubmit()}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className={cn('m-0 w-full p-2', 'focus-visible:ring-primary focus-visible:ring-0', {
-            'opacity-50': isLoading,
-          })}
+          className={cn(
+            'm-0 w-full border-0 bg-white p-2 shadow-none dark:bg-white/4',
+            'focus-visible:ring-primary focus-visible:ring-0',
+            {
+              'opacity-50': isLoading,
+            }
+          )}
           style={{
             fontSize: 'inherit',
             lineHeight: 'inherit',
@@ -126,7 +131,7 @@ export function InlineEditDescription({
   }
 
   return (
-    <div className='w-full'>
+    <div className='flex w-full items-center gap-4 rounded-md border-b border-gray-200 bg-white transition-shadow duration-200 hover:shadow-sm dark:border-0 dark:bg-white/4'>
       <div
         onClick={() => {
           setIsEditing(true);

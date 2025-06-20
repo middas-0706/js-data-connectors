@@ -1,28 +1,47 @@
 import { useState } from 'react';
 import { useDataMart } from '../model';
-import { DataMartDelete } from './DataMartDelete.tsx';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@owox/ui/components/dropdown-menu';
-import { Dialog, DialogContent } from '@owox/ui/components/dialog';
+import { ConfirmationDialog } from '../../../../shared/components/ConfirmationDialog';
 import { MoreVertical, Trash2, ArrowLeft } from 'lucide-react';
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { cn } from '@owox/ui/lib/utils';
+import { InlineEditTitle } from '../../../../shared/components/InlineEditTitle/InlineEditTitle.tsx';
+import { Toaster } from '../../../../shared/components/Toaster';
 
 interface DataMartDetailsProps {
   id: string;
 }
 
 export function DataMartDetails({ id }: DataMartDetailsProps) {
-  const { dataMart, isLoading, error } = useDataMart(id);
+  const {
+    dataMart,
+    deleteDataMart,
+    updateDataMartTitle,
+    updateDataMartDescription,
+    isLoading,
+    error,
+  } = useDataMart(id);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const navigate = useNavigate();
 
+  const navigation = [
+    { name: 'Overview', path: 'overview' },
+    { name: 'Data Setup', path: 'data-setup' },
+    { name: 'Destinations', path: 'destinations' },
+  ];
+
+  const handleTitleUpdate = async (newTitle: string) => {
+    if (!dataMart) return;
+    await updateDataMartTitle(dataMart.id, newTitle);
+  };
+
   if (isLoading) {
-    return <div className='p-4'>Loading data mart details...</div>;
+    // Loading data mart details...
   }
 
   if (error) {
@@ -33,14 +52,9 @@ export function DataMartDetails({ id }: DataMartDetailsProps) {
     return <div className='p-4'>No data mart found</div>;
   }
 
-  const navigation = [
-    { name: 'Overview', path: 'overview' },
-    { name: 'Data Setup', path: 'data-setup' },
-    { name: 'Destinations', path: 'destinations' },
-  ];
-
   return (
     <div className={'px-12 py-8'}>
+      <Toaster />
       <div className='mb-4 flex items-center justify-between'>
         <div className='flex items-center gap-2'>
           <button
@@ -50,7 +64,11 @@ export function DataMartDetails({ id }: DataMartDetailsProps) {
           >
             <ArrowLeft className='h-5 w-5 text-gray-400' />
           </button>
-          <h2 className='text-xl font-medium'>{dataMart.title}</h2>
+          <InlineEditTitle
+            title={dataMart.title}
+            onUpdate={handleTitleUpdate}
+            className='text-xl font-medium'
+          />
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -95,26 +113,34 @@ export function DataMartDetails({ id }: DataMartDetailsProps) {
       </div>
 
       <div className='pt-4'>
-        <Outlet />
+        <Outlet context={{ dataMart, updateDataMartDescription }} />
       </div>
 
-      {isDeleteDialogOpen && (
-        <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-          <DialogContent>
-            <DataMartDelete
-              id={dataMart.id}
-              title={dataMart.title}
-              onSuccess={() => {
-                setIsDeleteDialogOpen(false);
-                void navigate('/data-marts');
-              }}
-              onCancel={() => {
-                setIsDeleteDialogOpen(false);
-              }}
-            />
-          </DialogContent>
-        </Dialog>
-      )}
+      <ConfirmationDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        title='Delete Data Mart'
+        description={
+          <>
+            Are you sure you want to delete <strong>"{dataMart.title}"</strong>? This action cannot
+            be undone.
+          </>
+        }
+        confirmLabel='Delete'
+        cancelLabel='Cancel'
+        variant='destructive'
+        onConfirm={() => {
+          void (async () => {
+            try {
+              await deleteDataMart(dataMart.id);
+              setIsDeleteDialogOpen(false);
+              void navigate('/data-marts');
+            } catch (error) {
+              console.error('Failed to delete data mart:', error);
+            }
+          })();
+        }}
+      />
     </div>
   );
 }

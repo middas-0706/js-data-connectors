@@ -56,7 +56,7 @@ class AbstractStorage {
     
         let value = record[columnName];
         
-        if (typeof value === 'object' && value !== null && !(value instanceof Date)) {
+        if (typeof value === 'object' && value !== null && !(value instanceof Date) && !(value.constructor.name == "Date") ) {
           value = JSON.stringify(value);
         }
     

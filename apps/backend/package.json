@@ -1,14 +1,31 @@
 {
   "name": "@owox/backend",
   "version": "0.0.0",
-  "description": "",
+  "description": "OWOX Data Marts Backend - Full-stack data orchestration platform",
   "author": "OWOX",
   "license": "ELv2",
+  "homepage": "https://github.com/OWOX/owox-data-marts#readme",
+  "bugs": {
+    "url": "https://github.com/OWOX/owox-data-marts/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OWOX/owox-data-marts.git",
+    "directory": "apps/backend"
+  },
   "engines": {
     "node": ">=22.16.0"
   },
+  "main": "./dist/main.js",
+  "files": ["dist/", "README.md"],
   "scripts": {
-    "build": "nest build",
+    "build": "npm run build:clean && npm run build:web && npm run build:app && npm run copy:assets",
+    "build:clean": "shx rm -rf dist",
+    "build:web": "npm run build -w @owox/web --prefix ../..",
+    "build:app": "nest build",
+    "copy:assets": "shx mkdir -p dist/public && shx cp -r ../web/dist/* dist/public/",
+    "prebuild": "npm run build:clean",
+    "prepack": "npm run build",
     "format": "prettier --write \"src/**/*.{ts,json,cjs}\" \"test/**/*.{ts,json,cjs}\"",
     "format:check": "prettier --check \"src/**/*.{ts,json,cjs}\" \"test/**/*.{ts,json,cjs}\"",
     "start": "nest start",

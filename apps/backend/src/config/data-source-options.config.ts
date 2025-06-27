@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { DataSourceOptions, LoggerOptions } from 'typeorm';
 import { Logger } from '@nestjs/common';
+import { getSqliteDatabasePath } from './get-sqlite-database-path';
 
 const logger = new Logger('DataSourceOptions');
 
@@ -26,7 +27,7 @@ export function createDataSourceOptions(config: ConfigService): DataSourceOption
   const dbConfigs: Record<DbType, DataSourceOptions> = {
     [DbType.sqlite]: {
       type: DbType.sqlite,
-      database: config.get<string>('DB_NAME') ?? 'var/sqlite/backend.db',
+      database: getSqliteDatabasePath(config),
       ...baseOptions,
     },
     [DbType.mysql]: {

@@ -2,7 +2,6 @@ import { Command, Flags } from '@oclif/core';
 import { ChildProcess, exec, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 const execAsync = promisify(exec);
@@ -59,15 +58,7 @@ export default class Serve extends Command {
     this.log('🚀 Starting OWOX Data Marts...');
     this.setupGracefulShutdown();
 
-    const backendPath = this.getBackendPath();
-
-    if (!this.isBackendAvailable(backendPath)) {
-      this.error(
-        '@owox/backend package not found. Please ensure it is installed:\n' +
-          'npm install @owox/backend',
-        { exit: 1 }
-      );
-    }
+    const backendPath = this.validateBackendAvailability();
 
     try {
       await this.killMarkedProcesses();
@@ -115,20 +106,6 @@ export default class Serve extends Command {
   }
 
   /**
-   * Gets the path to the backend package
-   * @returns The full path to the backend entry point
-   */
-  private getBackendPath(): string {
-    try {
-      // Try to resolve using Node.js module resolution
-      return require.resolve('@owox/backend');
-    } catch {
-      // Fallback to node_modules path for ESM compatibility
-      return join(this.config.root, 'node_modules', '@owox/backend', 'dist', 'main.js');
-    }
-  }
-
-  /**
    * Handles child process exit events
    * @param code - Exit code
    * @param signal - Exit signal
@@ -163,15 +140,6 @@ export default class Serve extends Command {
   private handleStartupError(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
     this.error(`Failed to start application: ${message}`, { exit: 1 });
-  }
-
-  /**
-   * Checks if the backend package is available
-   * @param backendPath - Path to the backend entry point
-   * @returns True if backend package exists and is accessible
-   */
-  private isBackendAvailable(backendPath: string): boolean {
-    return existsSync(backendPath);
   }
 
   /**
@@ -267,6 +235,31 @@ export default class Serve extends Command {
       port,
     };
     await this.spawnProcess(options);
+  }
+
+  /**
+   * Validates that the backend package is available and accessible
+   * @returns The resolved path to the backend entry point
+   * @throws Error if backend is not available or accessible
+   */
+  private validateBackendAvailability(): string {
+    let backendPath: string;
+
+    try {
+      backendPath = require.resolve('@owox/backend');
+    } catch {
+      this.error(
+        '@owox/backend package not found. Please ensure it is installed:\n' +
+          'npm install @owox/backend',
+        { exit: 1 }
+      );
+    }
+
+    if (!existsSync(backendPath)) {
+      this.error('@owox/backend entry point not found', { exit: 1 });
+    }
+
+    return backendPath;
   }
 
   /**

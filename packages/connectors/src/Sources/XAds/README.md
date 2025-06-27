@@ -23,4 +23,8 @@ Here's everything you need to know about the X Ads Connector:
 
 ## Other Data Sources
 
-Looking for other data sources? Check out our [full list of data sources](../../../README.md#data-sources).
+Looking for other data sources? Check out our [full list of data sources](../../../../../README.md#data-sources).
+
+## License
+
+This source is part of the OWOX Data Marts project and is distributed under the ELv2 license. See the [LICENSE](../../../../../LICENSE.md) file for details. 

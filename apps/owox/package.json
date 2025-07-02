@@ -1,7 +1,10 @@
 {
   "name": "owox",
   "description": "OWOX Data Marts CLI: Simple command-line interface to start the OWOX Data Marts application with backend and frontend components.",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "owox": "./bin/run.js"
   },
@@ -10,7 +13,7 @@
     "@oclif/core": "^4",
     "@oclif/plugin-help": "^6",
     "@oclif/plugin-plugins": "^5",
-    "@owox/backend": "0.0.0"
+    "@owox/backend": "0.1.0"
   },
   "devDependencies": {
     "@eslint/compat": "^1",
@@ -33,7 +36,7 @@
   },
   "files": [
     "./bin",
-    "./dist",
+    "./dist/**/*.js",
     "./oclif.manifest.json"
   ],
   "homepage": "https://github.com/OWOX/owox-data-marts",
@@ -70,7 +73,8 @@
     "lint:md": "markdownlint-cli2 --config ../../.markdownlint-cli2.mjs",
     "lint:md:fix": "markdownlint-cli2 --config ../../.markdownlint-cli2.mjs --fix",
     "posttest": "npm run lint",
-    "prepack": "oclif manifest && oclif readme",
+    "prepack": "oclif manifest",
+    "prepublishOnly": "npm audit && npm run test && npm run lint",
     "test": "mocha --forbid-only \"test/**/*.test.ts\"",
     "version": "oclif readme && git add README.md"
   },

@@ -10,8 +10,18 @@ jest.mock('child_process', () => ({
   spawn: jest.fn(),
 }));
 
+jest.mock('env-paths', () => {
+  return jest.fn(() => ({
+    temp: '/mock/temp/path',
+  }));
+});
+
 jest.mock('../../../src/infrastructure/dependencies/npm-dependency-manager');
 jest.mock('../../../src/infrastructure/templates/nodejs-template-renderer');
+
+// Mock fs.rmSync to work with mock-fs
+const _originalRmSync = fs.rmSync;
+const mockRmSync = jest.fn();
 
 describe('NodeJsEnvironment', () => {
   let nodeJsEnvironment;
@@ -25,11 +35,7 @@ describe('NodeJsEnvironment', () => {
       global_is: true,
     },
   ];
-  const mockWorkDir = path.join(
-    '../../dist/data-marts/conectivity/runs',
-    mockConnectorId,
-    mockRunId
-  );
+  const mockWorkDir = path.join('/mock/temp/path', mockConnectorId, mockRunId);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -37,6 +43,30 @@ describe('NodeJsEnvironment', () => {
     mockFs({
       [path.dirname(mockWorkDir)]: {},
     });
+
+    // Set up fs.rmSync mock to work with mock-fs
+    mockRmSync.mockImplementation((dirPath, _options) => {
+      if (fs.existsSync(dirPath)) {
+        // Use mock-fs compatible removal
+        const rimraf = dir => {
+          if (fs.lstatSync(dir).isDirectory()) {
+            fs.readdirSync(dir).forEach(file => {
+              const filePath = path.join(dir, file);
+              if (fs.lstatSync(filePath).isDirectory()) {
+                rimraf(filePath);
+              } else {
+                fs.unlinkSync(filePath);
+              }
+            });
+            fs.rmdirSync(dir);
+          } else {
+            fs.unlinkSync(dir);
+          }
+        };
+        rimraf(dirPath);
+      }
+    });
+    fs.rmSync = mockRmSync;
 
     NpmDependencyManager.mockImplementation(() => ({
       installDependencies: jest.fn().mockResolvedValue(undefined),
@@ -57,6 +87,7 @@ describe('NodeJsEnvironment', () => {
 
   afterEach(() => {
     mockFs.restore();
+    fs.rmSync = _originalRmSync;
   });
 
   test('should create environment successfully', async () => {

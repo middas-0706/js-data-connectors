@@ -49,14 +49,14 @@ export function ConnectorSelectionStep({
   }
 
   return (
-    <div className='space-y-6'>
+    <div className='space-y-4'>
       <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-2'>
         {connectors.map(connector => (
           <Card
             key={connector.name}
             className={`cursor-pointer transition-all duration-200 hover:shadow-md ${
               selectedConnector?.name === connector.name
-                ? 'ring-brand-blue-500 border-brand-blue-500'
+                ? 'ring-primary border-primary'
                 : 'hover:border-muted-foreground/25'
             }`}
             onClick={() => {

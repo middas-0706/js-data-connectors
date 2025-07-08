@@ -100,11 +100,11 @@ export function DataMartDefinitionSettings() {
     if (!definitionType) return null;
 
     return (
-      <form onSubmit={handleFormSubmit} className='space-y-6'>
+      <form onSubmit={handleFormSubmit} className='space-y-4'>
         <DataMartDefinitionForm definitionType={definitionType} storageType={storageType} />
         <div className='space-y-4'>
           <div className='align-items-center flex justify-start space-x-4'>
-            <Button variant={'secondary'} type='submit' disabled={!isValid}>
+            <Button variant={'default'} type='submit' disabled={!isValid}>
               Save
             </Button>
             <Button type='button' variant='ghost' onClick={handleReset} disabled={!isDirty}>
@@ -118,7 +118,7 @@ export function DataMartDefinitionSettings() {
 
   return (
     <FormProvider {...methods}>
-      <div className='space-y-6'>
+      <div className='space-y-4'>
         {!initialDefinitionType && (
           <DataMartDefinitionTypeSelector
             initialType={definitionType}

@@ -7,7 +7,7 @@ import {
   DropdownMenuTrigger,
 } from '@owox/ui/components/dropdown-menu';
 import { ConfirmationDialog } from '../../../../shared/components/ConfirmationDialog';
-import { MoreVertical, Trash2, ArrowLeft, Upload, Play } from 'lucide-react';
+import { MoreVertical, Trash2, ArrowLeft, CircleCheck, Play } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { cn } from '@owox/ui/lib/utils';
 import { InlineEditTitle } from '../../../../shared/components/InlineEditTitle/InlineEditTitle.tsx';
@@ -79,7 +79,7 @@ export function DataMartDetails({ id }: DataMartDetailsProps) {
   }
 
   return (
-    <div className={'px-12 py-8'}>
+    <div className={'px-12 py-6'}>
       <div className='mb-4 flex items-center justify-between'>
         <div className='flex items-center'>
           <button
@@ -126,16 +126,15 @@ export function DataMartDetails({ id }: DataMartDetailsProps) {
                 <TooltipTrigger asChild>
                   <div>
                     <Button
-                      size='sm'
-                      variant='outline'
+                      variant='default'
                       onClick={() => {
                         void handlePublish();
                       }}
                       disabled={isPublishing || !dataMart.canPublish}
                       className='ml-2 flex items-center gap-1'
                     >
-                      <Upload className='h-4 w-4' />
-                      Publish
+                      <CircleCheck className='h-4 w-4' />
+                      Publish Data Mart
                     </Button>
                   </div>
                 </TooltipTrigger>
@@ -200,7 +199,7 @@ export function DataMartDetails({ id }: DataMartDetailsProps) {
                   cn(
                     'border-b-2 px-4 py-2 text-sm font-medium whitespace-nowrap',
                     isActive
-                      ? 'border-brand-blue-500 text-brand-blue-500'
+                      ? 'border-primary text-primary'
                       : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
                   )
                 }

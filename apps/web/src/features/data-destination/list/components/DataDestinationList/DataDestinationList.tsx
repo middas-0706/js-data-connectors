@@ -72,7 +72,7 @@ export const DataDestinationList = ({
         await deleteDataDestination(destinationToDelete);
         await fetchDataDestinations();
       } catch (error) {
-        console.error('Failed to delete data destination:', error);
+        console.error('Failed to delete destination:', error);
       } finally {
         setDeleteDialogOpen(false);
         setDestinationToDelete(null);
@@ -85,7 +85,7 @@ export const DataDestinationList = ({
       setIsEditSheetOpen(false);
       await fetchDataDestinations();
     } catch (error) {
-      console.error('Failed to save data destination:', error);
+      console.error('Failed to save destination:', error);
     }
   };
 
@@ -110,7 +110,11 @@ export const DataDestinationList = ({
 
   return (
     <div>
-      <DataDestinationTable columns={columns} data={tableData} />
+      <DataDestinationTable
+        columns={columns}
+        data={tableData}
+        onOpenTypeDialog={handleOpenCreateForm}
+      />
 
       <DataDestinationDetailsDialog
         isOpen={isDetailsDialogOpen}
@@ -128,8 +132,8 @@ export const DataDestinationList = ({
       <ConfirmationDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title='Delete Data Destination'
-        description='Are you sure you want to delete this data destination? This action cannot be undone.'
+        title='Delete Destination'
+        description='Are you sure you want to delete this  destination? This action cannot be undone.'
         confirmLabel='Delete'
         cancelLabel='Cancel'
         onConfirm={() => {

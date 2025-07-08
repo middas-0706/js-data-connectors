@@ -52,7 +52,7 @@ export function DataDestinationForm({ initialData, onSubmit, onCancel }: DataDes
 
   return (
     <Form {...form}>
-      <form onSubmit={handleFormSubmit} className='space-y-6'>
+      <form onSubmit={handleFormSubmit} className='space-y-4'>
         <div className='space-y-4'>
           <FormField
             control={form.control}
@@ -85,7 +85,7 @@ export function DataDestinationForm({ initialData, onSubmit, onCancel }: DataDes
                 >
                   <FormControl>
                     <SelectTrigger className={'w-full'}>
-                      <SelectValue placeholder='Select a data destination type' />
+                      <SelectValue placeholder='Select a destination type' />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
@@ -119,7 +119,7 @@ export function DataDestinationForm({ initialData, onSubmit, onCancel }: DataDes
           <Button variant={'ghost'} type='button' onClick={onCancel}>
             Cancel
           </Button>
-          <Button variant={'secondary'} type='submit'>
+          <Button variant={'default'} type='submit'>
             Save
           </Button>
         </div>

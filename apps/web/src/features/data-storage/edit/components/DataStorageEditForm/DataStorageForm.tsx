@@ -42,7 +42,7 @@ export function DataStorageForm({ initialData, onSubmit, onCancel }: DataStorage
         e.preventDefault();
         void form.handleSubmit(onSubmit)(e);
       }}
-      className='space-y-6'
+      className='space-y-4'
     >
       <div className='space-y-4'>
         <div>
@@ -71,7 +71,7 @@ export function DataStorageForm({ initialData, onSubmit, onCancel }: DataStorage
             disabled={!!initialData}
           >
             <SelectTrigger className='w-full'>
-              <SelectValue placeholder='Select a data storage type' />
+              <SelectValue placeholder='Select a storage type' />
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
@@ -96,7 +96,7 @@ export function DataStorageForm({ initialData, onSubmit, onCancel }: DataStorage
         <Button variant={'ghost'} type='button' onClick={onCancel}>
           Cancel
         </Button>
-        <Button variant={'secondary'} type='submit'>
+        <Button variant={'default'} type='submit'>
           Save
         </Button>
       </div>

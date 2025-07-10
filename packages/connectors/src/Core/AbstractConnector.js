@@ -168,7 +168,6 @@ var AbstractConnector = class AbstractConnector {
      * calculates start date and days to fetch time series data
      * @return StartData (date) and daysToFetch (integer)
      */
-  // TODO (Node version): ensure config dates are actual Date objects — if they’re strings, wrap with new Date(...)
     getStartDateAndDaysToFetch() {
 
       let startDate = this.config.StartDate.value;
@@ -176,7 +175,7 @@ var AbstractConnector = class AbstractConnector {
       let lastRequestedDate = null;
 
       // data wasn't fetched earlier
-      if ( this.config.EndDate.value ) {
+      if (this.config.EndDate && this.config.EndDate.value ) {
         endDate = this.config.EndDate.value;
       }
       

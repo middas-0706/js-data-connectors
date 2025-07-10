@@ -1,8 +1,6 @@
-# OWOX Data Marts Monorepo Structure
+# Repository Structure
 
 This document describes the structure of the OWOX Data Marts monorepo, which is organized to separate deployable applications from shared packages.
-
-## Overview
 
 The monorepo is divided into two main sections:
 
@@ -21,8 +19,13 @@ owox-data-marts/
 │   ├── backend/           # Backend API and platform runtime
 │   │   └── src/           # Source code
 │   │
-│   └── cli/               # Command-line interface tool
-│       └── src/           # Source code
+│   ├── docs/              # Documentation website
+│   │   ├── src/           # Source code
+│   │   └── dist/          # Build artifacts
+│   │
+│   └── owox/              # Command-line interface tool
+│       ├── src/           # Source code
+│       └── dist/          # Build artifacts
 │
 ├── packages/              # Shared libraries and configurations
 │   ├── ui/                # Shared UI components and design system
@@ -40,8 +43,10 @@ owox-data-marts/
 │   │
 │   └── typescript-config/ # Shared TypeScript configurations
 │
-├── tools/                 # Additinal scripts for project
-└── docs/                  # Project documentation
+├── tools/                 # Additional scripts for project
+├── docs/                  # Project documentation
+├── dist/                  # Build artifacts
+└── temp/                  # Temporary files
 ```
 
 ## Applications (`apps/`)
@@ -52,6 +57,7 @@ owox-data-marts/
 - Serves the main user interface
 - Consumes shared UI components from `packages/ui`
 - Build artifacts are served by the backend
+- [README](../../../apps/web/README.md)
 
 ### Backend (`apps/backend/`)
 
@@ -59,13 +65,22 @@ owox-data-marts/
 - Serves the web application's build artifacts
 - Implements platform runtime
 - Uses shared packages for data connectors execution
+- [README](../../../apps/backend/README.md)
 
-### CLI Tool (`apps/owox/`)
+### OWOX CLI Tool (`apps/owox/`)
 
 - Command-line interface for platform management
 - Published as global npm package (`owox`)
 - Reuses backend logic and connectors
 - Designed for global installation: `npm i -g owox`
+- [README](../../../apps/owox/CONTRIBUTING.md)
+
+### Documentation Website (`apps/docs/`)
+
+- Astro-based documentation website
+- Contains project documentation and guides
+- Built and deployed as static site
+- [README](../../../apps/docs/README.md)
 
 ## Shared Packages (`packages/`)
 
@@ -85,6 +100,29 @@ owox-data-marts/
 
 - Core logic for connector execution
 - Used by backend and CLI
+- [README](../../../packages/connector-runner/README.md)
+
+### ESLint Config (`packages/eslint-config/`)
+
+- Shared ESLint configuration for the workspace
+- Provides consistent code style guidelines across all projects
+- [README](../../../packages/eslint-config/README.md)
+
+### Prettier Config (`packages/prettier-config/`)
+
+- Shared Prettier configuration for the OWOX Data Marts workspace
+- Provides different configurations for various project types:
+  - **base**: Core formatting rules for all projects
+  - **typescript**: TypeScript-specific rules and file type handling
+  - **web**: React/TailwindCSS-specific rules with class sorting
+- Features consistent formatting across the monorepo, TypeScript support, TailwindCSS class sorting for web projects, and Markdown/JSON formatting
+- [README](../../../packages/prettier-config/README.md)
+
+### TypeScript Config (`packages/typescript-config/`)
+
+- Shared TypeScript configuration for the workspace
+- Provides consistent TypeScript settings across all projects
+- [README](../../../packages/typescript-config/README.md)
 
 ## Development Workflow
 

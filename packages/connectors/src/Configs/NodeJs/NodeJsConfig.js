@@ -59,14 +59,14 @@ class NodeJsConfig extends AbstractConfig {
     getStorageName() {
       return this.storageName.value;
     }
-  
+
     /**
      * Update and log the current execution status
      * 
      * Outputs structured JSON log entry to console for external monitoring
      * and tracking of connector execution status.
      * 
-     * @param {string} status - Current status of the data connector execution
+     * @param {number} status - Status constant
      */
     updateCurrentStatus(status) {
       const at = new Date();
@@ -74,9 +74,23 @@ class NodeJsConfig extends AbstractConfig {
         JSON.stringify({
           type: 'updateCurrentStatus',
           at: at.toISOString().split('T')[0] + ' ' + at.toISOString().split('T')[1].split('.')[0],
-          status: status,
+          status,
         })
       );
+    }
+  
+    /**
+     * Update and log the current execution status
+     * 
+     * Outputs structured JSON log entry to console for external monitoring
+     * and tracking of connector execution status.
+     * 
+     * @param {Object} params - Parameters object with status and other properties
+     * @param {number} params.status - Status constant
+     * @param {string} params.error - Error message for Error status
+     */
+    handleStatusUpdate({ status }) {
+      this.updateCurrentStatus(status);
     }
   
     /**

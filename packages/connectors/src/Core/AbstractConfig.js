@@ -158,13 +158,15 @@ class AbstractConfig {
     }
     //----------------------------------------------------------------
 
-  //---- updateCurrentStatus -----------------------------------------
+  //---- handleStatusUpdate -----------------------------------------------
     /**
-     * @param string current status value
+     * @param {Object} params - Parameters object with status and other properties
+     * @param {number} params.status - Status constant
+     * @param {string} params.error - Error message for Error status
      */
-    updateCurrentStatus(status) {
+    handleStatusUpdate({ status, error }) {
 
-      throw new Error("updateCurrentStatus must be implemented in subclass of AbstractConfig");
+      throw new Error("handleStatusUpdate must be implemented in subclass of AbstractConfig");
 
     }
     //----------------------------------------------------------------

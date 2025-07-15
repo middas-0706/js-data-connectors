@@ -26,7 +26,13 @@ if (!hasFileArguments) {
   options.globs = [
     '**/*.md', // Include all markdown files
     '!**/node_modules/**', // Exclude all node_modules folders
+    '!**/CHANGELOG.md', // Exclude specific file
+    '!.changeset/*.md', // Exclude specific directory
   ];
+
+  if (process.env.MDLINT_CONTEXT === 'root') {
+    options.globs.push('!packages/**', '!apps/**'); // Exclude workspaces folders
+  }
 }
 
 export default options;

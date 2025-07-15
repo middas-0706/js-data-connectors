@@ -7,6 +7,8 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@owox/ui/components/dropdown-menu';
+import { ReportColumnKey } from '../columns/columnKeys';
+import { ReportColumnLabels } from '../columns/columnLabels';
 
 interface ToggleColumnsHeaderProps<TData> {
   table: Table<TData>;
@@ -30,6 +32,7 @@ export function ToggleColumnsHeader<TData>({ table }: ToggleColumnsHeaderProps<T
             .getAllColumns()
             .filter(column => column.getCanHide() && column.id !== 'actions')
             .map(column => {
+              const label = ReportColumnLabels[column.id as ReportColumnKey] || column.id;
               return (
                 <DropdownMenuItem key={column.id} className='capitalize'>
                   <label className='flex items-center space-x-2'>
@@ -54,7 +57,7 @@ export function ToggleColumnsHeader<TData>({ table }: ToggleColumnsHeaderProps<T
                         </span>
                       )}
                     </button>
-                    <span>{column.id}</span>
+                    <span>{label}</span>
                   </label>
                 </DropdownMenuItem>
               );

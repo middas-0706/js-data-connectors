@@ -1,3 +1,5 @@
 {
-  "title": "Bank of Canada"
+  "title": "Bank of Canada",
+  "logo": "logo.svg",
+  "docUrl": "https://docs.owox.com/packages/connectors/src/sources/bank-of-canada/readme/"
 }

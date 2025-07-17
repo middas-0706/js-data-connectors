@@ -1,3 +1,5 @@
 {
-  "title": "X Ads"
+  "title": "X Ads",
+  "logo": "logo.svg",
+  "docUrl": "https://docs.owox.com/packages/connectors/src/sources/xads/readme/"
 }

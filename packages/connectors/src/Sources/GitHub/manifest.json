@@ -1,3 +1,5 @@
 {
-  "title": "GitHub"
+  "title": "GitHub",
+  "logo": "logo.svg",
+  "docUrl": "https://docs.owox.com/packages/connectors/src/sources/git-hub/readme/"
 }

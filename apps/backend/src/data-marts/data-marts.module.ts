@@ -8,6 +8,7 @@ import { ScheduledTriggerController } from './controllers/scheduled-trigger.cont
 import { CreateDataMartService } from './use-cases/create-data-mart.service';
 import { ListDataMartsService } from './use-cases/list-data-marts.service';
 import { GetDataMartService } from './use-cases/get-data-mart.service';
+import { GetDataMartRunsService } from './use-cases/get-data-mart-runs.service';
 import { DataMartMapper } from './mappers/data-mart.mapper';
 import { ScheduledTriggerMapper } from './mappers/scheduled-trigger.mapper';
 import { DataStorageService } from './services/data-storage.service';
@@ -72,6 +73,10 @@ import { DataMartScheduledTrigger } from './entities/data-mart-scheduled-trigger
 import { SchedulerModule } from '../common/scheduler/scheduler.module';
 import { ScheduledTriggersHandlerService } from './services/scheduled-triggers-handler.service';
 import { ReportService } from './services/report.service';
+import { ConnectorOutputCaptureService } from './connector-types/connector-message/services/connector-output-capture.service';
+import { ConnectorMessageParserService } from './connector-types/connector-message/services/connector-message-parser.service';
+import { ConnectorStateService } from './connector-types/connector-message/services/connector-state.service';
+import { ConnectorState } from './entities/connector-state.entity';
 
 @Module({
   imports: [
@@ -82,6 +87,7 @@ import { ReportService } from './services/report.service';
       Report,
       DataMartRun,
       DataMartScheduledTrigger,
+      ConnectorState,
     ]),
     SchedulerModule,
   ],
@@ -104,6 +110,7 @@ import { ReportService } from './services/report.service';
     CreateDataMartService,
     ListDataMartsService,
     GetDataMartService,
+    GetDataMartRunsService,
     UpdateDataMartDefinitionService,
     PublishDataMartService,
     UpdateDataMartDescriptionService,
@@ -153,6 +160,9 @@ import { ReportService } from './services/report.service';
     UpdateScheduledTriggerService,
     DeleteScheduledTriggerService,
     ReportService,
+    ConnectorOutputCaptureService,
+    ConnectorMessageParserService,
+    ConnectorStateService,
   ],
 })
 export class DataMartsModule {}

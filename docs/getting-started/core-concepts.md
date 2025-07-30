@@ -92,4 +92,3 @@ Different Google Sheets Reports of the same Data Mart may have different schedul
 
 - **Connector Run** – Import data from a **Source** into **Storage**.  
 - **Report Runs** – Push or pull data (stored in **Storage**) to a **Destination**.
-

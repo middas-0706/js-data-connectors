@@ -16,6 +16,9 @@
     "@owox/backend": "0.4.0",
     "find-process": "^1.4.10"
   },
+  "peerDependencies": {
+    "express": "^5"
+  },
   "devDependencies": {
     "@eslint/compat": "^1",
     "@oclif/test": "^4",
@@ -61,8 +64,8 @@
   },
   "repository": "OWOX/owox-data-marts",
   "scripts": {
-    "build": "tsc -b",
-    "lint": "eslint . --config ./eslint.config.mjs",
+    "build": "npm run build -w @owox/backend && tsc -b",
+    "lint": "npm run build -w @owox/backend && eslint . --config ./eslint.config.mjs",
     "lint:md": "markdownlint-cli2 --config ../../.markdownlint-cli2.mjs",
     "lint:md:fix": "markdownlint-cli2 --config ../../.markdownlint-cli2.mjs --fix",
     "format": "prettier --write \"**/*.{ts,js,json}\"",

@@ -52,6 +52,19 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           cat $GITHUB_OUTPUT
 
+      - name: Check if npm package with this "latest" version exists
+        run: |
+          for i in {1..30}; do
+            if npm view owox@${{ steps.extract_latest_version.outputs.version }} > /dev/null 2>&1; then
+              echo "✅ owox@${{ steps.extract_latest_version.outputs.version }} exists on npm"
+              exit 0
+            fi
+            echo "Waiting for owox@${{ steps.extract_latest_version.outputs.version }} to appear on npm ($i/30)..."
+            sleep 10
+          done
+          echo "❌ owox@${{ steps.extract_latest_version.outputs.version }} did not appear on npm after 5 minutes"
+          exit 1
+
       - name: Check if container image with this "latest" version exists
         id: latest_image_exists
         run: |
@@ -95,6 +108,19 @@ jobs:
           VERSION=$(npm pkg get version -w apps/owox | grep -oE '"[0-9]+\.[0-9]+\.[0-9]+-next-[0-9]+"' | tr -d '"')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           cat $GITHUB_OUTPUT
+
+      - name: Check if npm package with this "next" version exists
+        run: |
+          for i in {1..30}; do
+            if npm view owox@${{ steps.extract_next_version.outputs.version }} > /dev/null 2>&1; then
+              echo "✅ owox@${{ steps.extract_next_version.outputs.version }} exists on npm"
+              exit 0
+            fi
+            echo "Waiting for owox@${{ steps.extract_next_version.outputs.version }} to appear on npm ($i/30)..."
+            sleep 10
+          done
+          echo "❌ owox@${{ steps.extract_next_version.outputs.version }} did not appear on npm after 5 minutes"
+          exit 1
 
       - name: Build and push "next" container image
         uses: docker/build-push-action@v5

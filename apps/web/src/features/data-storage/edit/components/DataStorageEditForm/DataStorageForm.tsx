@@ -31,6 +31,7 @@ import {
 import StorageTypeBigQueryDescription from './FormDescriptions/StorageTypeBigQueryDescription.tsx';
 import StorageTypeAthenaDescription from './FormDescriptions/StorageTypeAthenaDescription.tsx';
 import { Button } from '@owox/ui/components/button';
+import { createFormPayload } from '../../../../../utils/form-utils';
 
 interface DataStorageFormProps {
   initialData?: DataStorageFormData;
@@ -61,11 +62,22 @@ export function DataStorageForm({
     onDirtyChange?.(isDirty);
   }, [isDirty, onDirtyChange]);
 
+  const handleSubmit = async (data: DataStorageFormData) => {
+    const { dirtyFields } = form.formState;
+    const payload = createFormPayload(data);
+
+    if (!dirtyFields.credentials) {
+      delete (payload as Partial<DataStorageFormData>).credentials;
+    }
+
+    return onSubmit(payload);
+  };
+
   return (
     <Form {...form}>
       <AppForm
         onSubmit={e => {
-          void form.handleSubmit(onSubmit)(e);
+          void form.handleSubmit(handleSubmit)(e);
         }}
         noValidate
       >

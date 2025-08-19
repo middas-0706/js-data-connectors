@@ -1,5 +1,5 @@
-import { useEffect, useState, useMemo } from 'react';
-import { useEditModal, useColumnVisibility } from '../../model/hooks';
+import { useEffect, useMemo } from 'react';
+import { useEditModal } from '../../model/hooks';
 import { getGoogleSheetsColumns, getAlignClass, type Align } from '../columns';
 import {
   Table,
@@ -13,7 +13,6 @@ import {
   useReactTable,
   getCoreRowModel,
   getSortedRowModel,
-  type SortingState,
   type ColumnDef,
 } from '@tanstack/react-table';
 import { Toaster } from 'react-hot-toast';
@@ -23,6 +22,7 @@ import { useReport } from '../../../shared';
 import { useOutletContext } from 'react-router-dom';
 import type { DataMartContextType } from '../../../../edit/model/context/types.ts';
 import { DataDestinationType } from '../../../../../data-destination';
+import { useTableStorage } from '../../../../../../hooks/useTableStorage';
 import type { DataDestinationResponseDto } from '../../../../../data-destination/shared/services/types';
 
 interface GoogleSheetsReportsTableProps {
@@ -36,7 +36,6 @@ export function GoogleSheetsReportsTable({
 }: GoogleSheetsReportsTableProps) {
   const { dataMart } = useOutletContext<DataMartContextType>();
   const { fetchReportsByDataMartId, reports, stopAllPolling, setPollingConfig } = useReport();
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'lastRunDate', desc: true }]);
   const { editOpen, editMode, handleCloseEditForm, getEditReport } = useEditModal();
 
   const googleSheetsReports = useMemo(() => {
@@ -92,7 +91,11 @@ export function GoogleSheetsReportsTable({
     [onEditReport]
   );
 
-  const { columnVisibility, setColumnVisibility } = useColumnVisibility(columns);
+  const { sorting, setSorting, columnVisibility, setColumnVisibility } = useTableStorage({
+    columns,
+    storageKeyPrefix: 'data-mart-google-sheets-reports',
+    defaultSortingColumn: 'lastRunDate',
+  });
 
   const table = useReactTable<DataMartReport>({
     data: googleSheetsReports,

@@ -1,5 +1,5 @@
-import { useEffect, useState, useMemo } from 'react';
-import { useEditModal, useColumnVisibility } from '../../model/hooks';
+import { useEffect, useMemo } from 'react';
+import { useEditModal } from '../../model/hooks';
 import { getLookerStudioColumns, getAlignClass, type Align } from '../columns';
 import {
   Table,
@@ -13,7 +13,6 @@ import {
   useReactTable,
   getCoreRowModel,
   getSortedRowModel,
-  type SortingState,
   type ColumnDef,
 } from '@tanstack/react-table';
 import { LookerStudioReportEditSheet } from '../../../edit';
@@ -23,6 +22,7 @@ import { useOutletContext } from 'react-router-dom';
 import type { DataMartContextType } from '../../../../edit/model/context/types.ts';
 import { DataDestinationType } from '../../../../../data-destination';
 import type { DataDestinationResponseDto } from '../../../../../data-destination/shared/services/types';
+import { useTableStorage } from '../../../../../../hooks/useTableStorage';
 
 interface LookerStudioReportsTableProps {
   destination: DataDestinationResponseDto;
@@ -35,7 +35,6 @@ export function LookerStudioReportsTable({
 }: LookerStudioReportsTableProps) {
   const { dataMart } = useOutletContext<DataMartContextType>();
   const { fetchReportsByDataMartId, reports } = useReport();
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'lastRunDate', desc: true }]);
   const { editOpen, editMode, handleCloseEditForm, getEditReport } = useEditModal();
 
   // Filter reports to only show Looker Studio reports
@@ -76,7 +75,11 @@ export function LookerStudioReportsTable({
     [onEditReport]
   );
 
-  const { columnVisibility, setColumnVisibility } = useColumnVisibility(columns);
+  const { sorting, setSorting, columnVisibility, setColumnVisibility } = useTableStorage({
+    columns,
+    storageKeyPrefix: 'data-mart-looker-studio-reports',
+    defaultSortingColumn: 'lastRunDate',
+  });
 
   const table = useReactTable<DataMartReport>({
     data: lookerStudioReports,

@@ -35,10 +35,8 @@ import {
   GetDataMartRunsSpec,
   CancelDataMartRunSpec,
 } from './spec/data-mart.api';
-import {
-  AuthContext,
-  AuthorizationContext,
-} from '../../common/authorization-context/authorization.context';
+import { AuthContext, AuthorizationContext, Auth } from '../../idp';
+import { Role, Strategy } from '../../idp/types/role-config.types';
 import { RunDataMartService } from '../use-cases/run-data-mart.service';
 import { ValidateDataMartDefinitionService } from '../use-cases/validate-data-mart-definition.service';
 import { ActualizeDataMartSchemaService } from '../use-cases/actualize-data-mart-schema.service';
@@ -73,6 +71,7 @@ export class DataMartController {
     private readonly cancelDataMartRunService: CancelDataMartRunService
   ) {}
 
+  @Auth(Role.editor(Strategy.INTROSPECT))
   @Post()
   @CreateDataMartSpec()
   async create(
@@ -84,6 +83,7 @@ export class DataMartController {
     return this.mapper.toCreateResponse(dataMart);
   }
 
+  @Auth(Role.viewer(Strategy.PARSE))
   @Get()
   @ListDataMartsSpec()
   async list(@AuthContext() context: AuthorizationContext): Promise<DataMartResponseApiDto[]> {
@@ -92,6 +92,7 @@ export class DataMartController {
     return this.mapper.toResponseList(dataMarts);
   }
 
+  @Auth(Role.viewer(Strategy.PARSE))
   @Get(':id')
   @GetDataMartSpec()
   async get(
@@ -103,6 +104,7 @@ export class DataMartController {
     return this.mapper.toResponse(dataMart);
   }
 
+  @Auth(Role.editor(Strategy.INTROSPECT))
   @Put(':id/definition')
   @UpdateDataMartDefinitionSpec()
   async updateDefinition(
@@ -115,6 +117,7 @@ export class DataMartController {
     return this.mapper.toResponse(dataMart);
   }
 
+  @Auth(Role.editor(Strategy.INTROSPECT))
   @Put(':id/title')
   @UpdateDataMartTitleSpec()
   async updateTitle(
@@ -127,6 +130,7 @@ export class DataMartController {
     return this.mapper.toResponse(dataMart);
   }
 
+  @Auth(Role.editor(Strategy.INTROSPECT))
   @Put(':id/description')
   @UpdateDataMartDescriptionSpec()
   async updateDescription(
@@ -139,6 +143,7 @@ export class DataMartController {
     return this.mapper.toResponse(dataMart);
   }
 
+  @Auth(Role.editor(Strategy.INTROSPECT))
   @Put(':id/publish')
   @PublishDataMartSpec()
   async publish(
@@ -150,6 +155,7 @@ export class DataMartController {
     return this.mapper.toResponse(dataMart);
   }
 
+  @Auth(Role.editor(Strategy.INTROSPECT))
   @Delete(':id')
   @DeleteDataMartSpec()
   async delete(
@@ -160,6 +166,7 @@ export class DataMartController {
     await this.deleteDataMartService.run(command);
   }
 
+  @Auth(Role.editor(Strategy.INTROSPECT))
   @Post(':id/manual-run')
   @RunDataMartSpec()
   async manualRun(
@@ -172,6 +179,7 @@ export class DataMartController {
     return { runId };
   }
 
+  @Auth(Role.editor(Strategy.INTROSPECT))
   @Post(':id/runs/:runId/cancel')
   @CancelDataMartRunSpec()
   @HttpCode(204)
@@ -184,6 +192,7 @@ export class DataMartController {
     await this.cancelDataMartRunService.run(command);
   }
 
+  @Auth(Role.editor(Strategy.INTROSPECT))
   @Post(':id/validate-definition')
   @ValidateDataMartDefinitionSpec()
   async validate(
@@ -195,6 +204,7 @@ export class DataMartController {
     return this.mapper.toDefinitionValidationResponse(validationResult);
   }
 
+  @Auth(Role.editor(Strategy.INTROSPECT))
   @Post(':id/actualize-schema')
   @ActualizeDataMartSchemaSpec()
   async actualizeSchema(
@@ -206,6 +216,7 @@ export class DataMartController {
     return this.mapper.toResponse(dataMart);
   }
 
+  @Auth(Role.editor(Strategy.INTROSPECT))
   @Put(':id/schema')
   @UpdateDataMartSchemaSpec()
   async updateSchema(
@@ -218,6 +229,7 @@ export class DataMartController {
     return this.mapper.toResponse(dataMart);
   }
 
+  @Auth(Role.editor(Strategy.INTROSPECT))
   @Post(':id/sql-dry-run')
   @HttpCode(200)
   @SqlDryRunSpec()
@@ -231,6 +243,7 @@ export class DataMartController {
     return this.mapper.toSqlDryRunResponse(result);
   }
 
+  @Auth(Role.viewer(Strategy.PARSE))
   @Get(':id/runs')
   @GetDataMartRunsSpec()
   async getRunHistory(

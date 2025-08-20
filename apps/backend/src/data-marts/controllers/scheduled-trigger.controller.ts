@@ -1,9 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import {
-  AuthContext,
-  AuthorizationContext,
-} from '../../common/authorization-context/authorization.context';
+import { AuthContext, AuthorizationContext, Auth } from '../../idp';
+import { Role, Strategy } from '../../idp/types/role-config.types';
 import { CreateScheduledTriggerRequestApiDto } from '../dto/presentation/create-scheduled-trigger-request-api.dto';
 import { ScheduledTriggerResponseApiDto } from '../dto/presentation/scheduled-trigger-response-api.dto';
 import { UpdateScheduledTriggerRequestApiDto } from '../dto/presentation/update-scheduled-trigger-request-api.dto';
@@ -36,6 +34,7 @@ export class ScheduledTriggerController {
     private readonly mapper: ScheduledTriggerMapper
   ) {}
 
+  @Auth(Role.editor(Strategy.INTROSPECT))
   @Post()
   @CreateScheduledTriggerSpec()
   async create(
@@ -48,6 +47,7 @@ export class ScheduledTriggerController {
     return this.mapper.toResponse(trigger);
   }
 
+  @Auth(Role.viewer(Strategy.PARSE))
   @Get()
   @ListScheduledTriggersSpec()
   async list(
@@ -59,6 +59,7 @@ export class ScheduledTriggerController {
     return this.mapper.toResponseList(triggers);
   }
 
+  @Auth(Role.viewer(Strategy.PARSE))
   @Get(':id')
   @GetScheduledTriggerSpec()
   async get(
@@ -71,6 +72,7 @@ export class ScheduledTriggerController {
     return this.mapper.toResponse(trigger);
   }
 
+  @Auth(Role.editor(Strategy.INTROSPECT))
   @Put(':id')
   @UpdateScheduledTriggerSpec()
   async update(
@@ -84,6 +86,7 @@ export class ScheduledTriggerController {
     return this.mapper.toResponse(trigger);
   }
 
+  @Auth(Role.editor(Strategy.INTROSPECT))
   @Delete(':id')
   @DeleteScheduledTriggerSpec()
   async delete(

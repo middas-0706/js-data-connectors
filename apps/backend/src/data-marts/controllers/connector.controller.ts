@@ -12,6 +12,8 @@ import { ConnectorFieldsResponseApiDto } from '../dto/presentation/connector-fie
 import { SpecificationConnectorService } from '../use-cases/connector/specification-connector.service';
 import { FieldsConnectorService } from '../use-cases/connector/fields-connector.service';
 import { ConnectorMapper } from '../mappers/connector.mapper';
+import { Auth } from '../../idp';
+import { Role } from '../../idp/types/role-config.types';
 
 @Controller('connectors')
 @ApiTags('Connectors')
@@ -23,6 +25,7 @@ export class ConnectorController {
     private readonly mapper: ConnectorMapper
   ) {}
 
+  @Auth(Role.none())
   @Get()
   @GetAvailableConnectorsSpec()
   async getAvailableConnectors(): Promise<ConnectorDefinitionResponseApiDto[]> {
@@ -30,6 +33,7 @@ export class ConnectorController {
     return this.mapper.toDefinitionResponseList(connectors);
   }
 
+  @Auth(Role.none())
   @Get(':connectorName/specification')
   @GetConnectorSpecificationSpec()
   async getConnectorSpecification(
@@ -39,6 +43,7 @@ export class ConnectorController {
     return this.mapper.toSpecificationResponse(specification);
   }
 
+  @Auth(Role.none())
   @Get(':connectorName/fields')
   @GetConnectorFieldsSpec()
   async getConnectorFields(

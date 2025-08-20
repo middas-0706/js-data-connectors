@@ -28,7 +28,6 @@ const menuItems: MenuItem[] = [
   {
     title: 'GitHub Community',
     href: 'https://github.com/OWOX/owox-data-marts',
-
     icon: GitHubIcon,
   },
   {
@@ -104,7 +103,7 @@ export function SidebarHeaderDropdown() {
               </button>
             </DropdownMenuTrigger>
 
-            <DropdownMenuContent align='start' sideOffset={8} className='min-w-max'>
+            <DropdownMenuContent align='start' sideOffset={8} className='w-56'>
               {menuItems.map((item, index) => {
                 if (item.type === 'separator') {
                   return <DropdownMenuSeparator key={`separator-${String(index)}`} />;

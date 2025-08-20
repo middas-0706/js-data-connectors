@@ -14,6 +14,8 @@ import {
   GetSchemaResponse,
 } from '../../data-destination-types/looker-studio-connector/schemas/get-schema.schema';
 import { LookerStudioConnectorApiService } from '../../data-destination-types/looker-studio-connector/services/looker-studio-connector-api.service';
+import { Auth } from '../../../idp';
+import { Role } from '../../../idp/types/role-config.types';
 
 const LOOKER_STUDIO_SERVICE_ACCOUNT =
   'connector@owox-p-odm-looker-studio-001.iam.gserviceaccount.com';
@@ -23,6 +25,7 @@ const LOOKER_STUDIO_SERVICE_ACCOUNT =
 export class LookerStudioConnectorController {
   constructor(private readonly lookerStudioConnectorService: LookerStudioConnectorApiService) {}
 
+  @Auth(Role.none())
   @HttpCode(200)
   @Post('/get-config')
   async getConfig(
@@ -32,6 +35,7 @@ export class LookerStudioConnectorController {
     return this.lookerStudioConnectorService.getConfig(request);
   }
 
+  @Auth(Role.none())
   @HttpCode(200)
   @Post('/get-schema')
   async getSchema(
@@ -41,6 +45,7 @@ export class LookerStudioConnectorController {
     return this.lookerStudioConnectorService.getSchema(request);
   }
 
+  @Auth(Role.none())
   @HttpCode(200)
   @Post('/get-data')
   async getData(

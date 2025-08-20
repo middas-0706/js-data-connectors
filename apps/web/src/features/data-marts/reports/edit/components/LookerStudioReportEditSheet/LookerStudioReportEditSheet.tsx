@@ -11,14 +11,14 @@ import type { DataMartReport } from '../../../shared/model/types/data-mart-repor
 import { LookerStudioReportEditForm } from '../LookerStudioReportEditForm';
 import { DataDestinationProvider } from '../../../../../data-destination';
 import { ReportFormMode } from '../../../shared';
-import type { DataDestinationResponseDto } from '../../../../../data-destination/shared/services/types';
+import type { DataDestination } from '../../../../../data-destination/shared/model/types';
 
 interface LookerStudioReportEditSheetProps {
   isOpen: boolean;
   onClose: () => void;
   initialReport?: DataMartReport;
   mode: ReportFormMode;
-  preSelectedDestination?: DataDestinationResponseDto | null;
+  preSelectedDestination?: DataDestination | null;
 }
 
 export function LookerStudioReportEditSheet({
@@ -66,15 +66,11 @@ export function LookerStudioReportEditSheet({
       >
         <SheetContent>
           <SheetHeader>
-            <SheetTitle>
-              {mode === ReportFormMode.CREATE
-                ? 'Connect Data Mart to Looker Studio'
-                : 'Update Looker Studio Connection'}
-            </SheetTitle>
+            <SheetTitle>{preSelectedDestination?.title ?? 'Looker Studio'}</SheetTitle>
             <SheetDescription>
               {mode === ReportFormMode.CREATE
-                ? 'Configure Data Mart as a data source for Looker Studio'
-                : 'Update Data Mart connection settings for Looker Studio'}
+                ? 'Set up Data Mart as a data source'
+                : 'Update connection details'}
             </SheetDescription>
           </SheetHeader>
 

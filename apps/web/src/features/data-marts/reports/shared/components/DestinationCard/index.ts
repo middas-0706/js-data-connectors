@@ -1,1 +1,0 @@
-export { DestinationCard } from './DestinationCard';

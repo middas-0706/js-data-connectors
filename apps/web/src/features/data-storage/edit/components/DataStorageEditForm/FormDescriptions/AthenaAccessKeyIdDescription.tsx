@@ -17,47 +17,19 @@ export default function AthenaAccessKeyIdDescription() {
         <AccordionTrigger>How do I get my AWS Access Key ID?</AccordionTrigger>
         <AccordionContent>
           <p className='mb-2'>
-            Before accessing your AWS Access Key ID, make sure you have a user or role with the
-            necessary permissions to use Athena and Glue in your AWS account.
+            Before accessing your AWS Access Key ID, make sure you have a user with the necessary
+            permissions to use Athena and Glue in your AWS account.
           </p>
-          <ol className='list-inside list-decimal space-y-2 text-sm'>
-            <li>
-              Go to{' '}
-              <ExternalAnchor
-                className='underline'
-                href='https://console.aws.amazon.com/iam/home#/users'
-              >
-                IAM Users
-              </ExternalAnchor>{' '}
-              or{' '}
-              <ExternalAnchor
-                className='underline'
-                href='https://console.aws.amazon.com/iam/home#/roles'
-              >
-                IAM Roles
-              </ExternalAnchor>{' '}
-              in the AWS Console.
-            </li>
-            <li>Either choose an existing user/role or create a new one.</li>
-            <li>
-              In the <strong>Permissions</strong> tab, attach the following policies:
-              <ul className='mt-2 ml-4 list-inside list-disc space-y-1'>
-                <li>
-                  <code className='text-sm font-semibold'>AmazonAthenaFullAccess</code>
-                </li>
-                <li>
-                  <code className='text-sm font-semibold'>AWSGlueFullAccess</code>
-                </li>
-                <li>
-                  <code className='text-sm font-semibold'>AmazonS3FullAccess</code>
-                </li>
-              </ul>
-            </li>
-            <li>
-              After setting up permissions, continue with the steps below to create or find the
-              access keys.
-            </li>
-          </ol>
+          <p className='mb-4 text-sm'>
+            Learn more about how to create a user in AWS&nbsp;
+            <ExternalAnchor
+              className='underline'
+              href='https://docs.owox.com/docs/storages/supported-storages/aws-athena/?utm_source=owox_data_marts&utm_medium=storage_enity&utm_campaign=tooltip_aws'
+            >
+              in documentation
+            </ExternalAnchor>
+            .
+          </p>
           <Separator className='my-4' />
           <p className='mb-2'>
             The Access Key ID is part of your AWS credentials needed to connect and authenticate.

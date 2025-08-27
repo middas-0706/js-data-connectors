@@ -22,7 +22,7 @@ export class ListDataMartsService {
 
   async run(command: ListDataMartsCommand): Promise<DataMartDto[]> {
     const dataMarts = await this.dataMartRepo.find({
-      where: { projectId: command.projectId, createdById: command.userId },
+      where: { projectId: command.projectId },
     });
 
     if (dataMarts.length === 0) {

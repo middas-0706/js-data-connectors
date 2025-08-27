@@ -37,7 +37,7 @@ export class NullIdpProvider implements IdpProvider {
       httpOnly: true,
       secure: isSecure,
       sameSite: 'lax',
-      maxAge: 3600000,
+      maxAge: 60 * 60 * 24 * 30 * 1000,
     });
     return Promise.resolve(res.redirect('/'));
   }

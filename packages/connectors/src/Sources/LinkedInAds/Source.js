@@ -62,13 +62,6 @@ var LinkedInAdsSource = class LinkedInAdsSource extends AbstractSource {
         label: "Fields",
         description: "List of fields to fetch from LinkedIn API"
       },
-      MaxFieldsPerRequest: {
-        requiredType: "number",
-        isRequired: true,
-        default: 20,
-        label: "Max Fields Per Request",
-        description: "Maximum number of fields to request per API call"
-      },
       AccountURNs: {
         isRequired: true,
         label: "Account URNs",
@@ -77,6 +70,7 @@ var LinkedInAdsSource = class LinkedInAdsSource extends AbstractSource {
     }));
     
     this.fieldsSchema = LinkedInAdsFieldsSchema;
+    this.MAX_FIELDS_PER_REQUEST = 20;
   }
   
   /**
@@ -158,10 +152,11 @@ var LinkedInAdsSource = class LinkedInAdsSource extends AbstractSource {
     const accountUrn = `urn:li:sponsoredAccount:${urn}`;
     const encodedUrn = encodeURIComponent(accountUrn);
     let allResults = [];
+    const uniqueApiFields = this.convertFieldsForApi(params.fields || []);
     
     // LinkedIn API has a limitation - it allows a maximum of fields per request
     // To overcome this, split fields into chunks and make multiple requests
-    const fieldChunks = this.prepareAnalyticsFieldChunks(params.fields || []);
+    const fieldChunks = this.prepareAnalyticsFieldChunks(uniqueApiFields);
     
     // Process each chunk of fields in separate API requests
     for (const fieldChunk of fieldChunks) {
@@ -184,6 +179,22 @@ var LinkedInAdsSource = class LinkedInAdsSource extends AbstractSource {
   }
 
   /**
+   * Convert custom date fields to LinkedIn API compatible fields
+   * @param {Array} fields - Original list of fields from user selection
+   * @returns {Array} - Fields converted for LinkedIn API with duplicates removed
+   */
+  convertFieldsForApi(fields) {
+    const apiFields = fields.map(field => {
+      if (field === 'dateRangeStart' || field === 'dateRangeEnd') {
+        return 'dateRange';
+      }
+      return field;
+    });
+    
+    return [...new Set(apiFields)];
+  }
+
+  /**
    * Prepare field chunks for analytics API requests
    * @param {Array} fields - Original list of fields to request
    * @returns {Array} - Array of field chunks, each respecting the API field limit
@@ -196,7 +207,7 @@ var LinkedInAdsSource = class LinkedInAdsSource extends AbstractSource {
     // Add required fields to each chunk separately
     const uniqueFields = [...new Set(fields)].filter(field => !requiredFields.includes(field));
     
-    const maxCustomFieldsPerChunk = this.config.MaxFieldsPerRequest.value - requiredFields.length;
+    const maxCustomFieldsPerChunk = this.MAX_FIELDS_PER_REQUEST - requiredFields.length;
     const fieldChunks = [];
     
     for (let i = 0; i < uniqueFields.length; i += maxCustomFieldsPerChunk) {
@@ -290,7 +301,7 @@ var LinkedInAdsSource = class LinkedInAdsSource extends AbstractSource {
   }
 
   /**
-   * Transform complex dateRange objects to simple Date objects in analytics data
+   * Transform complex dateRange objects to separate dateRangeStart and dateRangeEnd fields
    * @param {Array} analyticsData - Array of analytics data records
    * @returns {Array} - Transformed analytics data
    */
@@ -299,18 +310,31 @@ var LinkedInAdsSource = class LinkedInAdsSource extends AbstractSource {
       return analyticsData;
     }
 
-    const pad = n => String(n).padStart(2, '0');
-
     return analyticsData.map(item => {
       const res = { ...item };
 
       if (res.dateRange?.start) {
-        const { year, month, day } = res.dateRange.start;
-        res.dateRange = `${year}-${pad(month)}-${pad(day)}`;
+        res.dateRangeStart = this.formatDateFromLinkedInObject(res.dateRange.start);
       }
 
+      if (res.dateRange?.end) {
+        res.dateRangeEnd = this.formatDateFromLinkedInObject(res.dateRange.end);
+      }
+
+      delete res.dateRange;
       return res;
     });
+  }
+
+  /**
+   * Format LinkedIn date object to YYYY-MM-DD string
+   * @param {Object} dateObj - LinkedIn date object with year, month, day properties
+   * @returns {string} - Formatted date string (YYYY-MM-DD)
+   */
+  formatDateFromLinkedInObject(dateObj) {
+    const { year, month, day } = dateObj;
+    const pad = n => String(n).padStart(2, '0');
+    return `${year}-${pad(month)}-${pad(day)}`;
   }
 
   /**

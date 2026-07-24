@@ -10,6 +10,13 @@ import type { McpAuthContext } from '../auth/mcp-auth-context';
 import { jsonToolResult, type McpToolDefinition, type McpToolResult } from './mcp-tool.definition';
 import { buildDataMartUiPath } from './data-mart-ui-path';
 import { joinPublicOrigin } from './mcp-public-url.util';
+import {
+  categorizeFieldType,
+  type FieldTypeCategory,
+} from '../../../data-marts/dto/schemas/field-type-category';
+import type { AggregationRole } from '../../../data-marts/dto/schemas/field-aggregation-governance';
+import type { ReportAggregateFunction } from '../../../data-marts/dto/schemas/aggregate-function.schema';
+import { effectiveMcpAggregations, mcpOperatorsForCategory } from './field-type-matrix';
 
 const inputSchema = z
   .object({
@@ -25,6 +32,25 @@ const inputSchema = z
 
 type GetDataMartDetailsInput = z.infer<typeof inputSchema>;
 
+// Factories, not shared instances — a shared zod instance surfaces as a JSON-Schema
+// $ref that OpenAI's tool verifier cannot resolve (same hazard as makeMcpFilterSchema
+// in query-data-mart.input.ts). One factory keeps a single copy of each describe text.
+const makeCategoryField = () =>
+  z
+    .string()
+    .optional()
+    .describe(
+      'Field-type category (number/string/date/time/boolean/other) — the key into operators_by_category for the operators this field accepts in filters. For slice operators, use "sliceCategory" instead when it is present.'
+    );
+
+const makeAllowedAggregationsField = () =>
+  z
+    .array(z.string())
+    .optional()
+    .describe(
+      'The aggregation functions query_data_mart may apply to THIS field (type defaults narrowed by per-field settings). Use only these; an empty array means the field cannot be aggregated.'
+    );
+
 const DataMartFieldSchema = z
   .object({
     name: z.string(),
@@ -32,6 +58,8 @@ const DataMartFieldSchema = z
     description: z.string().optional().nullable(),
     businessName: z.string().optional(),
     displayName: z.string().optional(),
+    category: makeCategoryField(),
+    allowedAggregations: makeAllowedAggregationsField(),
   })
   .passthrough();
 
@@ -52,24 +80,30 @@ const JoinedFieldSchema = z
       ),
     description: z.string().optional().nullable(),
     sourceDataMart: z.string().describe('Title of the joined data mart this field comes from.'),
+    category: makeCategoryField(),
     sliceType: z
       .string()
       .optional()
       .describe(
         'Present only when this field is deduplicated with a type-changing aggregation. A slice runs BEFORE the join on the original value, so pick slice operators for this pre-join type — not "type". Absent when the two are the same.'
       ),
-    allowedAggregations: z
-      .array(z.string())
+    sliceCategory: z
+      .string()
       .optional()
-      .describe('Aggregations permitted on this blended field (governance), when restricted.'),
+      .describe(
+        'Category of "sliceType" — the operators_by_category key for SLICE operators on this field. Present exactly when sliceType is; when absent, "category" covers slices too.'
+      ),
+    allowedAggregations: makeAllowedAggregationsField(),
   })
   .passthrough();
+
+type RawField = Record<string, unknown>;
 
 @Injectable()
 export class GetDataMartDetailsTool implements McpToolDefinition<GetDataMartDetailsInput> {
   readonly name = 'get_data_mart_details_by_id';
   readonly description =
-    'Get available details for a specific published OWOX Data Mart by data_mart_id, including its URL, native output fields, and (only on explicit request) joined_fields contributed by blended/joined data marts. Use detail_level=native by default: it avoids exposing irrelevant joined fields and keeps the response fast. Request detail_level=with_joined_fields only when the question truly needs a joined Data Mart. Use displayName for user-facing wording and copy name verbatim into query_data_mart. This tool is optional in the discovery flow: get_relevant_data_marts_by_prompt finds relevant Data Marts, and this tool adds field-level metadata for a selected Data Mart. It does not return data owners, data freshness, sample values, or actual data rows.';
+    'Get available details for a specific published OWOX Data Mart by data_mart_id, including its URL, native output fields, and (only on explicit request) joined_fields contributed by blended/joined data marts. Use detail_level=native by default: it avoids exposing irrelevant joined fields and keeps the response fast. Request detail_level=with_joined_fields only when the question truly needs a joined Data Mart. Use displayName for user-facing wording and copy name verbatim into query_data_mart. Each field carries its type "category" and the effective "allowedAggregations" query_data_mart may apply to it; "operators_by_category" maps each category to the filter/slice operators its fields accept — build queries from these instead of guessing. This tool is optional in the discovery flow: get_relevant_data_marts_by_prompt finds relevant Data Marts, and this tool adds field-level metadata for a selected Data Mart. It does not return data owners, data freshness, sample values, or actual data rows.';
   readonly zodSchema = inputSchema.shape;
   readonly outputSchema = {
     id: z.string().describe('Data mart identifier.'),
@@ -86,6 +120,11 @@ export class GetDataMartDetailsTool implements McpToolDefinition<GetDataMartDeta
       .array(JoinedFieldSchema)
       .describe(
         'Fields available from joined/blended data marts when joined_fields_included is true. Reference each by its exact "name" in query_data_mart; because they come from a joined data mart they may also be used in "slices".'
+      ),
+    operators_by_category: z
+      .record(z.string(), z.array(z.string()))
+      .describe(
+        'For each field-type category present in this data mart, the query_data_mart filter/slice operators its fields accept. Look up a field via its "category". For boolean fields, eq/neq take a boolean true or false as the value.'
       ),
   };
   readonly annotations = {
@@ -117,6 +156,21 @@ export class GetDataMartDetailsTool implements McpToolDefinition<GetDataMartDeta
       dataMartId: parsed.data_mart_id,
       includeJoinedFields,
     });
+
+    const categories = new Set<FieldTypeCategory>();
+    const fields = result.fields.map(f => this.enrichField(f as RawField, categories));
+    // Joined fields go through the same enrichment as native ones (they simply have no
+    // aggregationRole and no nested fields), so a future governance knob cannot be
+    // applied to one path and silently missed on the other.
+    const joinedFields = result.joinedFields.map(f =>
+      this.enrichField(f as unknown as RawField, categories)
+    );
+
+    const operatorsByCategory: Record<string, string[]> = {};
+    for (const category of categories) {
+      operatorsByCategory[category] = mcpOperatorsForCategory(category);
+    }
+
     const structuredContent = {
       id: result.id,
       name: result.name,
@@ -125,11 +179,43 @@ export class GetDataMartDetailsTool implements McpToolDefinition<GetDataMartDeta
         buildDataMartUiPath(context.projectId, result.id)
       ),
       description: result.description,
-      fields: result.fields,
+      fields,
       joined_fields_included: includeJoinedFields,
-      joined_fields: result.joinedFields,
+      joined_fields: joinedFields,
+      operators_by_category: operatorsByCategory,
     };
 
     return jsonToolResult(structuredContent);
+  }
+
+  /**
+   * Annotates a schema field (and, for RECORD-like fields, its nested fields) with its
+   * type category and the effective aggregations query_data_mart may apply to it —
+   * resolved with the SAME governance function the validator enforces, so the advertised
+   * set cannot drift from what a query is actually allowed to do.
+   */
+  private enrichField(field: RawField, categories: Set<FieldTypeCategory>): RawField {
+    const out: RawField = { ...field };
+    if (typeof out.type === 'string') {
+      const category = categorizeFieldType(out.type);
+      categories.add(category);
+      out.category = category;
+      out.allowedAggregations = effectiveMcpAggregations(out.type, {
+        aggregationRole: out.aggregationRole as AggregationRole | undefined,
+        allowedAggregations: out.allowedAggregations as ReportAggregateFunction[] | undefined,
+      });
+    }
+    // sliceType is present only when a type-changing dedup makes the pre-join type
+    // differ from the blended "type". Slices run on the PRE-join value, so give the
+    // slice operator lookup its own category (and register it in the matrix).
+    if (typeof out.sliceType === 'string') {
+      const sliceCategory = categorizeFieldType(out.sliceType);
+      categories.add(sliceCategory);
+      out.sliceCategory = sliceCategory;
+    }
+    if (Array.isArray(out.fields)) {
+      out.fields = (out.fields as RawField[]).map(f => this.enrichField(f, categories));
+    }
+    return out;
   }
 }

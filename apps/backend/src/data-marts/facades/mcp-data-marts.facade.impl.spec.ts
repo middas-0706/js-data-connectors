@@ -420,6 +420,17 @@ describe('McpDataMartsFacadeImpl', () => {
           postJoinAggregations: ['COUNT'],
         },
         {
+          // Explicit [] = "no aggregations allowed" — must be forwarded, not dropped,
+          // or consumers fall back to type defaults the validator will reject.
+          name: 'blended_users__lockedMetric',
+          type: 'FLOAT',
+          description: '',
+          sourceDataMartTitle: 'blended_users',
+          aliasPath: 'blended_users',
+          isHidden: false,
+          postJoinAggregations: [],
+        },
+        {
           name: 'blended_users__secret',
           type: 'STRING',
           description: '',
@@ -481,6 +492,14 @@ describe('McpDataMartsFacadeImpl', () => {
         description: '',
         sourceDataMart: 'blended_users',
         allowedAggregations: ['COUNT'],
+      },
+      {
+        name: 'blended_users__lockedMetric',
+        displayName: 'blended_users__lockedMetric',
+        type: 'FLOAT',
+        description: '',
+        sourceDataMart: 'blended_users',
+        allowedAggregations: [],
       },
     ]);
     expect(blendableSchemaService.computeBlendableSchema).toHaveBeenCalledWith(

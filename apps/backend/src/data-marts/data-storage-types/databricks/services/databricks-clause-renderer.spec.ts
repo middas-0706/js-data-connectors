@@ -22,7 +22,7 @@ describe('DatabricksClauseRenderer', () => {
     expect(out.sql).toBe("\nWHERE `channel` IN ('fb', 'O''Brien', 5)");
     expect(out.params).toEqual([]);
     expect(where(r, { column: 'channel', operator: 'not_in', value: ['fb', 'google'] })).toBe(
-      "\nWHERE `channel` NOT IN ('fb', 'google')"
+      "\nWHERE (`channel` IS NULL OR `channel` NOT IN ('fb', 'google'))"
     );
   });
 
@@ -63,13 +63,13 @@ describe('DatabricksClauseRenderer', () => {
       "\nWHERE endswith(`name`, 'z')"
     );
     expect(where(r, { column: 'name', operator: 'not_contains', value: 'x' })).toBe(
-      "\nWHERE NOT contains(`name`, 'x')"
+      "\nWHERE (`name` IS NULL OR NOT contains(`name`, 'x'))"
     );
     expect(where(r, { column: 'name', operator: 'regex', value: '^a.*' })).toBe(
       "\nWHERE `name` RLIKE '^a.*'"
     );
     expect(where(r, { column: 'name', operator: 'not_regex', value: '^a.*' })).toBe(
-      "\nWHERE NOT (`name` RLIKE '^a.*')"
+      "\nWHERE (`name` IS NULL OR NOT (`name` RLIKE '^a.*'))"
     );
     // A regex metacharacter survives the string-literal layer: the backslash is doubled so
     // Spark unescapes it back to `\d` for RLIKE (live-verified — matched the digit row).
@@ -109,7 +109,9 @@ describe('DatabricksClauseRenderer', () => {
     expect(where(r, { column: 's', operator: 'is_not_empty' })).toBe(
       "\nWHERE (`s` IS NOT NULL AND `s` <> '')"
     );
-    expect(where(r, { column: 'n', operator: 'neq', value: 1 })).toBe('\nWHERE `n` <> 1');
+    expect(where(r, { column: 'n', operator: 'neq', value: 1 })).toBe(
+      '\nWHERE (`n` IS NULL OR `n` <> 1)'
+    );
   });
 
   it('renders the week/quarter/next_n_days presets (Monday-fixed trunc WEEK)', () => {

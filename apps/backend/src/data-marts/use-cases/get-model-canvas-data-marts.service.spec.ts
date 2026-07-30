@@ -18,7 +18,6 @@ describe('GetModelCanvasDataMartsService', () => {
     canAccess: jest.fn(),
     canAccessMany: jest.fn(),
   };
-
   const service = new GetModelCanvasDataMartsService(
     dataMartService as unknown as DataMartService,
     dataStorageService as unknown as DataStorageService,
@@ -115,7 +114,13 @@ describe('GetModelCanvasDataMartsService', () => {
         description: 'desc',
         fieldCount: 3,
       },
-      { id: 'b', title: 'DM b', status: DataMartStatus.DRAFT, description: null, fieldCount: 0 },
+      {
+        id: 'b',
+        title: 'DM b',
+        status: DataMartStatus.DRAFT,
+        description: null,
+        fieldCount: 0,
+      },
     ]);
   });
 

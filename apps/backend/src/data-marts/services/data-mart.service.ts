@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, SelectQueryBuilder } from 'typeorm';
+import { In, Repository, SelectQueryBuilder } from 'typeorm';
 import { DataMartSchemaMergerFacade } from '../data-storage-types/facades/data-mart-schema-merger.facade';
 import { DataMartSchemaProviderFacade } from '../data-storage-types/facades/data-mart-schema-provider.facade';
 import { DataMartDefinitionSchema } from '../dto/schemas/data-mart-table-definitions/data-mart-definition.schema';
@@ -53,6 +53,15 @@ export class DataMartService {
 
   async findById(id: string, withDeleted: boolean = false): Promise<DataMart | null> {
     return this.dataMartRepository.findOne({ where: { id }, withDeleted });
+  }
+
+  async findByIdsAndProjectId(ids: readonly string[], projectId: string): Promise<DataMart[]> {
+    const uniqueIds = Array.from(new Set(ids));
+    if (uniqueIds.length === 0) return [];
+    return this.dataMartRepository.find({
+      where: { id: In(uniqueIds), projectId },
+      select: ['id'],
+    });
   }
 
   async findByProjectIdForList(

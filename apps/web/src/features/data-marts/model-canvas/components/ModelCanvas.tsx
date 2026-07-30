@@ -1,14 +1,14 @@
 import { Check, Locate, Settings, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Background,
-  BackgroundVariant,
+  applyNodeChanges,
   MarkerType,
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
   useStore,
+  type NodeChange,
   type Viewport,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -17,8 +17,8 @@ import { Switch } from '@owox/ui/components/switch';
 import { Button } from '../../../../shared/components/Button';
 import { storageService } from '../../../../services/localstorage.service';
 import {
-  EDGE_COLOR,
   NODE_PULSE_KEYFRAMES,
+  OWOX_BLUE,
   STATIC_NODE_STYLE,
   WARNING_COLOR,
 } from '../../shared/canvas/constants';
@@ -39,16 +39,23 @@ import {
   type DagreLayoutEdge,
   type DagreLayoutNode,
 } from '../model/graph/dagre-layout';
+import {
+  buildPrimaryKeysByNode,
+  computeEdgeCardinality,
+  type EdgeCardinality,
+} from '../model/graph/edge-cardinality';
 import type { CanvasRenderEdge } from '../model/graph/merge-bidirectional-edges';
 import { computeParallelEdgeOffsets } from '../model/graph/parallel-edge-offsets';
-import type { PathPoint } from '../model/graph/rounded-path';
+import type { PathPoint } from '../model/graph/path-point';
 import type { ModelCanvasNode } from '../model/types';
+import {
+  definitionTypeAccent,
+  type CanvasViewMode,
+  computeNodeHeight,
+  nodeWidth,
+} from '../model/erd-node';
 import ModelCanvasFlowEdge, { type ModelCanvasFlowEdgeType } from './ModelCanvasFlowEdge';
-import ModelCanvasFlowNode, {
-  NODE_HEIGHT,
-  NODE_WIDTH,
-  type ModelCanvasFlowNodeType,
-} from './ModelCanvasFlowNode';
+import ModelCanvasFlowNode, { type ModelCanvasFlowNodeType } from './ModelCanvasFlowNode';
 
 interface ModelCanvasProps {
   nodes: ModelCanvasNode[];
@@ -61,6 +68,11 @@ interface ModelCanvasProps {
 
 const LAYOUT_LS_KEY = 'model-canvas-layout';
 const JOIN_LABELS_LS_KEY = 'model-canvas-show-join-fields';
+const VIEW_MODE_LS_KEY = 'model-canvas-view-mode';
+const VIEW_MODE_OPTIONS: { value: CanvasViewMode; label: string }[] = [
+  { value: 'compact', label: 'Compact' },
+  { value: 'erd', label: 'Detailed' },
+];
 const FIT_VIEW_PADDING = 0.2;
 const MARKER_SIZE = 12;
 const LABEL_CHAR_WIDTH = 6.6;
@@ -90,18 +102,19 @@ interface FlowNodeParams {
   hasOutgoing: boolean;
   highlight: CanvasHighlightState;
   direction: CanvasDirection;
+  viewMode: CanvasViewMode;
   onOpenExternal: () => void;
 }
 
 function buildFlowNode(params: FlowNodeParams): ModelCanvasFlowNodeType {
-  const { node, highlight } = params;
+  const { node, highlight, viewMode } = params;
   return {
     id: node.id,
     type: 'modelCanvasNode',
     position: params.position,
-    width: NODE_WIDTH,
-    height: NODE_HEIGHT,
-    draggable: false,
+    width: nodeWidth(viewMode),
+    height: computeNodeHeight(node, viewMode),
+    draggable: true,
     selectable: false,
     focusable: false,
     style: STATIC_NODE_STYLE,
@@ -110,6 +123,9 @@ function buildFlowNode(params: FlowNodeParams): ModelCanvasFlowNodeType {
       isDraft: node.status === DataMartStatus.DRAFT,
       fieldCount: node.fieldCount,
       description: node.description,
+      definitionType: node.definitionType ?? null,
+      fields: node.fields ?? [],
+      viewMode,
       hasIncoming: params.hasIncoming,
       hasOutgoing: params.hasOutgoing,
       highlighted: highlight.highlighted,
@@ -127,17 +143,16 @@ function buildJoinLabel(edge: CanvasRenderEdge): string[] {
 interface FlowEdgeParams {
   edge: CanvasRenderEdge;
   joinLabel: string[];
-  route: PathPoint[];
   bowOffset: number;
   warning: boolean;
   dimmed: boolean;
-  labelPosition: PathPoint | undefined;
   direction: CanvasDirection;
+  cardinality: EdgeCardinality | null;
 }
 
 function buildFlowEdge(params: FlowEdgeParams): ModelCanvasFlowEdgeType {
   const { edge, warning } = params;
-  const color = warning ? WARNING_COLOR : EDGE_COLOR;
+  const color = warning ? WARNING_COLOR : OWOX_BLUE;
   const marker = { type: MarkerType.ArrowClosed, color, width: MARKER_SIZE, height: MARKER_SIZE };
 
   return {
@@ -150,13 +165,12 @@ function buildFlowEdge(params: FlowEdgeParams): ModelCanvasFlowEdgeType {
     markerEnd: marker,
     markerStart: edge.bidirectional ? marker : undefined,
     data: {
-      route: params.route,
       bowOffset: params.bowOffset,
       warning,
       joinLabel: params.joinLabel,
       dimmed: params.dimmed,
-      labelPosition: params.labelPosition,
       direction: params.direction,
+      cardinality: params.cardinality,
     },
   };
 }
@@ -183,6 +197,9 @@ function ModelCanvasInner({ nodes, edges, searchQuery, onOpenDataMart }: ModelCa
   const [direction, setDirection] = useState<CanvasDirection>(() =>
     parseCanvasDirection(storageService.get(LAYOUT_LS_KEY))
   );
+  const [viewMode, setViewMode] = useState<CanvasViewMode>(() =>
+    storageService.get(VIEW_MODE_LS_KEY) === 'erd' ? 'erd' : 'compact'
+  );
   const [showJoinLabels, setShowJoinLabels] = useState(
     () => storageService.get(JOIN_LABELS_LS_KEY, 'boolean') ?? false
   );
@@ -204,8 +221,8 @@ function ModelCanvasInner({ nodes, edges, searchQuery, onOpenDataMart }: ModelCa
 
     const dagreNodes: DagreLayoutNode[] = nodes.map(n => ({
       id: n.id,
-      width: NODE_WIDTH,
-      height: NODE_HEIGHT,
+      width: nodeWidth(viewMode),
+      height: computeNodeHeight(n, viewMode),
     }));
     const joinLabels = showJoinLabels
       ? new Map(edges.map(e => [e.id, buildJoinLabel(e)]))
@@ -217,8 +234,9 @@ function ModelCanvasInner({ nodes, edges, searchQuery, onOpenDataMart }: ModelCa
       label: estimateEdgeLabelDimensions(joinLabels.get(e.id) ?? []),
     }));
 
-    const { positions, routes, labelPositions } = runDagreLayout(dagreNodes, dagreEdges, direction);
+    const { positions } = runDagreLayout(dagreNodes, dagreEdges, direction);
     const offsets = computeParallelEdgeOffsets(edges);
+    const primaryKeysByNode = buildPrimaryKeysByNode(nodes);
 
     setFlowNodes(
       nodes.map(node =>
@@ -229,6 +247,7 @@ function ModelCanvasInner({ nodes, edges, searchQuery, onOpenDataMart }: ModelCa
           hasOutgoing: hasOutgoing.has(node.id),
           highlight: highlightState.get(node.id) ?? NO_HIGHLIGHT,
           direction,
+          viewMode,
           onOpenExternal: () => {
             onOpenDataMartRef.current(node.id);
           },
@@ -238,22 +257,19 @@ function ModelCanvasInner({ nodes, edges, searchQuery, onOpenDataMart }: ModelCa
 
     setFlowEdges(
       edges.map(edge => {
-        const dagreRoute = routes.get(edge.id) ?? [];
-        const bowOffset = dagreRoute.length === 0 ? (offsets.get(edge.id) ?? 0) : 0;
         const sourceDimmed = highlightState.get(edge.sourceId)?.dimmed ?? false;
         const targetDimmed = highlightState.get(edge.targetId)?.dimmed ?? false;
         return buildFlowEdge({
           edge,
           joinLabel: joinLabels.get(edge.id) ?? [],
-          route: dagreRoute,
-          bowOffset,
+          bowOffset: offsets.get(edge.id) ?? 0,
           warning:
             edge.joinNotConfigured ||
             (isDraft.get(edge.sourceId) ?? false) ||
             (isDraft.get(edge.targetId) ?? false),
           dimmed: sourceDimmed && targetDimmed,
-          labelPosition: bowOffset === 0 ? labelPositions.get(edge.id) : undefined,
           direction,
+          cardinality: computeEdgeCardinality(edge, primaryKeysByNode),
         });
       })
     );
@@ -278,7 +294,11 @@ function ModelCanvasInner({ nodes, edges, searchQuery, onOpenDataMart }: ModelCa
     return () => {
       cancelAnimationFrame(rafId);
     };
-  }, [nodes, edges, direction, showJoinLabels, reactFlow]);
+  }, [nodes, edges, direction, viewMode, showJoinLabels, reactFlow]);
+
+  const onNodesChange = useCallback((changes: NodeChange<ModelCanvasFlowNodeType>[]) => {
+    setFlowNodes(prev => applyNodeChanges(changes, prev));
+  }, []);
 
   useEffect(() => {
     const state = computeCanvasHighlight(
@@ -319,6 +339,11 @@ function ModelCanvasInner({ nodes, edges, searchQuery, onOpenDataMart }: ModelCa
   const handleDirectionChange = useCallback((next: CanvasDirection) => {
     setDirection(next);
     storageService.set(LAYOUT_LS_KEY, next);
+  }, []);
+
+  const handleViewModeChange = useCallback((next: CanvasViewMode) => {
+    setViewMode(next);
+    storageService.set(VIEW_MODE_LS_KEY, next);
   }, []);
 
   const handleJoinLabelsChange = useCallback((checked: boolean) => {
@@ -392,7 +417,32 @@ function ModelCanvasInner({ nodes, edges, searchQuery, onOpenDataMart }: ModelCa
             </Button>
           </PopoverTrigger>
           <PopoverContent align='end' side='left' className='w-56'>
-            <PopoverTitle>Layout algorithm</PopoverTitle>
+            <PopoverTitle>View</PopoverTitle>
+            <div
+              role='radiogroup'
+              aria-label='Card view mode'
+              className='bg-muted mt-2 grid grid-cols-2 gap-0.5 rounded-md p-0.5'
+            >
+              {VIEW_MODE_OPTIONS.map(option => (
+                <button
+                  key={option.value}
+                  type='button'
+                  role='radio'
+                  aria-checked={viewMode === option.value}
+                  className={`rounded px-2 py-1 text-sm transition-colors ${
+                    viewMode === option.value
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  onClick={() => {
+                    handleViewModeChange(option.value);
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <PopoverTitle className='mt-3 border-t pt-3'>Layout algorithm</PopoverTitle>
             <div role='radiogroup' aria-label='Layout algorithm' className='mt-2 space-y-0.5'>
               {CANVAS_DIRECTION_OPTIONS.map(option => (
                 <button
@@ -429,7 +479,8 @@ function ModelCanvasInner({ nodes, edges, searchQuery, onOpenDataMart }: ModelCa
           edges={flowEdges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
-          nodesDraggable={false}
+          onNodesChange={onNodesChange}
+          nodesDraggable
           nodesConnectable={false}
           elementsSelectable={false}
           edgesFocusable={false}
@@ -438,10 +489,15 @@ function ModelCanvasInner({ nodes, edges, searchQuery, onOpenDataMart }: ModelCa
           onMove={handleMove}
           fitView
           fitViewOptions={{ padding: FIT_VIEW_PADDING }}
+          proOptions={{ hideAttribution: true }}
           style={{ width: '100%', height: '100%' }}
         >
-          <Background variant={BackgroundVariant.Lines} gap={16} color='rgba(0,0,0,0.06)' />
-          <MiniMap pannable zoomable style={{ width: 140, height: 100 }} />
+          <MiniMap<ModelCanvasFlowNodeType>
+            pannable
+            zoomable
+            style={{ width: 140, height: 100 }}
+            nodeColor={node => definitionTypeAccent(node.data.definitionType)}
+          />
         </ReactFlow>
       )}
     </>

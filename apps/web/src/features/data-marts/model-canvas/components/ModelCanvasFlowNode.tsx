@@ -16,6 +16,11 @@ import type { CanvasNodeField } from '../model/types';
 import type { CanvasDirection } from '../model/graph/canvas-direction';
 import type { DataQualityCompactSummary } from '../../shared/types';
 import { DataQualityCanvasStatusIcon } from './DataQualityCanvasStatusIcon';
+import { DataLastUpdatedCanvasIcon } from './DataLastUpdatedCanvasIcon';
+import type { DataLastUpdatedDto } from '../../shared/types/api/response/data-mart-data-last-updated.dto';
+
+export const NODE_WIDTH = 240;
+export const NODE_HEIGHT = 74;
 
 export interface ModelCanvasFlowNodeData {
   title: string;
@@ -25,6 +30,7 @@ export interface ModelCanvasFlowNodeData {
   definitionType: DataMartDefinitionType | null;
   fields: CanvasNodeField[];
   viewMode: CanvasViewMode;
+  dataLastUpdated: DataLastUpdatedDto | null;
   hasIncoming: boolean;
   hasOutgoing: boolean;
   highlighted: boolean;
@@ -194,14 +200,15 @@ export default function ModelCanvasFlowNode({ data }: NodeProps<ModelCanvasFlowN
           {data.fieldCount} field{data.fieldCount !== 1 ? 's' : ''}
         </span>
       </div>
-      {/* Data Quality row */}
-      <div className='text-muted-foreground flex items-center px-3.5 pt-1 pb-3 text-[11px]'>
+      {/* Status icons row: quality shield + data-last-updated clock */}
+      <div className='text-muted-foreground flex items-center gap-1 px-3.5 pt-1 pb-3 text-[11px]'>
         <DataQualityCanvasStatusIcon
           dataMartTitle={data.title}
           summary={data.qualitySummary}
           onOpenQuality={data.onOpenQuality}
           onRunQuality={data.onRunQuality}
         />
+        <DataLastUpdatedCanvasIcon dataMartTitle={data.title} block={data.dataLastUpdated} />
       </div>
 
       {/* ERD body: field rows (only in ERD view) */}

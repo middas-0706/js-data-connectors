@@ -25,6 +25,7 @@ const node = (id: string, status: DataMartStatus = DataMartStatus.PUBLISHED) => 
     dataMartRunId: null,
     lastRunAt: null,
   },
+  dataLastUpdated: null,
 });
 
 const edge = (id: string, sourceDataMartId: string, targetDataMartId: string) => ({

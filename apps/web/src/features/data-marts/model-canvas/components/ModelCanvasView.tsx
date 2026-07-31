@@ -9,6 +9,7 @@ import { useProjectRoute } from '../../../../shared/hooks';
 import { filterCanvasData } from '../model/graph/filter-canvas-data';
 import { mergeBidirectionalEdges } from '../model/graph/merge-bidirectional-edges';
 import { useModelCanvas } from '../model/use-model-canvas';
+import { useRefreshDataLastUpdated } from '../model/use-refresh-data-last-updated';
 import { useModelCanvasFilters } from '../model/use-model-canvas-filters';
 import { ModelCanvasToolbar } from './ModelCanvasToolbar';
 import { dataQualityService } from '../../data-quality/api/data-quality.service';
@@ -63,6 +64,8 @@ function ModelCanvasViewContent({ onActiveQualityRunChange }: ModelCanvasViewPro
     error: topologyError,
     refetch,
   } = useModelCanvas(storageKnown ? filters.storageId : null);
+  const { refresh: refreshDataLastUpdated, isRefreshing: isRefreshingDataLastUpdated } =
+    useRefreshDataLastUpdated(storageKnown ? filters.storageId : null);
 
   const loadDataStorages = useCallback(async () => {
     const generation = ++storageLoadGenerationRef.current;
@@ -222,6 +225,12 @@ function ModelCanvasViewContent({ onActiveQualityRunChange }: ModelCanvasViewPro
         onRelChange={filters.setRel}
         searchQuery={filters.searchQuery}
         onSearchChange={filters.setSearchQuery}
+        onRefreshDataLastUpdated={() => {
+          // Meeting decision: the check covers what the user actually sees — the filtered set.
+          void refreshDataLastUpdated((filtered?.nodes ?? []).map(node => node.id));
+        }}
+        isRefreshingDataLastUpdated={isRefreshingDataLastUpdated}
+        canRefreshDataLastUpdated={Boolean(filtered && filtered.nodes.length > 0)}
       />
       {storageLoadError ? (
         <CanvasMessage role='alert'>

@@ -41,6 +41,7 @@ function renderNode(
     data: {
       title: 'Orders',
       isDraft: false,
+      dataLastUpdated: null,
       fieldCount: fields.length,
       description: 'Customer order facts',
       definitionType: DataMartDefinitionType.VIEW,

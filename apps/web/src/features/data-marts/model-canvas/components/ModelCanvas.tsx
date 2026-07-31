@@ -158,6 +158,7 @@ function buildFlowNode(params: FlowNodeParams): ModelCanvasFlowNodeType {
       definitionType: node.definitionType ?? null,
       fields: node.fields ?? [],
       viewMode,
+      dataLastUpdated: node.dataLastUpdated,
       hasIncoming: params.hasIncoming,
       hasOutgoing: params.hasOutgoing,
       highlighted: highlight.highlighted,

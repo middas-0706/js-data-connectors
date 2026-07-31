@@ -100,6 +100,7 @@ describe('ModelCanvas', () => {
             description: null,
             fieldCount: 3,
             qualitySummary: buildQualitySummary(),
+            dataLastUpdated: null,
           },
           {
             id: 'customers',
@@ -108,6 +109,7 @@ describe('ModelCanvas', () => {
             description: null,
             fieldCount: 2,
             qualitySummary: buildQualitySummary(),
+            dataLastUpdated: null,
           },
         ]}
         edges={[]}
@@ -147,6 +149,7 @@ describe('ModelCanvas', () => {
             description: null,
             fieldCount: 3,
             qualitySummary: buildQualitySummary(),
+            dataLastUpdated: null,
           },
           {
             id: 'customers',
@@ -155,6 +158,7 @@ describe('ModelCanvas', () => {
             description: null,
             fieldCount: 2,
             qualitySummary: buildQualitySummary(),
+            dataLastUpdated: null,
           },
         ]}
         edges={[]}
@@ -194,6 +198,7 @@ describe('ModelCanvas', () => {
             description: null,
             fieldCount: 3,
             qualitySummary: buildQualitySummary(),
+            dataLastUpdated: null,
           },
         ]}
         edges={[]}
@@ -225,6 +230,7 @@ describe('ModelCanvas', () => {
             description: null,
             fieldCount: 3,
             qualitySummary: buildQualitySummary(),
+            dataLastUpdated: null,
           },
         ]}
         edges={[]}
@@ -247,6 +253,7 @@ describe('ModelCanvas', () => {
       description: null,
       fieldCount: 3,
       qualitySummary: buildQualitySummary(),
+      dataLastUpdated: null,
     };
     const { rerender } = render(
       <ModelCanvas

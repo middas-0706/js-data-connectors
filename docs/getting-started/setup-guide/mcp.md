@@ -270,12 +270,32 @@ For a “how many” question, use `COUNT` or `COUNT_DISTINCT` (when the user me
 | `truncated`          | `true` if not all matching rows were returned — narrow the query or raise `limit`                                                           |
 | `truncation`         | Present only when truncated; `reasons` is `row_limit`, `payload_byte_cap`, or both                                                         |
 | `totals`             | Server-side totals over all matching rows, ignoring the row limit                                                                           |
+| `data_last_updated`  | When the source tables behind this result last changed in the warehouse — see below                                                        |
 | `source`             | The id, title, and OWOX link of the Data Mart that supplied the response                                                                    |
-| `calculation_origin` | Marks rows as taken from OWOX and totals as calculated by OWOX when available                                                               |
+| `calculation_origin` | Marks rows as taken from OWOX, and totals and `data_last_updated` as produced by OWOX when available                                        |
 
 Only data marts and fields your [project role](../../project/roles-and-permissions.md) permits are queryable. For more on how aggregations and totals are computed, see [Report Aggregations and Totals](./report-aggregations.md); for why a given aggregation may be rejected on a field, see [Report Output Controls](./output-controls.md).
 
 When presenting results, the assistant must name the source Data Mart. It must distinguish OWOX-provided values from any arithmetic it performs itself. If `truncated` is true, it must explicitly tell the user that returned rows are incomplete; server-provided totals remain valid for all matching rows, but any number calculated from returned rows can be incomplete.
+
+#### Data last updated
+
+`data_last_updated` answers "how current is what I am looking at?". Each query measures it live, in the same call that reads the data. OWOX never caches this value and never bills it separately — the call's own credits cover it.
+
+| Field                  | Description                                                                                                                                                          |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data_last_updated_at` | ISO-8601 UTC time when the newest source table last changed, or `null` when the warehouse does not report it                                                          |
+| `computed_at`          | When this measurement was taken                                                                                                                                       |
+| `coverage`             | `complete`, `partial` (some sources unreadable — the real time can only be more recent), or `unavailable` (nothing could be determined)                               |
+| `sources`              | Per-table detail, each with its own time and an optional `note` explaining a gap                                                                                       |
+
+Read the value precisely. It is a **storage** timestamp, not a statement about the data's content:
+
+- It says when something last **wrote to** the source tables. A backfill can rewrite a table today with figures from 2021, so "updated today" does not mean "covers today". For this reason the field is *data last updated*, not *freshness*.
+- `null` means **unknown** — neither fresh nor stale. The assistant should say OWOX could not determine it, without implying either.
+- With `coverage: "partial"`, treat the timestamp as "at least as recent as" and say the picture is incomplete.
+
+Coverage is best effort per storage. Google BigQuery works first, and OWOX resolves views and SQL data marts through to their underlying base tables. Sharded and wildcard table sets collapse into one entry. Other storages currently report `unavailable`. `sources` deliberately omits views: a view's own modification time reflects a change to its definition, not to any data.
 
 ### `list_destinations`
 

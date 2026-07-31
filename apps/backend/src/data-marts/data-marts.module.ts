@@ -322,6 +322,7 @@ import { ListStorageResourcesService } from './use-cases/list-storage-resources.
 import { StorageResourceBrowserFacade } from './data-storage-types/facades/storage-resource-browser.facade';
 import { ListDataDestinationsByTypeService } from './use-cases/list-data-destinations-by-type.service';
 import { BatchDataMartHealthStatusService } from './use-cases/batch-data-mart-health-status.service';
+import { RefreshDataMartDataLastUpdatedService } from './use-cases/refresh-data-mart-data-last-updated.service';
 import { GetStorageOAuthStatusService } from './use-cases/google-oauth/get-storage-oauth-status.service';
 import { GenerateStorageOAuthUrlService } from './use-cases/google-oauth/generate-storage-oauth-url.service';
 import { RevokeStorageOAuthService } from './use-cases/google-oauth/revoke-storage-oauth.service';
@@ -363,6 +364,7 @@ import { BigQueryClauseRenderer } from './data-storage-types/bigquery/services/b
 import { BlendedReportDataService } from './services/blended-report-data.service';
 import { ReportSqlComposerService } from './services/report-sql-composer.service';
 import { ReportTotalsService } from './services/report-totals.service';
+import { SourceDataLastUpdatedService } from './services/source-data-last-updated.service';
 import { RelationshipMapper } from './mappers/relationship.mapper';
 import { CreateDataMartRelationshipService } from './use-cases/create-data-mart-relationship.service';
 import { UpdateDataMartRelationshipService } from './use-cases/update-data-mart-relationship.service';
@@ -794,6 +796,7 @@ import { DataStorageType } from './data-storage-types/enums/data-storage-type.en
     StorageResourceBrowserFacade,
     ListDataDestinationsByTypeService,
     BatchDataMartHealthStatusService,
+    RefreshDataMartDataLastUpdatedService,
     AgentFlowService,
     AgentFlowAgent,
     AgentFlowPolicySanitizerService,
@@ -845,6 +848,7 @@ import { DataStorageType } from './data-storage-types/enums/data-storage-type.en
     BlendedReportDataService,
     ReportSqlComposerService,
     ReportTotalsService,
+    SourceDataLastUpdatedService,
     RelationshipMapper,
     ModelCanvasMapper,
     McpDataCatalogSummaryMapper,

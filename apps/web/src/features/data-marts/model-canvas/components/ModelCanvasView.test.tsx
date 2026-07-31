@@ -71,6 +71,10 @@ vi.mock('../model/use-model-canvas', () => ({
   useModelCanvas: () => viewState.canvasHook,
 }));
 
+vi.mock('../model/use-refresh-data-last-updated', () => ({
+  useRefreshDataLastUpdated: () => ({ refresh: vi.fn(), isRefreshing: false }),
+}));
+
 vi.mock('../model/use-model-canvas-filters', () => ({
   useModelCanvasFilters: () => viewState.filters,
 }));
@@ -215,6 +219,7 @@ describe('ModelCanvasView', () => {
           status: DataMartStatus.PUBLISHED,
           description: null,
           fieldCount: 3,
+          dataLastUpdated: null,
         },
         {
           id: 'mart-2',
@@ -222,6 +227,7 @@ describe('ModelCanvasView', () => {
           status: DataMartStatus.PUBLISHED,
           description: null,
           fieldCount: 2,
+          dataLastUpdated: null,
         },
       ],
       edges: [
@@ -278,6 +284,7 @@ describe('ModelCanvasView', () => {
           status: DataMartStatus.DRAFT,
           description: null,
           fieldCount: 1,
+          dataLastUpdated: null,
         },
       ],
     };
@@ -319,6 +326,7 @@ describe('ModelCanvasView', () => {
           status: DataMartStatus.PUBLISHED,
           description: null,
           fieldCount: 1,
+          dataLastUpdated: null,
         },
       ],
     };
@@ -357,6 +365,7 @@ describe('ModelCanvasView', () => {
           status: DataMartStatus.DRAFT,
           description: null,
           fieldCount: 1,
+          dataLastUpdated: null,
         },
       ],
     };
@@ -491,6 +500,7 @@ function buildCanvasData(): ModelCanvasTopologyData {
         status: DataMartStatus.PUBLISHED,
         description: null,
         fieldCount: 3,
+        dataLastUpdated: null,
       },
       {
         id: 'mart-2',
@@ -498,6 +508,7 @@ function buildCanvasData(): ModelCanvasTopologyData {
         status: DataMartStatus.PUBLISHED,
         description: null,
         fieldCount: 2,
+        dataLastUpdated: null,
       },
     ],
     edges: [

@@ -271,6 +271,7 @@ function ModelCanvasViewContent({ onActiveQualityRunChange }: ModelCanvasViewPro
             nodes={filtered.nodes}
             edges={renderEdges}
             searchQuery={filters.searchQuery}
+            storageId={filters.storageId}
             onOpenDataMart={dataMartId => {
               window.open(
                 scope(`/data-marts/${dataMartId}/data-setup`),

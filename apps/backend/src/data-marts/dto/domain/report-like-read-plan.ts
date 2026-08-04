@@ -7,6 +7,7 @@ import { SortConfig } from '../schemas/sort-config.schema';
 import { AggregationConfig } from '../schemas/aggregation-config.schema';
 import { DateTruncConfig } from '../schemas/date-trunc-config.schema';
 import { UniqueCountConfig } from '../schemas/unique-count-config.schema';
+import { usesSuffixedJoinedFieldNames as usesSuffixedJoinedFieldNamesFor } from '../../data-destination-types/enums/data-destination-type.enum';
 
 // Must stay structurally compatible with the subset of `Report` fields read by
 // `BlendedReportDataService.resolveBlendingDecision` and `DataStorageReportReader.prepareReportData`.
@@ -44,6 +45,25 @@ export type ReportLike = Report | ReportLikeReadPlan;
 export function shouldIncludeRowCount(report: ReportLike): boolean {
   const explicit = 'rowCount' in report ? report.rowCount : undefined;
   return explicit ?? (report.aggregationConfig?.length ?? 0) > 0;
+}
+
+/**
+ * Whether joined-field labels for this read should put the Data Mart name after the field name
+ * (`Field name (Data Mart name)`) instead of before it. Delegates to the destination capability
+ * {@link usesSuffixedJoinedFieldNamesFor}.
+ *
+ * A read plan carries no destination — the totals query, the HTTP data endpoint and MCP all build
+ * one — so those reads keep the prefix.
+ *
+ * The relation is checked by VALUE, not by key: a `DataDestination` is soft-deletable, and TypeORM's
+ * eager join silently drops a soft-deleted row, leaving the property present but holding undefined
+ * (the same trap {@link BlendableSchemaService} guards against for `targetDataMart`). An `in` check
+ * alone would pass and then throw on `.type`, breaking reads that never needed the destination —
+ * the generated-SQL preview among them.
+ */
+export function usesSuffixedJoinedFieldNames(report: ReportLike): boolean {
+  const destination = 'dataDestination' in report ? report.dataDestination : undefined;
+  return destination != null && usesSuffixedJoinedFieldNamesFor(destination.type);
 }
 
 /**

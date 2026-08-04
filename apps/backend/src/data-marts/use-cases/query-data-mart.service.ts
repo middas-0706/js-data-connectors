@@ -199,6 +199,7 @@ export class QueryDataMartService {
         let reader: DataStorageReportReader | undefined;
         try {
           const composed = await this.composer.compose(readPlan, accessor);
+          const needsBlending = composed.needsBlending;
           // Inline params so Run History's "Executed SQL" is runnable; fall back if unsupported.
           try {
             executionSqlQuery = this.composer.inlineStaticSql(
@@ -306,6 +307,7 @@ export class QueryDataMartService {
             totals,
             totalsError,
             dataLastUpdated,
+            needsBlending,
           };
         } finally {
           workController.abort();
@@ -319,8 +321,16 @@ export class QueryDataMartService {
         }
       })();
 
-      const { columns, columnMetadata, trimmed, truncated, totals, totalsError, dataLastUpdated } =
-        await Promise.race([produce, deadline, aborted]);
+      const {
+        columns,
+        columnMetadata,
+        trimmed,
+        truncated,
+        totals,
+        totalsError,
+        dataLastUpdated,
+        needsBlending,
+      } = await Promise.race([produce, deadline, aborted]);
 
       // Audit save is best-effort — a successful read must not become FAILED.
       let runRecorded = false;
@@ -367,6 +377,25 @@ export class QueryDataMartService {
         this.logger.warn(
           `Skipping MCP Query run consumption ${runId}: Run History record was not persisted, suppressing billing to avoid an untraceable charge.`
         );
+      }
+
+      // A non-blended query reads exactly this Data Mart's own sources, so the measurement is
+      // safe to save as the last-known value (same meaning as the manual Check now). Blended
+      // queries span several Data Marts and only journal into their run record above.
+      if (!needsBlending && dataLastUpdated.dataLastUpdatedAt !== null) {
+        try {
+          await this.dataMartService.updateDataLastUpdated(
+            dataMart.id,
+            dataMart.projectId,
+            dataLastUpdated
+          );
+        } catch (persistError) {
+          this.logger.warn(
+            `Failed to persist data last updated for data mart ${dataMart.id}: ${
+              persistError instanceof Error ? persistError.message : String(persistError)
+            }`
+          );
+        }
       }
 
       return {

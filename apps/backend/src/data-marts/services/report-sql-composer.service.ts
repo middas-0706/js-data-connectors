@@ -60,6 +60,7 @@ export class ReportSqlComposerService {
   ): Promise<{
     sql: string;
     params?: SqlParameter[];
+    needsBlending: boolean;
     /** Types for the JOINED columns, which the reader cannot resolve from the native schema. */
     blendedDataHeaders?: ReportDataHeader[];
     /** Set when a joined COUNT was dropped beside a COUNT_DISTINCT — headers must follow it. */
@@ -79,6 +80,7 @@ export class ReportSqlComposerService {
       return {
         sql: decision.blendedSql,
         params: decision.params,
+        needsBlending: true,
         blendedDataHeaders: decision.blendedDataHeaders,
         aggregations: decision.aggregations,
       };
@@ -177,9 +179,9 @@ export class ReportSqlComposerService {
     );
 
     if (isQueryBuildResult(queryResult)) {
-      return { sql: queryResult.sql, params: queryResult.params };
+      return { sql: queryResult.sql, params: queryResult.params, needsBlending: false };
     }
-    return { sql: queryResult };
+    return { sql: queryResult, needsBlending: false };
   }
 
   /**

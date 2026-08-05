@@ -20,7 +20,7 @@ import {
   Tag,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router';
 import { useAuth } from '../../../features/idp';
 import {
   AudienceIcon,

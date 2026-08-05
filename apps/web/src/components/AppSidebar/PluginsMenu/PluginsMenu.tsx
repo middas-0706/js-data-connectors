@@ -8,7 +8,7 @@ import {
 } from '@owox/ui/components/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@owox/ui/components/tooltip';
 import { Blocks, Puzzle } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router';
 import { usePluginGallery, usePluginInstallations } from '../../../features/plugins';
 import { useProjectRoute } from '../../../shared/hooks';
 import { getActiveMenuItemClassName, isSameOrNestedPath } from '../menu-item-active';

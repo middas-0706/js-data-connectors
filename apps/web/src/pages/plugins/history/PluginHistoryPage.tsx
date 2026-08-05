@@ -2,7 +2,7 @@ import { Badge } from '@owox/ui/components/badge';
 import { Button } from '@owox/ui/components/button';
 import { ArrowLeft, Blocks, History } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import {
   InstallPluginDialog,
   usePluginActions,

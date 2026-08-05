@@ -2,7 +2,7 @@ import { Badge } from '@owox/ui/components/badge';
 import { Button } from '@owox/ui/components/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@owox/ui/components/tooltip';
 import { Blocks, Plus, Settings } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { useProjectRoute } from '../../../shared/hooks/useProjectRoute';
 import type { PluginGalleryEntry } from '../types';
 import { describeVisibility } from '../visibility';

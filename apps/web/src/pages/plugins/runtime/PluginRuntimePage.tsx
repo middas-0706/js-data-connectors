@@ -1,7 +1,7 @@
 import { Button } from '@owox/ui/components/button';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router';
 import {
   createPluginHostBridge,
   fetchRuntimeToken,

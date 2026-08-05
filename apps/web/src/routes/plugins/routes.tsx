@@ -1,4 +1,4 @@
-import type { RouteObject } from 'react-router-dom';
+import type { RouteObject } from 'react-router';
 import { LayoutErrorBoundary } from '../../components/errors';
 import PluginDetailsPage from '../../pages/plugins/detail/PluginDetailsPage';
 import PluginsGalleryPage from '../../pages/plugins/gallery/PluginsGalleryPage';

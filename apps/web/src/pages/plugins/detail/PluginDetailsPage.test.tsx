@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   InstalledPlugin,
@@ -21,8 +21,8 @@ let publications: PluginPublication[] = [];
 let installations: InstalledPlugin[] = [];
 let plugin: PluginGalleryEntry;
 
-vi.mock('react-router-dom', async () => {
-  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+vi.mock('react-router', async () => {
+  const actual = await vi.importActual<typeof import('react-router')>('react-router');
   return { ...actual, useParams: () => ({ pluginId: 'p1' }), useNavigate: () => navigate };
 });
 vi.mock('../../../features/plugins', () => ({

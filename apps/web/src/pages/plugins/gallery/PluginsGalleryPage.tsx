@@ -15,7 +15,7 @@ import {
 } from '@owox/ui/components/select';
 import { EllipsisVertical, Plus, Puzzle } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import {
   describeVisibility,
   InstallPluginDialog,

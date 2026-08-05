@@ -136,6 +136,15 @@ function renderNode(
       '\n\n'
     : '';
 
+  // A definition line starting with three-plus backticks would close the fence
+  // early (and the Model Canvas parser cuts at the first such line). A single
+  // leading space keeps the line inert for both renderers; inside SQL it can
+  // only occur in comments or string literals, where the space is harmless.
+  const definitionText = node.definition?.trim().replace(/^( {0,3})(`{3,})/gm, ' $1$2');
+  const definition = definitionText
+    ? `## Definition\n\n\`\`\`${node.inputSource === 'SQL' ? 'sql' : 'text'}\n${definitionText}\n\`\`\`\n\n`
+    : '';
+
   const outgoing = graph.edges.filter(
     edge => edge.from === node.key || (edge.bidirectional && edge.to === node.key)
   );
@@ -159,5 +168,5 @@ function renderNode(
       '\n'
     : '';
 
-  return `---\n${frontmatter}\n---\n\n# ${node.title}\n${node.description ? '\n' + node.description + '\n' : ''}\n${overview}${schema}${joins}`;
+  return `---\n${frontmatter}\n---\n\n# ${node.title}\n${node.description ? '\n' + node.description + '\n' : ''}\n${overview}${schema}${definition}${joins}`;
 }

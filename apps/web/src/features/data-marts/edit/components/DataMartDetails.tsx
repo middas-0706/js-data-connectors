@@ -130,9 +130,10 @@ export function DataMartDetails({ id }: DataMartDetailsProps) {
     refreshDataMart,
   });
 
-  const onActualizeSuccess = useCallback(() => {
+  // Returns the refreshed Data Mart so the trigger can report what the new schema looks like.
+  const onActualizeSuccess = useCallback(async () => {
     if (!dataMartId) return;
-    void getDataMart(dataMartId);
+    return await getDataMart(dataMartId);
   }, [dataMartId, getDataMart]);
 
   const { run: runActualizeSchemaInternal, isLoading: isSchemaActualizationLoading } =

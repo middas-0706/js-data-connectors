@@ -287,6 +287,26 @@ export class ApiHelpers {
     return res.json();
   }
 
+  async updateDefinition(
+    dataMartId: string,
+    definitionType: string,
+    definition: Record<string, unknown>
+  ): Promise<{ ok: boolean; status: number; body: unknown }> {
+    const res = await this.page.request.put(`/api/data-marts/${dataMartId}/definition`, {
+      data: { definitionType, definition },
+    });
+    return { ok: res.ok(), status: res.status(), body: await res.json().catch(() => null) };
+  }
+
+  async getDataMart(dataMartId: string): Promise<{
+    definitionType: string | null;
+    definition: Record<string, unknown> | null;
+  }> {
+    const res = await this.page.request.get(`/api/data-marts/${dataMartId}`);
+    expect(res.ok()).toBeTruthy();
+    return res.json();
+  }
+
   /**
    * Composite: creates a destination and a report linked to a data mart.
    * Mirrors the backend setupReportPrerequisites pattern.

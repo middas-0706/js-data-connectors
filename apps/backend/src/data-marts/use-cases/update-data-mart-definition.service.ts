@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, ForbiddenException } from '@nestjs/common';
+import { Transactional } from 'typeorm-transactional';
 import { BusinessViolationException } from '../../common/exceptions/business-violation.exception';
 import { OwoxEventDispatcher } from '../../common/event-dispatcher/owox-event-dispatcher';
+import { DataMartDefinitionValidatorFacade } from '../data-storage-types/facades/data-mart-definition-validator-facade.service';
 import { DataStorageType } from '../data-storage-types/enums/data-storage-type.enum';
 import { DataMartDto } from '../dto/domain/data-mart.dto';
 import { UpdateDataMartDefinitionCommand } from '../dto/domain/update-data-mart-definition.command';
@@ -8,6 +10,7 @@ import { ConnectorDefinition } from '../dto/schemas/data-mart-table-definitions/
 import { SqlDefinition } from '../dto/schemas/data-mart-table-definitions/sql-definition.schema';
 import { DataMartDefinitionType } from '../enums/data-mart-definition-type.enum';
 import { DataMartDefinitionSetEvent } from '../events/data-mart-definition-set.event';
+import { DataMartDefinitionTypeChangedEvent } from '../events/data-mart-definition-type-changed.event';
 import { DataMartDefinitionTypeSetEvent } from '../events/data-mart-definition-type-set.event';
 import { DataMartMapper } from '../mappers/data-mart.mapper';
 import { ConnectorSecretService } from '../services/connector/connector-secret.service';
@@ -27,11 +30,13 @@ export class UpdateDataMartDefinitionService {
     private readonly connectorSecretService: ConnectorSecretService,
     private readonly legacyDataMartsService: LegacyDataMartsService,
     private readonly accessDecisionService: AccessDecisionService,
+    private readonly definitionValidatorFacade: DataMartDefinitionValidatorFacade,
     private readonly eventDispatcher: OwoxEventDispatcher,
     private readonly connectorService: ConnectorService,
     private readonly advancedSearchIndexSync?: AdvancedSearchIndexSyncService
   ) {}
 
+  @Transactional()
   async run(command: UpdateDataMartDefinitionCommand): Promise<DataMartDto> {
     const dataMart = await this.dataMartService.getByIdAndProjectId(command.id, command.projectId);
 
@@ -49,11 +54,14 @@ export class UpdateDataMartDefinitionService {
       }
     }
 
-    const definitionTypeWasEmpty = !dataMart.definitionType;
+    const previousDefinitionType = dataMart.definitionType;
+    const definitionTypeWasEmpty = !previousDefinitionType;
     const definitionWasEmpty = !dataMart.definition;
+    let definitionTypeChanged = false;
 
-    if (dataMart.definitionType && dataMart.definitionType !== command.definitionType) {
-      throw new BusinessViolationException('DataMart already has definition');
+    if (previousDefinitionType && previousDefinitionType !== command.definitionType) {
+      this.assertDefinitionTypeChangeAllowed(previousDefinitionType, command.definitionType);
+      definitionTypeChanged = true;
     }
 
     const connectorCapabilities = this.getConnectorCapabilities(command);
@@ -147,6 +155,17 @@ export class UpdateDataMartDefinitionService {
       dataMart.definition = command.definition;
     }
 
+    // A type change repoints the Data Mart at a different kind of source, so the new definition is
+    // checked against the storage before it lands. Same-type edits keep their existing behaviour:
+    // they are validated on publish and on schema actualization, not on every save.
+    //
+    // SQL targets are checked here too. The editor's dry run is advisory — its result does not
+    // gate Save, and API callers never run it at all — so exempting SQL would let an invalid
+    // query silently replace a working table definition.
+    if (definitionTypeChanged) {
+      await this.definitionValidatorFacade.checkIsValid(dataMart);
+    }
+
     await this.dataMartService.save(dataMart);
 
     if (definitionTypeWasEmpty && dataMart.definitionType) {
@@ -167,6 +186,18 @@ export class UpdateDataMartDefinitionService {
           command.projectId,
           dataMart.createdById,
           dataMart.definitionType
+        )
+      );
+    }
+
+    if (definitionTypeChanged && previousDefinitionType) {
+      await this.eventDispatcher.publishExternal(
+        new DataMartDefinitionTypeChangedEvent(
+          dataMart.id,
+          command.projectId,
+          previousDefinitionType,
+          dataMart.definitionType,
+          dataMart.createdById
         )
       );
     }
@@ -272,6 +303,26 @@ export class UpdateDataMartDefinitionService {
           'The selected connector credentials cannot be used for this DataMart'
         );
       }
+    }
+  }
+
+  /**
+   * A Data Mart may be repointed at another input source, keeping its id and therefore its
+   * relationships, reports and field metadata. Connector-backed Data Marts are excluded in both
+   * directions: a connector owns a write target, stored secrets, an incremental cursor and its own
+   * run triggers, none of which can be handed over to (or picked up from) a plain source.
+   */
+  private assertDefinitionTypeChangeAllowed(
+    currentType: DataMartDefinitionType,
+    nextType: DataMartDefinitionType
+  ): void {
+    if (
+      currentType === DataMartDefinitionType.CONNECTOR ||
+      nextType === DataMartDefinitionType.CONNECTOR
+    ) {
+      throw new BusinessViolationException(
+        'Input source type cannot be changed to or from a connector. Create a separate Data Mart instead.'
+      );
     }
   }
 }

@@ -12,7 +12,7 @@ const GRAPH: ModelGraph = {
       description: 'All orders',
       schema: [
         { name: 'order_id', type: 'STRING', pk: true },
-        { name: 'customer_id', type: 'STRING', pk: false },
+        { name: 'customer_id', type: 'STRING', pk: false, description: 'Reference to the buyer.' },
       ],
       position: { x: 0, y: 0 },
       status: 'created',
@@ -58,12 +58,37 @@ describe('serializeOkfBundle', () => {
     );
   });
 
-  it('annotates FK columns and keeps the alias column only when aliases exist', () => {
+  it('keeps the alias column only when aliases exist', () => {
     const { files } = serializeOkfBundle(GRAPH);
     expect(files['data-marts/orders.md']).toContain('| Column | Type | Description |');
-    expect(files['data-marts/orders.md']).toContain('FK to [Customers](./customers.md)');
     expect(files['data-marts/customers.md']).toContain('| Column | Type | Alias | Description |');
     expect(files['data-marts/customers.md']).toContain('Customer ID');
+  });
+
+  it('renders field descriptions, collapsed to one line, with no FK notes in the table', () => {
+    const { files } = serializeOkfBundle(GRAPH);
+    expect(files['data-marts/orders.md']).toContain(
+      '| `customer_id` | STRING | Reference to the buyer. |'
+    );
+    // Relationships live only in the Joins section, never in the schema table.
+    expect(files['data-marts/orders.md']).not.toContain('FK to');
+    // A multi-line description would end the table row, so it collapses.
+    const { files: multiline } = serializeOkfBundle({
+      ...GRAPH,
+      nodes: GRAPH.nodes.map(node =>
+        node.key === 'orders'
+          ? {
+              ...node,
+              schema: [
+                { name: 'total', type: 'NUMERIC', pk: false, description: 'Line one\nline two' },
+              ],
+            }
+          : node
+      ),
+    });
+    expect(multiline['data-marts/orders.md']).toContain(
+      '| `total` | NUMERIC | Line one line two |'
+    );
   });
 
   it('renders the index table with statuses resolved and the product footer', () => {
@@ -94,8 +119,38 @@ describe('serializeOkfBundle', () => {
           : node
       ),
     });
-    expect(files['data-marts/index.md']).toContain('[Customers \\| VIP]');
-    expect(files['data-marts/customers-vip.md']).toContain('Customer \\| ID');
+    expect(files['data-marts/index.md']).toContain('[Customers &#124; VIP]');
+    expect(files['data-marts/customers-vip.md']).toContain('Customer &#124; ID');
+  });
+
+  it('keeps a piped description intact through the importer raw-pipe row split', () => {
+    const { files } = serializeOkfBundle({
+      ...GRAPH,
+      nodes: GRAPH.nodes.map(node =>
+        node.key === 'orders'
+          ? {
+              ...node,
+              schema: [
+                {
+                  name: 'segment',
+                  type: 'STRING',
+                  pk: false,
+                  description: 'Eligible A | B customers',
+                },
+              ],
+            }
+          : node
+      ),
+    });
+    const row = files['data-marts/orders.md'].split('\n').find(line => line.includes('`segment`'));
+    // The Model Canvas importer splits rows on every raw pipe without
+    // recognizing GFM `\|` escapes — the cell must survive that split whole.
+    const cells = String(row).split('|').slice(1, -1);
+    expect(cells.map(cell => cell.trim())).toEqual([
+      '`segment`',
+      'STRING',
+      'Eligible A &#124; B customers',
+    ]);
   });
 
   it('renders a Definition section with the table path or SQL text when present', () => {

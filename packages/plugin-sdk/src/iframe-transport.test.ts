@@ -2,10 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createIframeTransport, PluginTransportError } from './iframe-transport.js';
 import type { PluginRequest, PluginResponse } from './protocol.js';
 
+const openPorts: MessagePort[] = [];
+
 /** Stands in for the host end of the channel, so each test controls exactly when it answers. */
 function hostSide() {
   const channel = new MessageChannel();
   const received: PluginRequest[] = [];
+  openPorts.push(channel.port1, channel.port2);
 
   channel.port1.onmessage = (event: MessageEvent<PluginRequest>) => {
     received.push(event.data);
@@ -15,26 +18,31 @@ function hostSide() {
   return {
     transport: createIframeTransport(channel.port2),
     received,
+    waitForReceived: async (count = 1) => {
+      await vi.waitFor(() => {
+        expect(received).toHaveLength(count);
+      });
+      return received;
+    },
     answer: (response: PluginResponse, transfer: Transferable[] = []) => {
       channel.port1.postMessage(response, transfer);
     },
   };
 }
 
-/**
- * MessagePort delivery is a macrotask, which fake timers do not run. Real timers are
- * therefore the default here; the two tests that assert on timeouts opt into fake ones.
- */
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
 describe('iframe transport', () => {
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    for (const port of openPorts.splice(0)) {
+      port.close();
+    }
+    vi.useRealTimers();
+  });
 
   it('forwards a json request and resolves with its body', async () => {
     const host = hostSide();
 
     const pending = host.transport.getJson<{ ok: boolean }>('/api/data-marts');
-    await flush();
+    await host.waitForReceived();
 
     expect(host.received[0]).toMatchObject({ kind: 'api', method: 'GET', path: '/api/data-marts' });
     host.answer({
@@ -48,6 +56,72 @@ describe('iframe transport', () => {
     await expect(pending).resolves.toEqual({ ok: true });
   });
 
+  it('forwards a PATCH JSON request with its body', async () => {
+    const host = hostSide();
+
+    const pending = host.transport.patchJson<{ title: string }>('/api/data-marts/dm-1', {
+      title: 'Renamed data mart',
+    });
+    await host.waitForReceived();
+
+    expect(host.received[0]).toMatchObject({
+      kind: 'api',
+      method: 'PATCH',
+      path: '/api/data-marts/dm-1',
+      body: { title: 'Renamed data mart' },
+    });
+    host.answer({
+      id: host.received[0].id,
+      ok: true,
+      status: 200,
+      headers: {},
+      body: { title: 'Renamed data mart' },
+    });
+
+    await expect(pending).resolves.toEqual({ title: 'Renamed data mart' });
+  });
+
+  it('forwards a DELETE request without a body and resolves its JSON body', async () => {
+    const host = hostSide();
+
+    const pending = host.transport.deleteJson<{ deleted: true }>('/api/data-marts/dm-1');
+    await host.waitForReceived();
+
+    expect(host.received[0]).toMatchObject({
+      kind: 'api',
+      method: 'DELETE',
+      path: '/api/data-marts/dm-1',
+    });
+    expect(host.received[0]).not.toHaveProperty('body');
+    host.answer({
+      id: host.received[0].id,
+      ok: true,
+      status: 200,
+      headers: {},
+      body: { deleted: true },
+    });
+
+    await expect(pending).resolves.toEqual({ deleted: true });
+  });
+
+  it('resolves a DELETE response without a body as undefined', async () => {
+    const host = hostSide();
+
+    const pending = host.transport.deleteJson('/api/data-marts/dm-1');
+    await host.waitForReceived();
+
+    expect(host.received[0]).toMatchObject({ method: 'DELETE', path: '/api/data-marts/dm-1' });
+    host.answer({
+      id: host.received[0].id,
+      ok: true,
+      status: 204,
+      headers: {},
+      body: undefined,
+    });
+
+    await expect(pending).resolves.toBeUndefined();
+  });
+
   // Plugin authors never see a correlation id, so they cannot address someone else's
   // in-flight request even by accident.
   it('generates its own correlation ids', async () => {
@@ -55,7 +129,7 @@ describe('iframe transport', () => {
 
     void host.transport.getJson('/api/a');
     void host.transport.getJson('/api/b');
-    await flush();
+    await host.waitForReceived(2);
 
     expect(host.received[0].id).toBeTruthy();
     expect(host.received[0].id).not.toBe(host.received[1].id);
@@ -66,7 +140,7 @@ describe('iframe transport', () => {
 
     const first = host.transport.getJson<string>('/api/a');
     const second = host.transport.getJson<string>('/api/b');
-    await flush();
+    await host.waitForReceived(2);
 
     const [a, b] = host.received;
     host.answer({ id: b.id, ok: true, status: 200, headers: {}, body: 'second' });
@@ -80,9 +154,8 @@ describe('iframe transport', () => {
     const host = hostSide();
 
     const pending = host.transport.getJson('/api/a');
-    await flush();
+    await host.waitForReceived();
     host.answer({ id: 'not-ours', ok: true, status: 200, headers: {}, body: 'nope' });
-    await flush();
 
     host.answer({ id: host.received[0].id, ok: true, status: 200, headers: {}, body: 'ours' });
     await expect(pending).resolves.toBe('ours');
@@ -94,7 +167,7 @@ describe('iframe transport', () => {
     const host = hostSide();
 
     const pending = host.transport.getJson('/api/a');
-    await flush();
+    await host.waitForReceived();
     const { id } = host.received[0];
 
     host.answer({ id, ok: true, status: 200, headers: {}, body: 'first' });
@@ -109,7 +182,7 @@ describe('iframe transport', () => {
     const host = hostSide();
 
     const pending = host.transport.getJson('/api/data-marts');
-    await flush();
+    await host.waitForReceived();
     host.answer({
       id: host.received[0].id,
       ok: false,
@@ -138,13 +211,12 @@ describe('iframe transport', () => {
 
       const streamed = new ReadableStream<Uint8Array>();
       const pending = host.transport.getStream('/api/external/http-data/dm-1.ndjson');
-      await flush();
+      await host.waitForReceived();
 
       // Well past the 30s a plain request would allow itself.
       vi.useFakeTimers();
       await vi.advanceTimersByTimeAsync(60_000);
       vi.useRealTimers();
-      await flush();
 
       host.answer(
         {
@@ -167,7 +239,7 @@ describe('iframe transport', () => {
       // rather than after the whole traversal completes.
       const streamed = new ReadableStream<Uint8Array>();
       const pending = host.transport.getStream('/api/x');
-      await flush();
+      await host.waitForReceived();
       host.answer(
         {
           id: host.received[0].id,
@@ -188,7 +260,7 @@ describe('iframe transport', () => {
       const host = hostSide();
 
       const pending = host.transport.getStream('/api/x');
-      await flush();
+      await host.waitForReceived();
       host.answer({ id: host.received[0].id, ok: true, status: 200, headers: {}, body: null });
 
       await expect(pending).rejects.toMatchObject({ payload: { code: 'PROTOCOL_ERROR' } });
@@ -198,7 +270,7 @@ describe('iframe transport', () => {
       const host = hostSide();
 
       void host.transport.getStream('/api/x', new URLSearchParams({ limit: '10' }));
-      await flush();
+      await host.waitForReceived();
 
       expect(host.received[0]).toMatchObject({ stream: true, query: [['limit', '10']] });
     });
@@ -214,7 +286,7 @@ describe('iframe transport', () => {
       query.append('limit', '5');
 
       void host.transport.getStream('/api/x', query);
-      await flush();
+      await host.waitForReceived();
 
       expect(host.received[0]).toMatchObject({
         query: [
@@ -229,7 +301,7 @@ describe('iframe transport', () => {
       const host = hostSide();
 
       void host.transport.getJson('/api/x', { limit: '10', offset: '25' });
-      await flush();
+      await host.waitForReceived();
 
       expect(host.received[0]).toMatchObject({
         query: [

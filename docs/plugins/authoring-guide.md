@@ -38,7 +38,8 @@ at publication time, and a page that could never be displayed is refused.
 
 **You never hold a credential.** `ctx.owox` calls are brokered by the OWOX Data Marts host page,
 which attaches the token. Your requests act with the authority of the member who installed
-your plugin — never more, and never on behalf of anyone else.
+your plugin — never more, and never on behalf of anyone else. Protected routes still apply
+their server-side authorization and reject calls that member may not make.
 
 ## The manifest
 
@@ -121,6 +122,26 @@ running inside an OWOX Data Marts frame, and if no host answers within 10 second
 
 Requests time out after 30 seconds. Streamed reads do not, because data traversals
 legitimately run for minutes. At most 32 requests may be in flight at once.
+
+### Low-level API escape hatch
+
+Prefer the typed `ctx.owox` resources. For an endpoint that has no typed abstraction, the client
+also exposes `getJson<T>(path, query?)`, `postJson<T>(path, body, accept?)`, `putJson<T>(path,
+body)`, `patchJson<T>(path, body)`, `deleteJson<T = void>(path)`, and `getStream(path, query?)`.
+The generic does not validate the response at runtime, so validate returned data yourself. Paths
+must be root-relative `/api/...` and are limited to 2,048 characters; unsafe or redirecting paths
+are refused.
+
+`ctx.owox` remains brokered through the host and never exposes runtime credentials. PATCH and
+DELETE extend the existing protocol additively, so existing plugins remain compatible.
+
+```ts
+type Deleted = { deleted: true };
+
+await ctx.owox.patchJson('/api/example-resource/item-123', { title: 'Updated title' });
+const deleted = await ctx.owox.deleteJson<Deleted>('/api/example-resource/item-123');
+await ctx.owox.deleteJson('/api/example-resource/item-123'); // Empty or 204 response: void
+```
 
 ## Publishing
 

@@ -11,7 +11,8 @@ import { RunsApi } from './runs.js';
 import { SearchApi } from './search.js';
 import { StoragesApi } from './storages.js';
 import { ApiKeyTransport } from './transports/api-key-transport.js';
-import type { OWOXTransport } from './transport.js';
+import type { OWOXTransport, OWOXTransportWithLowLevelWrites } from './transport.js';
+import { OWOXConfigError } from './errors.js';
 
 export type OWOXApiClientOptions =
   | {
@@ -29,7 +30,7 @@ export type OWOXApiClientOptions =
    */
   | { transport: OWOXTransport };
 
-export class OWOXApiClient implements OWOXTransport {
+export class OWOXApiClient implements OWOXTransportWithLowLevelWrites {
   readonly auth: AuthApi;
   readonly dataMarts: DataMartsApi;
   readonly storages: StoragesApi;
@@ -75,6 +76,30 @@ export class OWOXApiClient implements OWOXTransport {
 
   async putJson<T>(path: string, jsonBody: unknown): Promise<T> {
     return this.transport.putJson<T>(path, jsonBody);
+  }
+
+  async patchJson<T>(path: string, jsonBody: unknown): Promise<T> {
+    if (!this.transport.patchJson) {
+      throw new OWOXConfigError('Injected OWOX transport does not support patchJson()');
+    }
+    let serializedBody: string | undefined;
+    try {
+      serializedBody = JSON.stringify(jsonBody);
+    } catch (cause) {
+      throw new OWOXConfigError('patchJson() requires a JSON-serializable body', { cause });
+    }
+    if (serializedBody === undefined) {
+      throw new OWOXConfigError('patchJson() requires a JSON-serializable body');
+    }
+    const normalizedBody: unknown = JSON.parse(serializedBody);
+    return this.transport.patchJson<T>(path, normalizedBody);
+  }
+
+  async deleteJson<T = void>(path: string): Promise<T> {
+    if (!this.transport.deleteJson) {
+      throw new OWOXConfigError('Injected OWOX transport does not support deleteJson()');
+    }
+    return this.transport.deleteJson<T>(path);
   }
 
   async postJson<T>(path: string, jsonBody: unknown, accept?: string): Promise<T> {

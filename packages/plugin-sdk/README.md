@@ -34,6 +34,15 @@ against an SDK the deployment cannot speak fails to start rather than misbehavin
 Your plugin never holds a credential. `ctx.owox` calls are brokered by the host page,
 which attaches the token — so requests act with **the authority of the member who
 installed your plugin**, and never more. Do not assume you are trusted beyond that.
+Protected routes still apply their server-side authorization and reject calls the member
+may not make.
+
+Use low-level methods only for endpoints without a typed resource:
+`getJson<T>(path, query?)`, `postJson<T>(path, body, accept?)`, `putJson<T>(path, body)`,
+`patchJson<T>(path, body)`, `deleteJson<T = void>(path)`, and `getStream(path, query?)`.
+Their generics do not validate responses at runtime, so validate returned data yourself.
+Paths must be root-relative `/api/...` and are limited to 2,048 characters; unsafe or
+redirecting paths are refused.
 
 ## Context
 

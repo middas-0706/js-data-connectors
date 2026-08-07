@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { __resetForTests, connect } from './index.js';
-import { PLUGIN_PROTOCOL_VERSION } from './protocol.js';
 
 /**
  * happy-dom gives an unframed document, where window.parent === window. Standing in a
@@ -20,7 +19,7 @@ function unframe() {
 function hostInit(nonce = 'nonce-1') {
   return {
     owox: 'host-init' as const,
-    v: PLUGIN_PROTOCOL_VERSION,
+    v: 1 as const,
     nonce,
     context: {
       pluginId: 'p1',
@@ -74,8 +73,11 @@ describe('connect', () => {
     await vi.advanceTimersByTimeAsync(600);
 
     expect(parent.postMessage.mock.calls.length).toBeGreaterThan(1);
-    const [message, targetOrigin] = parent.postMessage.mock.calls[0] as [{ owox: string }, string];
-    expect(message.owox).toBe('plugin-ready');
+    const [message, targetOrigin] = parent.postMessage.mock.calls[0] as [
+      { owox: string; v: number },
+      string,
+    ];
+    expect(message).toMatchObject({ owox: 'plugin-ready', v: 1 });
     // A concrete target origin never matches an opaque one, so anything else would be
     // dropped silently by the browser.
     expect(targetOrigin).toBe('*');
@@ -108,7 +110,7 @@ describe('connect', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(hostSide).toContainEqual({
       owox: 'plugin-hello',
-      v: PLUGIN_PROTOCOL_VERSION,
+      v: 1,
       nonce: 'nonce-1',
     });
   });
@@ -143,6 +145,19 @@ describe('connect', () => {
     deliverFromParent(parent, hostInit(), [channel.port2], 'https://owox.customer.example');
 
     await expect(pending).resolves.toMatchObject({ pluginId: 'p1' });
+  });
+
+  it('rejects a host-init from an unsupported protocol v2 host', async () => {
+    const parent = pretendToBeFramed();
+    const channel = new MessageChannel();
+
+    const pending = connect();
+    await vi.advanceTimersByTimeAsync(0);
+    deliverFromParent(parent, { ...hostInit(), v: 2 }, [channel.port2]);
+
+    const assertion = expect(pending).rejects.toThrow(/did not complete/);
+    await vi.advanceTimersByTimeAsync(10_001);
+    await assertion;
   });
 
   // Identity of the sender is the check that remains, and it still has to hold.

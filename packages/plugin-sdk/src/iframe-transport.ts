@@ -1,4 +1,4 @@
-import type { OWOXTransport } from '@owox/api-client';
+import type { OWOXTransportWithLowLevelWrites } from '@owox/api-client';
 import type {
   PluginErrorPayload,
   PluginRequest,
@@ -37,7 +37,7 @@ export class PluginTransportError extends Error {
  * Not exported from either package entry point. Plugin code cannot reach this class,
  * cannot construct one, and cannot swap the port underneath it.
  */
-export function createIframeTransport(port: MessagePort): OWOXTransport {
+export function createIframeTransport(port: MessagePort): OWOXTransportWithLowLevelWrites {
   const pending = new Map<string, Pending>();
 
   port.onmessage = (event: MessageEvent<PluginResponse>) => {
@@ -96,6 +96,11 @@ export function createIframeTransport(port: MessagePort): OWOXTransport {
 
     putJson: <T>(path: string, jsonBody: unknown) =>
       json<T>({ kind: 'api', method: 'PUT', path, body: jsonBody }),
+
+    patchJson: <T>(path: string, jsonBody: unknown) =>
+      json<T>({ kind: 'api', method: 'PATCH', path, body: jsonBody }),
+
+    deleteJson: <T = void>(path: string) => json<T>({ kind: 'api', method: 'DELETE', path }),
 
     async getStream(path: string, query?: URLSearchParams): Promise<Response> {
       const response = await send({

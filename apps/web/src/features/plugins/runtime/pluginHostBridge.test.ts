@@ -2,6 +2,10 @@ import type { PluginRequest, PluginRequestInput, PluginResponse } from './protoc
 import { PLUGIN_PROTOCOL_VERSION } from './protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPluginHostBridge, type PluginHostBridge } from './pluginHostBridge';
+import {
+  acceptedAuthenticatedApiPaths,
+  rejectedAuthenticatedApiPaths,
+} from '../../../../../../test/contracts/authenticated-api-path-contract.mjs';
 
 const RUNTIME_TOKEN = 'runtime-token-that-must-not-leak';
 const API_ORIGIN = 'https://app.owox.test';
@@ -34,11 +38,17 @@ function pluginFrame() {
   return { iframe, contentWindow, posted };
 }
 
-function announceReady(contentWindow: object) {
+function announceReady(contentWindow: object, protocolVersion: number = PLUGIN_PROTOCOL_VERSION) {
   const event = new MessageEvent('message', {
-    data: { owox: 'plugin-ready', v: PLUGIN_PROTOCOL_VERSION },
+    data: { owox: 'plugin-ready', v: protocolVersion },
     origin: 'null',
   });
+  Object.defineProperty(event, 'source', { value: contentWindow });
+  window.dispatchEvent(event);
+}
+
+function announceRaw(contentWindow: object, data: unknown) {
+  const event = new MessageEvent('message', { data, origin: 'null' });
   Object.defineProperty(event, 'source', { value: contentWindow });
   window.dispatchEvent(event);
 }
@@ -52,6 +62,7 @@ interface Harness {
   nonce: string;
   posted: { data: unknown; transfer?: Transferable[] }[];
   fetchMock: ReturnType<typeof vi.fn>;
+  fetchRuntimeToken: ReturnType<typeof vi.fn>;
   onOpenExternal: ReturnType<typeof vi.fn>;
   onNavigate: ReturnType<typeof vi.fn>;
   onBroken: ReturnType<typeof vi.fn>;
@@ -61,7 +72,8 @@ async function harness(
   fetchImpl: (url: string, init: RequestInit) => Promise<Response> = async () =>
     new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
   /** Off for the tests that are about the handshake itself rather than what follows it. */
-  greet = true
+  greet = true,
+  protocolVersion: number = PLUGIN_PROTOCOL_VERSION
 ): Promise<Harness> {
   const frame = pluginFrame();
   const fetchMock = vi.fn(fetchImpl);
@@ -70,22 +82,25 @@ async function harness(
   const onOpenExternal = vi.fn();
   const onNavigate = vi.fn();
   const onBroken = vi.fn();
+  const fetchRuntimeToken = vi.fn(() =>
+    Promise.resolve({ runtimeToken: RUNTIME_TOKEN, expiresIn: 900 })
+  );
 
   const bridge = createPluginHostBridge({
     iframe: frame.iframe,
     src: 'https://plugin.example.test/',
     apiOrigin: API_ORIGIN,
     context: CONTEXT,
-    fetchRuntimeToken: () => Promise.resolve({ runtimeToken: RUNTIME_TOKEN, expiresIn: 900 }),
+    fetchRuntimeToken,
     onOpenExternal,
     onNavigate,
     onBroken,
   });
 
-  announceReady(frame.contentWindow);
+  announceReady(frame.contentWindow, protocolVersion);
   await flush();
 
-  const init = frame.posted[0].data as { owox: string; nonce: string };
+  const init = frame.posted[0].data as { owox: string; v: number; nonce: string };
   expect(init.owox).toBe('host-init');
   const port = frame.posted[0].transfer?.[0] as MessagePort;
 
@@ -93,7 +108,7 @@ async function harness(
   // it will serve anything.
   if (greet) {
     port.start();
-    port.postMessage({ owox: 'plugin-hello', v: PLUGIN_PROTOCOL_VERSION, nonce: init.nonce });
+    port.postMessage({ owox: 'plugin-hello', v: protocolVersion, nonce: init.nonce });
   }
 
   const send = (request: PluginRequestInput & { id?: string }) =>
@@ -127,6 +142,7 @@ async function harness(
     nonce: init.nonce,
     posted: frame.posted,
     fetchMock,
+    fetchRuntimeToken,
     onOpenExternal,
     onNavigate,
     onBroken,
@@ -137,6 +153,39 @@ describe('plugin host bridge', () => {
   beforeEach(() => vi.unstubAllGlobals());
   afterEach(() => vi.unstubAllGlobals());
 
+  it('keeps the v1 request type aligned with additive runtime body rules', () => {
+    const valid: PluginRequest[] = [
+      { id: 'get', kind: 'api', method: 'GET', path: '/api/x' },
+      { id: 'bodyless-post', kind: 'api', method: 'POST', path: '/api/x' },
+      { id: 'post', kind: 'api', method: 'POST', path: '/api/x', body: null },
+      { id: 'bodyless-put', kind: 'api', method: 'PUT', path: '/api/x' },
+      { id: 'put', kind: 'api', method: 'PUT', path: '/api/x', body: {} },
+      { id: 'patch', kind: 'api', method: 'PATCH', path: '/api/x', body: [] },
+      { id: 'delete', kind: 'api', method: 'DELETE', path: '/api/x' },
+      { id: 'stream', kind: 'api', method: 'GET', path: '/api/x', stream: true },
+    ];
+
+    // @ts-expect-error PATCH requests require a body property.
+    const bodylessPatch: PluginRequest = {
+      id: 'bodyless-patch',
+      kind: 'api',
+      method: 'PATCH',
+      path: '/api/x',
+    };
+    const getWithBody: PluginRequest = {
+      id: 'get-with-body',
+      kind: 'api',
+      method: 'GET',
+      path: '/api/x',
+      // @ts-expect-error GET requests never carry a body.
+      body: {},
+    };
+
+    expect(valid).toHaveLength(8);
+    expect(bodylessPatch).toBeDefined();
+    expect(getWithBody).toBeDefined();
+  });
+
   describe('exfiltration guard', () => {
     /**
      * The highest-severity check in the iteration.
@@ -145,39 +194,41 @@ describe('plugin host bridge', () => {
      * naive string prefix test would let a plugin make the host send the runtime token
      * to an attacker.
      */
-    it.each([
-      ['a protocol-relative host', '//evil.example/x'],
-      ['an absolute foreign url', 'https://evil.example/x'],
-      ['a path outside /api/', '/auth/context'],
-      ['a traversal out of /api/', '/api/../auth/context'],
-    ])('refuses %s and issues no request at all', async (_label, path) => {
+    it.each(rejectedAuthenticatedApiPaths)(
+      'refuses %s and issues no request at all',
+      async (_label, path) => {
+        const h = await harness();
+
+        const response = await h.send({ kind: 'api', method: 'GET', path });
+
+        expect(response).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
+        expect(h.fetchMock).not.toHaveBeenCalled();
+        expect(h.fetchRuntimeToken).not.toHaveBeenCalled();
+      }
+    );
+
+    it.each(acceptedAuthenticatedApiPaths)('allows %s', async (_label, path) => {
       const h = await harness();
 
       const response = await h.send({ kind: 'api', method: 'GET', path });
 
-      expect(response).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
-      expect(h.fetchMock).not.toHaveBeenCalled();
+      expect(response).toMatchObject({ ok: true });
+      expect(h.fetchRuntimeToken).toHaveBeenCalledTimes(1);
+      expect(h.fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    it('refuses a method a plugin has no business using', async () => {
+    it('refuses an arbitrary method before minting a token', async () => {
       const h = await harness();
 
       const response = await h.send({
         kind: 'api',
-        method: 'DELETE',
+        method: 'OPTIONS',
+        path: '/api/data-marts',
       } as unknown as PluginRequestInput);
 
       expect(response).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
       expect(h.fetchMock).not.toHaveBeenCalled();
-    });
-
-    it('allows an ordinary api path', async () => {
-      const h = await harness();
-
-      const response = await h.send({ kind: 'api', method: 'GET', path: '/api/data-marts' });
-
-      expect(response).toMatchObject({ ok: true });
-      expect(String(h.fetchMock.mock.calls[0][0])).toBe(`${API_ORIGIN}/api/data-marts`);
+      expect(h.fetchRuntimeToken).not.toHaveBeenCalled();
     });
 
     // `?column=a&column=b` is how the API client asks for two columns. Assigning with
@@ -228,6 +279,58 @@ describe('plugin host bridge', () => {
       );
     });
 
+    it('forbids fetch redirects so the runtime token cannot follow a cross-origin location', async () => {
+      const h = await harness(
+        async () =>
+          new Response(null, {
+            status: 302,
+            headers: { location: 'https://attacker.test/collect' },
+          })
+      );
+
+      const response = await h.send({ kind: 'api', method: 'GET', path: '/api/data-marts' });
+
+      expect(response).toMatchObject({ ok: false, error: { code: 'HTTP_ERROR', status: 302 } });
+      expect(h.fetchMock).toHaveBeenCalledTimes(1);
+      expect(h.fetchMock.mock.calls[0][0]).toBe(`${API_ORIGIN}/api/data-marts`);
+      expect(h.fetchMock.mock.calls[0][1]).toMatchObject({ redirect: 'error' });
+    });
+
+    it('does not echo credentials from an unexpected network error to the plugin', async () => {
+      const h = await harness(async () => {
+        throw new Error(`request failed with Bearer ${RUNTIME_TOKEN}`);
+      });
+
+      const response = await h.send({ kind: 'api', method: 'GET', path: '/api/data-marts' });
+
+      expect(response).toMatchObject({ ok: false, error: { code: 'NETWORK_ERROR' } });
+      expect(JSON.stringify(response)).not.toContain(RUNTIME_TOKEN);
+    });
+
+    it('ignores plugin-supplied header-shaped fields and builds authentication itself', async () => {
+      const h = await harness();
+
+      await h.send({
+        kind: 'api',
+        method: 'GET',
+        path: '/api/data-marts',
+        headers: {
+          authorization: 'Bearer attacker-token',
+          'x-owox-authorization': 'Bearer attacker-runtime-token',
+        },
+        authorization: 'Bearer attacker-token',
+        fetchInit: { credentials: 'include' },
+      } as unknown as PluginRequestInput);
+
+      const init = h.fetchMock.mock.calls[0][1] as RequestInit;
+      expect(init.headers).toEqual({
+        'x-owox-authorization': `Bearer ${RUNTIME_TOKEN}`,
+      });
+      expect(init.credentials).toBeUndefined();
+      expect(JSON.stringify(init)).not.toContain('attacker-token');
+      expect(JSON.stringify(init)).not.toContain('attacker-runtime-token');
+    });
+
     // Everything else the backend returns is host detail the plugin has no use for, and
     // some of it names internal services.
     it('forwards only allow-listed response headers', async () => {
@@ -256,6 +359,56 @@ describe('plugin host bridge', () => {
   });
 
   describe('handshake', () => {
+    it('advertises the compatible protocol v1', async () => {
+      const h = await harness();
+
+      expect(PLUGIN_PROTOCOL_VERSION).toBe(1);
+      expect(h.posted[0].data).toMatchObject({ owox: 'host-init', v: 1 });
+    });
+
+    it('negotiates protocol v1 and serves requests after a matching v1 hello', async () => {
+      const h = await harness(undefined, true, 1);
+
+      expect(h.posted[0].data).toMatchObject({ owox: 'host-init', v: 1 });
+      await expect(
+        h.send({ kind: 'api', method: 'GET', path: '/api/data-marts' })
+      ).resolves.toMatchObject({ ok: true });
+    });
+
+    it.each([
+      ['v0', { owox: 'plugin-ready', v: 0 }],
+      ['v2', { owox: 'plugin-ready', v: 2 }],
+      ['v3', { owox: 'plugin-ready', v: 3 }],
+      ['a string version', { owox: 'plugin-ready', v: '2' }],
+      ['a missing version', { owox: 'plugin-ready' }],
+      ['a malformed envelope', { owox: 'plugin-ready', v: null }],
+    ])('ignores unsupported ready announcement %s without side effects', async (_label, data) => {
+      const frame = pluginFrame();
+      const fetchMock = vi.fn();
+      const fetchRuntimeToken = vi.fn(() =>
+        Promise.resolve({ runtimeToken: RUNTIME_TOKEN, expiresIn: 900 })
+      );
+      vi.stubGlobal('fetch', fetchMock);
+
+      const bridge = createPluginHostBridge({
+        iframe: frame.iframe,
+        src: 'https://plugin.example.test/',
+        apiOrigin: API_ORIGIN,
+        context: CONTEXT,
+        fetchRuntimeToken,
+        onOpenExternal: vi.fn(),
+        onNavigate: vi.fn(),
+      });
+
+      announceRaw(frame.contentWindow, data);
+      await flush();
+
+      expect(frame.posted).toHaveLength(0);
+      expect(fetchRuntimeToken).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+      bridge.dispose();
+    });
+
     it('assigns the frame source only after it is listening', async () => {
       const frame = pluginFrame();
       vi.stubGlobal('fetch', vi.fn());
@@ -355,6 +508,61 @@ describe('plugin host bridge', () => {
 
       expect(seen.signal?.aborted).toBe(true);
     });
+
+    it('applies the 32-request admission limit before validation and aborts all admitted work', async () => {
+      const signals: AbortSignal[] = [];
+      const h = await harness(
+        (_url, init) =>
+          new Promise<Response>(() => {
+            if (init.signal) {
+              signals.push(init.signal);
+            }
+          })
+      );
+
+      for (let index = 0; index < 32; index += 1) {
+        h.tell({ kind: 'api', method: 'GET', path: `/api/data-marts/${String(index)}` });
+      }
+      await vi.waitFor(() => {
+        expect(signals).toHaveLength(32);
+      });
+      const tokenMintsAtCapacity = h.fetchRuntimeToken.mock.calls.length;
+
+      const response = await h.send({
+        kind: 'api',
+        method: 'PATCH',
+        path: '/api/data-marts/blocked',
+        body: 1n,
+      });
+
+      expect(response).toMatchObject({
+        ok: false,
+        error: { code: 'PROTOCOL_ERROR', message: 'Too many requests in flight' },
+      });
+      expect(h.fetchMock).toHaveBeenCalledTimes(32);
+      expect(h.fetchRuntimeToken).toHaveBeenCalledTimes(tokenMintsAtCapacity);
+
+      h.bridge.dispose();
+      expect(signals.every(signal => signal.aborted)).toBe(true);
+    });
+
+    it('keeps fire-and-forget navigation available while API admission is full', async () => {
+      const h = await harness(() => new Promise<Response>(() => undefined));
+
+      for (let index = 0; index < 32; index += 1) {
+        h.tell({ kind: 'api', method: 'GET', path: `/api/data-marts/${String(index)}` });
+      }
+      await vi.waitFor(() => {
+        expect(h.fetchMock).toHaveBeenCalledTimes(32);
+      });
+
+      h.tell({ kind: 'navigate', path: '/ui/j1/data-marts/dm-1' });
+      await flush();
+
+      expect(h.onNavigate).toHaveBeenCalledWith('/ui/j1/data-marts/dm-1');
+      expect(h.fetchMock).toHaveBeenCalledTimes(32);
+      h.bridge.dispose();
+    });
   });
 
   describe('handshake ack', () => {
@@ -407,23 +615,29 @@ describe('plugin host bridge', () => {
 
       expect(h.fetchMock).not.toHaveBeenCalled();
     });
+
+    it('closes the channel when hello does not echo the negotiated version', async () => {
+      const h = await harness(ok, false, 1);
+
+      h.raw({ owox: 'plugin-hello', v: 2, nonce: h.nonce });
+      await flush();
+      h.tell({ kind: 'api', method: 'GET', path: '/api/data-marts' });
+      await flush();
+
+      expect(h.fetchMock).not.toHaveBeenCalled();
+      expect(h.onBroken).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('non-requests on the port', () => {
     // The ack shares this port with real requests, and it is not one. Answering it sent
     // back a FORBIDDEN with no correlation id, which the SDK could only drop.
     it.each([
-      ['a payload with no kind', () => ({ id: 'stray' })],
       ['something that is not an object', () => 'hello'],
       // A second ack is redundant, not hostile: same port, same nonce, nothing to answer.
       [
         'a repeated ack',
         (h: Harness) => ({ owox: 'plugin-hello', v: PLUGIN_PROTOCOL_VERSION, nonce: h.nonce }),
-      ],
-      // An ack from another protocol version fails the guard, so it is not an ack at all.
-      [
-        'an ack for another protocol version',
-        (h: Harness) => ({ owox: 'plugin-hello', v: 99, nonce: h.nonce }),
       ],
     ])('ignores %s rather than answering it', async (_label, payload) => {
       const h = await harness();
@@ -439,6 +653,168 @@ describe('plugin host bridge', () => {
       // The first thing back on the port is the answer to the request, not a stray refusal.
       expect(response).toMatchObject({ id: 'req-1', ok: true });
       expect(h.fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('request validation', () => {
+    it.each([
+      ['a missing kind', { id: 'malformed-1' }],
+      ['an unknown kind', { id: 'malformed-2', kind: 'rawRequest' }],
+      ['a missing path', { id: 'malformed-3', kind: 'api', method: 'GET' }],
+      ['a non-string path', { id: 'malformed-4', kind: 'api', method: 'GET', path: 7 }],
+      ['a non-string method', { id: 'malformed-10', kind: 'api', method: null, path: '/api/x' }],
+      [
+        'a non-array query',
+        { id: 'malformed-5', kind: 'api', method: 'GET', path: '/api/x', query: { a: 'b' } },
+      ],
+      [
+        'a query pair with a non-string value',
+        { id: 'malformed-6', kind: 'api', method: 'GET', path: '/api/x', query: [['a', 1]] },
+      ],
+      [
+        'a non-GET stream request',
+        { id: 'malformed-7', kind: 'api', method: 'POST', path: '/api/x', stream: true },
+      ],
+      ['a GET body', { id: 'malformed-14', kind: 'api', method: 'GET', path: '/api/x', body: {} }],
+      [
+        'a streaming GET body',
+        {
+          id: 'malformed-15',
+          kind: 'api',
+          method: 'GET',
+          path: '/api/x',
+          stream: true,
+          body: {},
+        },
+      ],
+      [
+        'an accept value on a streaming GET',
+        {
+          id: 'malformed-16',
+          kind: 'api',
+          method: 'GET',
+          path: '/api/x',
+          stream: true,
+          accept: 'application/json',
+        },
+      ],
+      [
+        'a non-string accept value',
+        { id: 'malformed-11', kind: 'api', method: 'GET', path: '/api/x', accept: 7 },
+      ],
+      [
+        'an invalid accept header value',
+        {
+          id: 'malformed-17',
+          kind: 'api',
+          method: 'POST',
+          path: '/api/x',
+          accept: 'application/json\r\nx-owox-authorization: attacker',
+        },
+      ],
+      [
+        'a DELETE body',
+        { id: 'malformed-12', kind: 'api', method: 'DELETE', path: '/api/x', body: {} },
+      ],
+      [
+        'a PATCH without a JSON body',
+        { id: 'malformed-20', kind: 'api', method: 'PATCH', path: '/api/x' },
+      ],
+      [
+        'a non-JSON body',
+        { id: 'malformed-13', kind: 'api', method: 'PATCH', path: '/api/x', body: 1n },
+      ],
+      ['a malformed navigation', { id: 'malformed-8', kind: 'navigate', path: 7 }],
+      ['a malformed external link', { id: 'malformed-9', kind: 'openExternal', url: null }],
+    ])('answers %s with PROTOCOL_ERROR before side effects', async (_label, request) => {
+      const h = await harness();
+
+      const response = await h.send(request as unknown as PluginRequestInput & { id: string });
+
+      expect(response).toMatchObject({
+        id: request.id,
+        ok: false,
+        error: { code: 'PROTOCOL_ERROR' },
+      });
+      expect(h.fetchRuntimeToken).not.toHaveBeenCalled();
+      expect(h.fetchMock).not.toHaveBeenCalled();
+      expect(h.onOpenExternal).not.toHaveBeenCalled();
+      expect(h.onNavigate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('API methods', () => {
+    it.each(['POST', 'PUT'] as const)(
+      'forwards a bodyless v1 %s request without minting a content type',
+      async method => {
+        const h = await harness(undefined, true, 1);
+
+        const response = await h.send({
+          kind: 'api',
+          method,
+          path: '/api/plugin-installations/install',
+        } as unknown as PluginRequestInput);
+
+        expect(response).toMatchObject({ ok: true });
+        expect(h.fetchRuntimeToken).toHaveBeenCalledTimes(1);
+        expect(h.fetchMock).toHaveBeenCalledTimes(1);
+        expect(h.fetchMock.mock.calls[0][1]).toMatchObject({ method });
+        expect((h.fetchMock.mock.calls[0][1] as RequestInit).body).toBeUndefined();
+        expect(
+          ((h.fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>)[
+            'content-type'
+          ]
+        ).toBeUndefined();
+      }
+    );
+
+    it('forwards a v1 PATCH with its JSON body', async () => {
+      const h = await harness();
+
+      const response = await h.send({
+        kind: 'api',
+        method: 'PATCH',
+        path: '/api/data-marts/dm-1',
+        body: { title: 'Updated' },
+      });
+
+      expect(response).toMatchObject({ ok: true });
+      expect(h.fetchMock.mock.calls[0][1]).toMatchObject({
+        method: 'PATCH',
+        body: JSON.stringify({ title: 'Updated' }),
+        headers: {
+          'content-type': 'application/json',
+          'x-owox-authorization': `Bearer ${RUNTIME_TOKEN}`,
+        },
+      });
+    });
+
+    it('forwards a v1 DELETE without a request body and returns ordinary JSON', async () => {
+      const h = await harness(async () =>
+        Response.json({ deleted: true }, { status: 200, headers: { 'x-owox-run-id': 'run-1' } })
+      );
+
+      const response = await h.send({
+        kind: 'api',
+        method: 'DELETE',
+        path: '/api/data-marts/dm-1',
+      });
+
+      expect(response).toMatchObject({ ok: true, status: 200, body: { deleted: true } });
+      expect(h.fetchMock.mock.calls[0][1]).toMatchObject({ method: 'DELETE' });
+      expect((h.fetchMock.mock.calls[0][1] as RequestInit).body).toBeUndefined();
+    });
+
+    it('returns undefined for an empty successful DELETE response', async () => {
+      const h = await harness(async () => new Response(null, { status: 204 }));
+
+      const response = await h.send({
+        kind: 'api',
+        method: 'DELETE',
+        path: '/api/data-marts/dm-1',
+      });
+
+      expect(response).toMatchObject({ ok: true, status: 204, body: undefined });
     });
   });
 
@@ -468,6 +844,53 @@ describe('plugin host bridge', () => {
   });
 
   describe('errors', () => {
+    it('refreshes the runtime token once and retries a 401 response', async () => {
+      let attempt = 0;
+      const h = await harness(async () => {
+        attempt += 1;
+        return attempt === 1
+          ? Response.json({ message: 'expired' }, { status: 401 })
+          : Response.json({ recovered: true });
+      });
+
+      const response = await h.send({ kind: 'api', method: 'GET', path: '/api/data-marts' });
+
+      expect(response).toMatchObject({ ok: true, body: { recovered: true } });
+      expect(h.fetchRuntimeToken).toHaveBeenCalledTimes(2);
+      expect(h.fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps successful GET streams transferable through the host', async () => {
+      const h = await harness(
+        async () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode('{"row":1}\n'));
+                controller.close();
+              },
+            }),
+            { status: 200, headers: { 'content-type': 'application/x-ndjson' } }
+          )
+      );
+
+      const response = await h.send({
+        kind: 'api',
+        method: 'GET',
+        path: '/api/data-marts.ndjson',
+        stream: true,
+      });
+
+      expect(response).toMatchObject({
+        ok: true,
+        status: 200,
+        headers: { 'content-type': 'application/x-ndjson' },
+      });
+      expect('stream' in response ? await new Response(response.stream).text() : undefined).toBe(
+        '{"row":1}\n'
+      );
+    });
+
     it('reports a suspension distinctly, so the plugin can say what happened', async () => {
       const h = await harness(
         async () =>

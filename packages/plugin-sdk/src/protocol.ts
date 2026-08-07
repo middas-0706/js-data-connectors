@@ -70,10 +70,38 @@ export type PluginRequest =
   | {
       id: string;
       kind: 'api';
-      method: 'GET' | 'POST' | 'PUT';
+      method: 'POST' | 'PUT';
       path: string;
       query?: PluginQuery;
       body?: unknown;
+      accept?: string;
+      stream?: false;
+    }
+  | {
+      id: string;
+      kind: 'api';
+      method: 'PATCH';
+      path: string;
+      query?: PluginQuery;
+      body: unknown;
+      accept?: string;
+      stream?: false;
+    }
+  | {
+      id: string;
+      kind: 'api';
+      method: 'GET';
+      path: string;
+      query?: PluginQuery;
+      accept?: string;
+      stream?: false;
+    }
+  | {
+      id: string;
+      kind: 'api';
+      method: 'DELETE';
+      path: string;
+      query?: PluginQuery;
       accept?: string;
       stream?: false;
     }

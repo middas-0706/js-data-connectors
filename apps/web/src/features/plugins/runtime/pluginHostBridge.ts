@@ -29,7 +29,17 @@ export interface PluginHostBridgeOptions {
   onBroken?: () => void;
 }
 
-const ALLOWED_METHODS = new Set(['GET', 'POST', 'PUT']);
+const ALLOWED_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
+const API_PATH_PREFIX = '/api/';
+/** Keeps brokered API paths within the same conservative URL size as API-key clients. */
+const MAX_AUTHENTICATED_API_PATH_LENGTH = 2048;
+/*
+ * The host keeps this enforcement local because it validates hostile postMessage input
+ * before any transport code runs and must return protocol errors, not API-client errors.
+ * Its decisions are locked to the standalone API-client boundary by the package-neutral
+ * conformance oracle in `test/contracts/authenticated-api-path-contract.mjs`.
+ */
+const INVALID_HEADER_VALUE_CHARACTER = /[\0\r\n]/;
 /** Enough for any real plugin; the 33rd concurrent request is a runaway, not a workload. */
 const MAX_IN_FLIGHT = 32;
 /** Re-mint before the token lapses, so a long session never trips over an expiry. */
@@ -87,18 +97,30 @@ export function createPluginHostBridge(options: PluginHostBridgeOptions): Plugin
    * attacker. Resolving first and comparing origins is what closes that.
    */
   function resolvePath(request: Extract<PluginRequest, { kind: 'api' }>): URL {
+    const pathBeforeQueryOrHash = request.path.split(/[?#]/, 1)[0];
+    if (
+      request.path.length > MAX_AUTHENTICATED_API_PATH_LENGTH ||
+      !pathBeforeQueryOrHash.startsWith(API_PATH_PREFIX) ||
+      pathBeforeQueryOrHash.includes('\\')
+    ) {
+      throw forbidden('Requests must target a root-relative path under /api/');
+    }
+
+    const decodedPath = decodePathForValidation(pathBeforeQueryOrHash);
+
+    if (hasTraversalSegment(decodedPath)) {
+      throw forbidden('Requests must target a root-relative path under /api/');
+    }
+
     const url = new URL(request.path, apiOrigin);
 
-    if (url.origin !== apiOrigin) {
-      throw forbidden('Requests must stay on the OWOX API origin');
+    if (url.origin !== apiOrigin || !url.pathname.startsWith(API_PATH_PREFIX)) {
+      throw forbidden('Requests must target a root-relative path under /api/');
     }
 
-    if (!url.pathname.startsWith('/api/')) {
-      throw forbidden('Requests must target a path under /api/');
-    }
-
-    if (!ALLOWED_METHODS.has(request.method)) {
-      throw forbidden(`${request.method} is not allowed from a plugin`);
+    const decodedUrlPath = decodePathForValidation(url.pathname);
+    if (hasTraversalSegment(decodedUrlPath)) {
+      throw forbidden('Requests must target a root-relative path under /api/');
     }
 
     // append, not set: the pairs arrive ordered and may repeat a key, which is how the
@@ -112,6 +134,7 @@ export function createPluginHostBridge(options: PluginHostBridgeOptions): Plugin
 
   async function forward(
     request: Extract<PluginRequest, { kind: 'api' }>,
+    serializedBody: string | undefined,
     retryOnUnauthorized = true
   ): Promise<PluginResponse> {
     const url = resolvePath(request);
@@ -122,21 +145,20 @@ export function createPluginHostBridge(options: PluginHostBridgeOptions): Plugin
     const response = await fetch(url.toString(), {
       method: request.method,
       signal: teardown.signal,
+      // A redirect target has not passed resolvePath. Refuse it instead of letting fetch
+      // carry the runtime bearer header to an attacker-controlled Location.
+      redirect: 'error',
       headers: {
         'x-owox-authorization': `Bearer ${await currentToken()}`,
-        ...('body' in request && request.body !== undefined
-          ? { 'content-type': 'application/json' }
-          : {}),
+        ...(serializedBody !== undefined ? { 'content-type': 'application/json' } : {}),
         ...('accept' in request && request.accept ? { accept: request.accept } : {}),
       },
-      ...('body' in request && request.body !== undefined
-        ? { body: JSON.stringify(request.body) }
-        : {}),
+      ...(serializedBody !== undefined ? { body: serializedBody } : {}),
     });
 
     if (response.status === 401 && retryOnUnauthorized) {
       await currentToken(true);
-      return forward(request, false);
+      return forward(request, serializedBody, false);
     }
 
     const headers = pickHeaders(response);
@@ -172,8 +194,8 @@ export function createPluginHostBridge(options: PluginHostBridgeOptions): Plugin
     // A wrong nonce cannot be a race: the port was transferred to this frame and nowhere
     // else, so whoever answers holds it. Echoing something else means the other end
     // failed the one check it was given, and the channel is not worth keeping.
-    if (isPluginHello(candidate)) {
-      if (candidate.nonce === nonce) {
+    if (isPluginHelloEnvelope(candidate)) {
+      if (isPluginHello(candidate) && candidate.nonce === nonce) {
         greeted = true;
       } else {
         shutdown();
@@ -182,11 +204,8 @@ export function createPluginHostBridge(options: PluginHostBridgeOptions): Plugin
       return;
     }
 
-    // Anything else without a kind is malformed: the api branch would resolve `undefined`
-    // against the API origin and answer FORBIDDEN with no correlation id -- noise the SDK
-    // can only drop. Ignoring it is the whole of the correct behaviour.
-    const request = candidate as PluginRequest | null;
-    if (!request?.kind) {
+    const id = usableRequestId(candidate);
+    if (id === undefined) {
       return;
     }
 
@@ -194,26 +213,35 @@ export function createPluginHostBridge(options: PluginHostBridgeOptions): Plugin
     // request arriving first is not a slow handshake -- it is an end that never completed one.
     if (!greeted) {
       reply({
-        id: request.id,
+        id,
         ok: false,
         error: { code: 'PROTOCOL_ERROR', message: 'The plugin handshake is not complete' },
       });
       return;
     }
 
-    if (request.kind === 'openExternal') {
-      options.onOpenExternal(request.url);
-      return;
-    }
-
-    if (request.kind === 'navigate') {
-      options.onNavigate(request.path);
+    // These host-only actions do not occupy API admission slots. Validate their small
+    // envelopes and preserve their fire-and-forget behavior even at API capacity.
+    if (
+      isRecord(candidate) &&
+      (candidate.kind === 'openExternal' || candidate.kind === 'navigate')
+    ) {
+      try {
+        const request = validateRequest(candidate);
+        if (request.kind === 'openExternal') {
+          options.onOpenExternal(request.url);
+        } else if (request.kind === 'navigate') {
+          options.onNavigate(request.path);
+        }
+      } catch (caught) {
+        reply({ id, ok: false, error: asErrorPayload(caught) });
+      }
       return;
     }
 
     if (inFlight >= MAX_IN_FLIGHT) {
       reply({
-        id: request.id,
+        id,
         ok: false,
         error: { code: 'PROTOCOL_ERROR', message: 'Too many requests in flight' },
       });
@@ -222,10 +250,28 @@ export function createPluginHostBridge(options: PluginHostBridgeOptions): Plugin
 
     inFlight += 1;
     try {
-      const response = await forward(request);
+      // Admission covers validation as well as I/O. In particular, JSON serialization
+      // can be attacker-controlled work and must not remain unbounded at capacity.
+      const request = validateRequest(candidate);
+
+      if (request.kind === 'openExternal') {
+        options.onOpenExternal(request.url);
+        return;
+      }
+
+      if (request.kind === 'navigate') {
+        options.onNavigate(request.path);
+        return;
+      }
+
+      // Serialize once, before currentToken, and reuse the immutable string for a 401
+      // retry. This both bounds validation work and prevents a second serialization from
+      // failing only after a credential has been minted.
+      const serializedBody = serializeJsonBody(request);
+      const response = await forward(request, serializedBody);
       reply(response, 'stream' in response ? [response.stream] : []);
     } catch (caught) {
-      reply({ id: request.id, ok: false, error: asErrorPayload(caught) });
+      reply({ id, ok: false, error: asErrorPayload(caught) });
     } finally {
       inFlight -= 1;
     }
@@ -273,7 +319,6 @@ export function createPluginHostBridge(options: PluginHostBridgeOptions): Plugin
     window.removeEventListener('message', onWindowMessage);
 
     nonce = crypto.randomUUID();
-
     options.iframe.contentWindow?.postMessage(
       {
         owox: 'host-init',
@@ -329,6 +374,182 @@ function forbidden(message: string): PluginTransportRefusal {
   return new PluginTransportRefusal({ code: 'FORBIDDEN', message });
 }
 
+function protocolError(message: string): PluginTransportRefusal {
+  return new PluginTransportRefusal({ code: 'PROTOCOL_ERROR', message });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isPluginHelloEnvelope(value: unknown): boolean {
+  return isRecord(value) && value.owox === 'plugin-hello';
+}
+
+function usableRequestId(value: unknown): string | undefined {
+  if (!isRecord(value) || typeof value.id !== 'string' || value.id.length === 0) {
+    return undefined;
+  }
+
+  return value.id;
+}
+
+function validateRequest(candidate: unknown): PluginRequest {
+  if (!isRecord(candidate)) {
+    throw protocolError('The request envelope is malformed');
+  }
+
+  if (candidate.kind === 'openExternal') {
+    if (typeof candidate.url !== 'string') {
+      throw protocolError('The external URL must be a string');
+    }
+    return candidate as unknown as PluginRequest;
+  }
+
+  if (candidate.kind === 'navigate') {
+    if (typeof candidate.path !== 'string') {
+      throw protocolError('The navigation path must be a string');
+    }
+    return candidate as unknown as PluginRequest;
+  }
+
+  if (candidate.kind !== 'api') {
+    throw protocolError('The request kind is not recognized');
+  }
+
+  if (typeof candidate.method !== 'string') {
+    throw protocolError('The API method must be a string');
+  }
+
+  if (!ALLOWED_METHODS.has(candidate.method)) {
+    throw forbidden(`${candidate.method} is not allowed from a plugin`);
+  }
+
+  if (typeof candidate.path !== 'string') {
+    throw protocolError('The API path must be a string');
+  }
+
+  if (
+    candidate.query !== undefined &&
+    (!Array.isArray(candidate.query) ||
+      !candidate.query.every(
+        pair =>
+          Array.isArray(pair) &&
+          pair.length === 2 &&
+          typeof pair[0] === 'string' &&
+          typeof pair[1] === 'string'
+      ))
+  ) {
+    throw protocolError('The API query must contain string pairs');
+  }
+
+  if (candidate.accept !== undefined && typeof candidate.accept !== 'string') {
+    throw protocolError('The API accept value must be a string');
+  }
+
+  if (candidate.accept !== undefined) {
+    if (INVALID_HEADER_VALUE_CHARACTER.test(candidate.accept)) {
+      throw protocolError('The API accept value is not a valid header value');
+    }
+    try {
+      new Headers({ accept: candidate.accept });
+    } catch {
+      throw protocolError('The API accept value is not a valid header value');
+    }
+  }
+
+  if (candidate.stream !== undefined && typeof candidate.stream !== 'boolean') {
+    throw protocolError('The API stream flag must be a boolean');
+  }
+
+  if (candidate.stream === true && candidate.method !== 'GET') {
+    throw protocolError('Only GET requests may stream');
+  }
+
+  if (candidate.stream === true && candidate.accept !== undefined) {
+    throw protocolError('Streaming GET requests must not override accept');
+  }
+
+  if (candidate.method === 'GET' && candidate.body !== undefined) {
+    throw protocolError('GET requests must not carry a body');
+  }
+
+  if (candidate.method === 'DELETE' && candidate.body !== undefined) {
+    throw protocolError('DELETE requests must not carry a body');
+  }
+
+  if (candidate.method === 'PATCH' && candidate.body === undefined) {
+    throw protocolError('PATCH requests must carry a JSON body');
+  }
+
+  return candidate as unknown as PluginRequest;
+}
+
+function serializeJsonBody(request: Extract<PluginRequest, { kind: 'api' }>): string | undefined {
+  if (request.method === 'GET' || request.method === 'DELETE' || request.body === undefined) {
+    return undefined;
+  }
+
+  try {
+    const serialized: unknown = JSON.stringify(request.body);
+    if (typeof serialized !== 'string') {
+      throw protocolError('The API body must be JSON-serializable');
+    }
+    return serialized;
+  } catch (caught) {
+    if (caught instanceof PluginTransportRefusal) {
+      throw caught;
+    }
+    throw protocolError('The API body must be JSON-serializable');
+  }
+}
+
+function hexDigitValue(code: number): number {
+  if (code >= 48 && code <= 57) {
+    return code - 48;
+  }
+  if (code >= 65 && code <= 70) {
+    return code - 55;
+  }
+  if (code >= 97 && code <= 102) {
+    return code - 87;
+  }
+  return -1;
+}
+
+/** Validates every escape once, then performs one bounded decode for traversal checks. */
+function decodePathForValidation(path: string): string {
+  for (let index = 0; index < path.length; index += 1) {
+    if (path.charCodeAt(index) !== 37) {
+      continue;
+    }
+
+    const high = hexDigitValue(path.charCodeAt(index + 1));
+    const low = hexDigitValue(path.charCodeAt(index + 2));
+    if (high === -1 || low === -1) {
+      throw forbidden('Requests must target a root-relative path under /api/');
+    }
+
+    const encodedByte = high * 16 + low;
+    if (encodedByte === 0x25 || encodedByte === 0x2f || encodedByte === 0x5c) {
+      throw forbidden('Requests must target a root-relative path under /api/');
+    }
+    index += 2;
+  }
+
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    throw forbidden('Requests must target a root-relative path under /api/');
+  }
+}
+
+function hasTraversalSegment(path: string): boolean {
+  return (
+    path.includes('\\') || path.split('/').some(segment => segment === '.' || segment === '..')
+  );
+}
+
 class PluginTransportRefusal extends Error {
   constructor(readonly payload: PluginErrorPayload) {
     super(payload.message);
@@ -343,6 +564,8 @@ function asErrorPayload(caught: unknown): PluginErrorPayload {
 
   return {
     code: 'NETWORK_ERROR',
-    message: caught instanceof Error ? caught.message : 'The request could not be completed',
+    // Fetch and token-provider errors are host-side details. Apart from being useless to
+    // a plugin, echoing one can expose a URL or credential included by the failing layer.
+    message: 'The request could not be completed',
   };
 }

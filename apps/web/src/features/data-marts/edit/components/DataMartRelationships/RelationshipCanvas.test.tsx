@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NOTHING_HIDDEN } from '../../../shared/canvas/object-labels';
+import type { ErdCardField } from '../../../shared/canvas/erd-fields';
 import type { DataMartRelationship } from '../../../shared/types/relationship.types';
 import { RelationshipCanvas } from './RelationshipCanvas';
 
@@ -15,10 +17,17 @@ interface ReactFlowStubProps {
     height?: number;
     data: {
       isSource: boolean;
+      fields?: { name: string }[];
       onOpenExternal: () => void;
     };
   }[];
-  edges?: { id: string; source: string; target: string; selected?: boolean }[];
+  edges?: {
+    id: string;
+    source: string;
+    target: string;
+    selected?: boolean;
+    data?: { joinLabel?: string[] };
+  }[];
   deleteKeyCode?: string | null;
   onMove?: (event: unknown, viewport: ViewportStub) => void;
   onMoveStart?: (event: unknown) => void;
@@ -51,6 +60,7 @@ const reactFlowHarness = vi.hoisted(() => {
 });
 
 vi.mock('@xyflow/react', () => ({
+  useUpdateNodeInternals: () => () => undefined,
   BaseEdge: () => null,
   Handle: () => null,
   MiniMap: () => null,
@@ -388,6 +398,120 @@ describe('RelationshipCanvas filters', () => {
   });
 });
 
+describe('RelationshipCanvas view settings', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    reactFlowHarness.fitView.mockReset().mockResolvedValue(true);
+    reactFlowHarness.getZoom.mockReset().mockReturnValue(1.5);
+    reactFlowHarness.setViewport.mockReset().mockResolvedValue(true);
+    reactFlowHarness.zoomTo.mockReset().mockResolvedValue(true);
+    reactFlowHarness.latestProps = null;
+    reactFlowHarness.store.width = 800;
+    reactFlowHarness.store.height = 600;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('offers the shared canvas settings in the gear popover and delegates changes', async () => {
+    const props = buildCanvasProps([buildRelationship('rel-1', 'target-1')]);
+    render(<RelationshipCanvas {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Canvas settings' }));
+
+    fireEvent.click(await screen.findByRole('radio', { name: 'Detailed' }));
+    expect(props.onViewModeChange).toHaveBeenCalledWith('erd');
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Vertical' }));
+    expect(props.onDirectionChange).toHaveBeenCalledWith('vertical');
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Show join fields' }));
+    expect(props.onShowJoinFieldsChange).toHaveBeenCalledWith(true);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /Status dot/ }));
+    expect(props.onObjectLabelsChange).toHaveBeenCalledWith({
+      source: false,
+      fields: false,
+      status: true,
+    });
+  });
+
+  it('sizes Detailed cards to their collapsed field rows', async () => {
+    render(
+      <RelationshipCanvas
+        {...buildCanvasProps([buildRelationship('rel-1', 'target-1')])}
+        viewMode='erd'
+        fieldsByAliasPath={new Map([['target-1', buildFields(6)]])}
+      />
+    );
+
+    await waitFor(() => {
+      expect(reactFlowHarness.latestProps?.nodes).toHaveLength(2);
+    });
+    const target = reactFlowHarness.latestProps?.nodes?.find(node => !node.data.isSource);
+    // 92 header + 4 collapsed rows × 26 + the "+2 more" toggle row.
+    expect(target?.width).toBe(256);
+    expect(target?.height).toBe(92 + 4 * 26 + 26);
+    // The rows themselves must reach the card, not just the sizing math.
+    expect(target?.data.fields?.map(field => field.name)).toEqual([
+      'field_0',
+      'field_1',
+      'field_2',
+      'field_3',
+      'field_4',
+      'field_5',
+    ]);
+  });
+
+  it('keeps the selection and viewport across view-settings toggles', async () => {
+    const relationships = [buildRelationship('rel-1', 'target-1')];
+    const { rerender } = render(<RelationshipCanvas {...buildCanvasProps(relationships)} />);
+
+    await waitFor(() => {
+      expect(reactFlowHarness.fitView).toHaveBeenCalledTimes(1);
+    });
+
+    const rootId = reactFlowHarness.latestProps?.nodes?.find(node => node.data.isSource)?.id ?? '';
+    act(() => {
+      reactFlowHarness.latestProps?.onNodeClick?.(null, { id: rootId });
+    });
+    expect(reactFlowHarness.latestProps?.nodes?.find(node => node.id === rootId)?.selected).toBe(
+      true
+    );
+
+    // Cosmetic toggles relayout the graph but keep every node id — the
+    // selection and the user's viewport must survive (no extra fitView).
+    rerender(<RelationshipCanvas {...buildCanvasProps(relationships)} showJoinFields />);
+    rerender(<RelationshipCanvas {...buildCanvasProps(relationships)} viewMode='erd' />);
+    rerender(<RelationshipCanvas {...buildCanvasProps(relationships)} direction='vertical' />);
+
+    await waitFor(() => {
+      expect(reactFlowHarness.latestProps).not.toBeNull();
+    });
+    expect(reactFlowHarness.fitView).toHaveBeenCalledTimes(1);
+    expect(reactFlowHarness.latestProps?.nodes?.find(node => node.id === rootId)?.selected).toBe(
+      true
+    );
+  });
+
+  it('labels edges with join conditions when Show join fields is on', async () => {
+    const relationships = [buildRelationship('rel-1', 'target-1')];
+    const { rerender } = render(<RelationshipCanvas {...buildCanvasProps(relationships)} />);
+
+    await waitFor(() => {
+      expect(reactFlowHarness.latestProps?.edges).toHaveLength(1);
+    });
+    expect(reactFlowHarness.latestProps?.edges?.[0]?.data?.joinLabel).toEqual([]);
+
+    rerender(<RelationshipCanvas {...buildCanvasProps(relationships)} showJoinFields />);
+
+    await waitFor(() => {
+      expect(reactFlowHarness.latestProps?.edges?.[0]?.data?.joinLabel).toEqual(['id = source_id']);
+    });
+  });
+});
+
 function getRenderedGraphBounds() {
   const nodes = reactFlowHarness.latestProps?.nodes ?? [];
   return {
@@ -408,7 +532,25 @@ function buildCanvasProps(relationships: DataMartRelationship[]) {
     searchQuery: '',
     showLooped: false,
     statusFilter: 'all' as const,
+    viewMode: 'compact' as const,
+    onViewModeChange: vi.fn(),
+    direction: 'horizontal' as const,
+    onDirectionChange: vi.fn(),
+    showJoinFields: false,
+    onShowJoinFieldsChange: vi.fn(),
+    objectLabels: NOTHING_HIDDEN,
+    onObjectLabelsChange: vi.fn(),
   };
+}
+
+function buildFields(count: number): ErdCardField[] {
+  return Array.from({ length: count }, (_, index) => ({
+    name: `field_${String(index)}`,
+    alias: `field_${String(index)}`,
+    type: 'STRING',
+    isPrimaryKey: false,
+    isHidden: false,
+  }));
 }
 
 function buildRelationship(id: string, targetId: string): DataMartRelationship {

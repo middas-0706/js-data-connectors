@@ -66,11 +66,13 @@ const layout = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock('../model/graph/dagre-layout', () => ({
+vi.mock('../../shared/canvas/dagre-layout', () => ({
   runDagreLayout: layout.runDagreLayout,
+  estimateEdgeLabelDimensions: () => undefined,
 }));
 
 vi.mock('@xyflow/react', () => ({
+  useUpdateNodeInternals: () => () => undefined,
   Background: () => null,
   BackgroundVariant: { Lines: 'lines' },
   Handle: () => null,

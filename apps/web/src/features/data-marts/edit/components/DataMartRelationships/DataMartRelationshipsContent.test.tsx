@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Children, isValidElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   BlendableSchema,
@@ -13,6 +13,11 @@ import { DataMartRelationshipsContent } from './DataMartRelationshipsContent';
 interface CanvasStubProps {
   showLooped: boolean;
   statusFilter: string;
+  viewMode: string;
+  direction: string;
+  showJoinFields: boolean;
+  onViewModeChange: (next: string) => void;
+  onRequestFullscreen?: () => void;
 }
 
 const harness = vi.hoisted(() => {
@@ -224,12 +229,45 @@ describe('DataMartRelationshipsContent toolbar filters', () => {
     expect(harness.canvasProps.current).toMatchObject({
       showLooped: false,
       statusFilter: 'DRAFT',
+      viewMode: 'compact',
+      direction: 'horizontal',
+      showJoinFields: false,
     });
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Looped data marts' }), {
       target: { value: 'show' },
     });
     expect(harness.canvasProps.current).toMatchObject({ showLooped: true });
+  });
+
+  it('keeps the fullscreen canvas in sync with the same settings state', async () => {
+    renderContent();
+
+    await waitFor(() => {
+      expect(rowTitles()).toEqual(['Alpha', 'Beta']);
+    });
+
+    // Radix Tabs activates on mousedown, not click.
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Graph/ }), { button: 0 });
+    await screen.findByTestId('relationship-canvas');
+
+    // The inline canvas requests fullscreen; the dialog mounts a second
+    // instance which must receive the same state and the same handlers.
+    act(() => {
+      harness.canvasProps.current?.onRequestFullscreen?.();
+    });
+    await waitFor(() => {
+      expect(screen.getAllByTestId('relationship-canvas')).toHaveLength(2);
+    });
+    expect(harness.canvasProps.current?.onRequestFullscreen).toBeUndefined();
+    expect(harness.canvasProps.current).toMatchObject({ viewMode: 'compact' });
+
+    // A settings change made through the fullscreen instance updates both.
+    act(() => {
+      harness.canvasProps.current?.onViewModeChange('erd');
+    });
+    expect(harness.canvasProps.current).toMatchObject({ viewMode: 'erd' });
+    expect(localStorage.getItem('relationship-canvas-view-mode')).toBe('erd');
   });
 
   it('lets the toolbar wrap so controls stay reachable in narrow layouts', async () => {

@@ -175,6 +175,9 @@ creator ID or the corresponding user projection is unavailable. When an author i
 `definitionRun` is always present but can be `null` when a historical definition snapshot is
 unavailable.
 
+`qualitySummary` is either the compact Data Quality summary or `null`. It is optional for
+compatibility with older self-hosted deployments that did not return the field.
+
 `@owox/api-client` validates the response shape, enum values, nested references and author data,
 nullable fields, logs and errors, totals, and the backend's RFC3339 timestamp profile: uppercase
 `T`/`Z`, seconds from `00` through `59`, optional fractional seconds, and valid numeric offsets. It
@@ -291,6 +294,77 @@ The client validates the complete page and nested item shapes before returning d
 unknown enum value, malformed user, storage, or context, invalid timestamp, missing required
 field, or invalid pagination value with `OWOXApiError`. Invalid list options are rejected before
 authentication or any network request.
+
+## Manage Data Mart runs
+
+Create a Data-Mart-scoped run client with `runs.forDataMart(dataMartId)`. Its `start(options)` method
+starts a manual connector run and requires Technical User access to the Data Mart. Omit the options,
+or set `runType` to `INCREMENTAL` without `data`, for an incremental run. To send connector-specific
+backfill fields in `data`, set `runType` to `MANUAL_BACKFILL`; connectors without backfill fields can
+omit `data`. The API client rejects `data` on implicit or explicit incremental runs before
+authentication or any network request. The backend HTTP endpoint separately tolerates retained
+object-valued `data` on incremental requests for compatibility with existing run forms. The method
+returns the new run ID. The serialized options must not exceed 1 MB.
+
+Data Mart and run IDs must not be blank, dot segments, or contain `/`, `\`, or `%`. The client
+rejects invalid scoped IDs before authentication or any network request.
+
+```ts
+const dataMartRuns = client.runs.forDataMart('data-mart-id');
+
+const { runId } = await dataMartRuns.start({
+  runType: 'MANUAL_BACKFILL',
+  data: {
+    StartDate: '2026-07-01',
+    EndDate: '2026-07-31',
+  },
+});
+```
+
+Business Users can inspect runs for a Data Mart they can see. The scoped `list()` method returns a
+newest-first page, while `get(runId)` returns one run and includes full Data Quality detail when the
+run is a Data Quality run.
+
+```ts
+const history = await dataMartRuns.list({
+  limit: 50,
+  offset: 0,
+});
+
+const [latest] = history.runs;
+if (latest) {
+  const run = await dataMartRuns.get(latest.id);
+  console.log(run.status, run.qualitySummary, run.dataQuality);
+}
+```
+
+The existing `client.runs.list()` method remains the project-wide run history and includes each
+run's Data Mart reference. The scoped `dataMartRuns.list()` method uses the Data-Mart-specific route
+and omits that redundant reference.
+
+The scoped list endpoint defaults to 100 runs when `limit` is omitted and does not silently cap a
+valid caller-provided limit or offset. The client accepts positive safe integer limits and
+non-negative safe integer offsets, and rejects invalid list options before authentication or any
+network request. The response has no total or next-page marker. Increment `offset` by the number of
+returned runs and stop when a page contains fewer runs than the requested limit. New runs can shift
+offset pages, so deduplicate by `run.id` while paging.
+
+Use the scoped `cancel(runId)` method to cancel an active connector, standard report, or Data Quality
+run. Technical User access is required. The method resolves with no value after the API returns
+`204 No Content`. A cancellable run that is already terminal returns a conflict error; a run type
+that does not support cancellation returns a bad-request error.
+
+```ts
+await dataMartRuns.cancel(runId);
+```
+
+The package exports `OWOXDataMartRun`, `OWOXDataMartRunDetail`,
+`OWOXDataMartRunListOptions`, `OWOXDataMartRunStartOptions`, `OWOXDataMartRunsResponse`,
+`OWOXDataMartRunsScope`, and the run and Data Quality enum and nested-object types. The client
+validates response field presence, nullability, enums, RFC 3339 timestamps, totals, author metadata,
+compact Data Quality summaries, and full Data Quality detail. An incompatible response throws
+`OWOXApiError`. Scoped list and detail methods normalize Data Quality fields omitted by older
+self-hosted deployments to `null`.
 
 ## Read the Models canvas
 

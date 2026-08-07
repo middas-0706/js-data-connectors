@@ -64,6 +64,7 @@ const runHistory: OWOXProjectDataMartRunsResponse = {
       errors: null,
       additionalParams: null,
       totals: null,
+      qualitySummary: null,
       createdByUser: {
         userId: 'user-1',
         fullName: 'Ada Lovelace',
@@ -177,6 +178,18 @@ describe('Runs API', () => {
     await expect(result).rejects.toBeInstanceOf(OWOXApiError);
   });
 
+  it('wraps a non-object project run as a response-shape error', async () => {
+    const fetchImpl = createFetchMock(request => {
+      if (request.method === 'POST') {
+        return createJsonResponse(200, { accessToken: 'access-token-1' });
+      }
+      return createJsonResponse(200, { runs: [null] });
+    });
+    const client = new OWOXApiClient({ apiKey, fetchImpl });
+
+    await expect(client.runs.list()).rejects.toBeInstanceOf(OWOXApiError);
+  });
+
   it('rejects malformed run creator metadata', async () => {
     const response = {
       runs: [
@@ -217,6 +230,33 @@ describe('Runs API', () => {
       message: 'OWOX Project Run History API returned an unexpected response shape',
       details: response,
     });
+  });
+
+  it('accepts project run history from deployments that predate qualitySummary', async () => {
+    const { qualitySummary: _qualitySummary, ...runWithoutQualitySummary } = runHistory.runs[0]!;
+    const response = { runs: [runWithoutQualitySummary] };
+    const fetchImpl = createFetchMock(request => {
+      if (request.method === 'POST') {
+        return createJsonResponse(200, { accessToken: 'access-token-1' });
+      }
+      return createJsonResponse(200, response);
+    });
+    const client = new OWOXApiClient({ apiKey, fetchImpl });
+
+    await expect(client.runs.list()).resolves.toEqual(response);
+  });
+
+  it('preserves project-wide pagination values for server normalization', async () => {
+    const fetchImpl = createFetchMock(request => {
+      if (request.method === 'POST') {
+        return createJsonResponse(200, { accessToken: 'access-token-1' });
+      }
+      expect(request.url).toBe('/api/data-marts/runs?limit=0&offset=-1');
+      return createJsonResponse(200, runHistory);
+    });
+    const client = new OWOXApiClient({ apiKey, fetchImpl });
+
+    await expect(client.runs.list({ limit: 0, offset: -1 })).resolves.toEqual(runHistory);
   });
 
   it.each([

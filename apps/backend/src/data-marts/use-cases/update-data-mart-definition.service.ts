@@ -89,7 +89,7 @@ export class UpdateDataMartDefinitionService {
       let mergedDefinition: ConnectorDefinition;
 
       if (command.sourceDataMartId) {
-        await this.validateCredentialCopyAccess(command, connectorCapabilities);
+        await this.validateCredentialCopyAccess(command);
 
         const sourceDataMart = await this.dataMartService.getByIdAndProjectId(
           command.sourceDataMartId,
@@ -108,12 +108,7 @@ export class UpdateDataMartDefinitionService {
         sourceDefinition = sourceDataMart.definition as ConnectorDefinition;
       }
 
-      this.validateSecretReferences(
-        connectorDefinition,
-        previousDefinition,
-        sourceDefinition,
-        connectorCapabilities
-      );
+      this.validateSecretReferences(connectorDefinition, previousDefinition, sourceDefinition);
 
       if (sourceDefinition) {
         mergedDefinition = await this.connectorSecretService.mergeDefinitionSecretsFromSource(
@@ -140,15 +135,10 @@ export class UpdateDataMartDefinitionService {
         mergedDefinition
       );
 
-      // Delete secrets for configuration items that were removed
-      const currentConfigIds = new Set(
-        (dataMart.definition as ConnectorDefinition).connector.source.configuration
-          .map(item => (item as Record<string, unknown>)._id as string)
-          .filter((id): id is string => !!id)
-      );
+      // Delete secrets this DataMart no longer references
       await this.connectorSecretService.deleteOrphanedSecrets(
         dataMart.id,
-        currentConfigIds,
+        dataMart.definition as ConnectorDefinition,
         previousDefinition
       );
     } else {
@@ -241,10 +231,9 @@ export class UpdateDataMartDefinitionService {
   }
 
   private async validateCredentialCopyAccess(
-    command: UpdateDataMartDefinitionCommand,
-    capabilities: ConnectorCapabilities | undefined
+    command: UpdateDataMartDefinitionCommand
   ): Promise<void> {
-    if (!command.userId || !command.sourceDataMartId || !capabilities?.copySecretsByValue) {
+    if (!command.userId || !command.sourceDataMartId) {
       return;
     }
 
@@ -266,13 +255,8 @@ export class UpdateDataMartDefinitionService {
   private validateSecretReferences(
     incoming: ConnectorDefinition,
     previous: ConnectorDefinition | undefined,
-    copySource: ConnectorDefinition | undefined,
-    capabilities: ConnectorCapabilities | undefined
+    copySource: ConnectorDefinition | undefined
   ): void {
-    if (!capabilities?.copySecretsByValue) {
-      return;
-    }
-
     const previousConfigurations = previous?.connector?.source?.configuration ?? [];
     const sourceConfigurations = copySource?.connector?.source?.configuration ?? [];
 

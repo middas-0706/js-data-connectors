@@ -11,8 +11,12 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
       constructor(config, source, storageName = "GoogleBigQueryStorage", runConfig = null) {
     
     super(config, source, null, runConfig);
-    
+
     this.storageName = storageName;
+
+    // accountId -> errors that made this account unreachable, kept so a partial failure can be
+    // reported per account instead of collapsing into whichever error happened to come last
+    this.skippedAccounts = new Map();
 
     }
 
@@ -60,6 +64,83 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
 
       }
 
+      // A run that skipped an account still completes, so without this the only trace would be a
+      // log line: the run would report plain success while that account's data is missing.
+      if( this.skippedAccounts.size ) {
+        this.config.addWarningToCurrentStatus(
+          `${this.skippedAccounts.size} out of ${accountsIds.length} accounts were skipped and their data is missing. `
+          + `Skipped accounts: ${[...this.skippedAccounts.keys()].join(', ')}`
+        );
+      }
+
+    }
+
+  //---- skipOrRethrow -------------------------------------------------
+    /**
+     * Decides whether a failure lets the import move on to the next account.
+     *
+     * Only account-scoped permission failures are safe to skip: the account stays unreachable
+     * however often it is retried, so continuing costs nothing. Everything else — a storage
+     * write, an exhausted transient error — must fail the run: swallowing it would let
+     * LastRequestedDate advance past a day whose data was never stored, and once
+     * ReimportLookbackWindow has passed that day is never requested again.
+     *
+     * @param {string} accountId - The account being imported
+     * @param {Error} error - The failure to classify
+     * @param {string} context - What was being attempted, for the warning text
+     * @throws {Error} The original error, when it is not an account-scoped permission failure
+     * @private
+     */
+    _skipOrRethrow(accountId, error, context) {
+
+      if( !error?.isWarning ) {
+        throw error;
+      }
+
+      if( !this.skippedAccounts.has(accountId) ) {
+        this.skippedAccounts.set(accountId, []);
+      }
+      this.skippedAccounts.get(accountId).push(error);
+
+      this.config.addWarningToCurrentStatus(`${context}: skipped account ${accountId}: ${error.message}`);
+
+    }
+
+  //---- throwIfAllAccountsSkipped -------------------------------------------------
+    /**
+     * Fails the run when no account was importable.
+     *
+     * Every account failing at once is not a set of individual accounts losing access on the same
+     * day: it points to a global cause, typically an expired access token. Reporting success there
+     * would hide a total outage behind a run that imported nothing.
+     *
+     * @param {array} accountIds - Every account the run was asked to import
+     * @param {Set} skipped - The accounts skipped in the current pass
+     * @param {string} context - What was being imported, for the error text
+     * @throws {Error} When every account was skipped
+     * @private
+     */
+    _throwIfAllAccountsSkipped(accountIds, skipped, context) {
+
+      if( !accountIds.length || skipped.size < accountIds.length ) {
+        return;
+      }
+
+      const details = accountIds.map(accountId => {
+        const errors = this.skippedAccounts.get(accountId) || [];
+        const last = errors[errors.length - 1];
+        return `${accountId}: ${last ? last.message : 'unknown error'}`;
+      });
+
+      const error = new Error(
+        `All ${accountIds.length} accounts were skipped ${context}, so nothing was imported. `
+        + `This points to a global failure, such as an expired access token, rather than individual `
+        + `accounts being inaccessible. Errors: ${details.join('; ')}`
+      );
+      // Every skipped account was skipped because of a permission failure, which is something the
+      // customer can act on: keep the readable message instead of a stack.
+      error.isWarning = true;
+      throw error;
 
     }
   
@@ -75,27 +156,43 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
     */
     async startImportProcessOfCatalogData(nodeName, accountIds, fields) {
 
+      const skipped = new Set();
+
       for(var i in accountIds) {
 
         let accountId = accountIds[i];
-        const storage = await this.getStorageByNode(nodeName);
 
-        let totalRows = 0;
-        await this.source.fetchData(nodeName, accountId, fields, null,
-          async (pageData) => {
-            await storage.saveData(pageData);
-            totalRows += pageData.length;
+        try {
+
+          const storage = await this.getStorageByNode(nodeName);
+
+          let totalRows = 0;
+          await this.source.fetchData(nodeName, accountId, fields, null,
+            async (pageData) => {
+              await storage.saveData(pageData);
+              totalRows += pageData.length;
+            }
+          );
+
+          // If no data was fetched but CreateEmptyTables is enabled, ensure the table exists
+          if(!totalRows && this.config.CreateEmptyTables?.value) {
+            await storage.saveData([]);
           }
-        );
 
-        // If no data was fetched but CreateEmptyTables is enabled, ensure the table exists
-        if(!totalRows && this.config.CreateEmptyTables?.value) {
-          await storage.saveData([]);
+          totalRows && this.config.logMessage(`${totalRows} rows of ${nodeName} were fetched for account ${accountId}`);
+
+        // catalog nodes are imported before any time-series node, so an unreachable account here
+        // would otherwise abort the whole run before a single day is requested
+        } catch( error ) {
+
+          this._skipOrRethrow(accountId, error, `Importing ${nodeName}`);
+          skipped.add(accountId);
+
         }
 
-        totalRows && this.config.logMessage(`${totalRows} rows of ${nodeName} were fetched for account ${accountId}`);
-
       }
+
+      this._throwIfAllAccountsSkipped(accountIds, skipped, `while importing ${nodeName}`);
 
     }
   
@@ -115,28 +212,44 @@ var FacebookMarketingConnector = class FacebookMarketingConnector extends Abstra
       // start requesting data day by day from startDate to startDate + daysToFetch
       for(var daysShift = 0; daysShift < daysToFetch; daysShift++) {
 
+        // reset per day: an account skipped today may well import tomorrow, and a token that
+        // expires mid-run must not retroactively invalidate the days already completed
+        const skipped = new Set();
 
         // itterating accounts
         for (let accountId of accountsIds) {
 
-          // itteration nodes to fetch data
-          for(var nodeName in timeSeriesNodes) {
+          try {
 
-            this.config.logMessage(`Start importing data for ${DateUtils.formatDate(startDate)}: ${accountId}/${nodeName}`);
+            // itteration nodes to fetch data
+            for(var nodeName in timeSeriesNodes) {
 
-            // fetching new data from a data source
-            let data = await this.source.fetchData(nodeName, accountId, timeSeriesNodes[ nodeName ], startDate);
+              this.config.logMessage(`Start importing data for ${DateUtils.formatDate(startDate)}: ${accountId}/${nodeName}`);
 
-            if( data.length || this.config.CreateEmptyTables?.value ) {
-              const storage = await this.getStorageByNode(nodeName);
-              await storage.saveData(data);
+              // fetching new data from a data source
+              let data = await this.source.fetchData(nodeName, accountId, timeSeriesNodes[ nodeName ], startDate);
+
+              if( data.length || this.config.CreateEmptyTables?.value ) {
+                const storage = await this.getStorageByNode(nodeName);
+                await storage.saveData(data);
+              }
+
+              this.config.logMessage(data.length ? `${data.length} records were fetched` : `No records have been fetched`);
+
             }
 
-            this.config.logMessage(data.length ? `${data.length} records were fetched` : `No records have been fetched`);
+          // an account the token can no longer access must not abort the whole import
+          } catch( error ) {
+
+            this._skipOrRethrow(accountId, error, `Importing ${DateUtils.formatDate(startDate)}`);
+            skipped.add( accountId );
 
           }
 
         }
+
+        // Runs before the cursor moves: a day nobody could import must be requested again
+        this._throwIfAllAccountsSkipped(accountsIds, skipped, `for ${DateUtils.formatDate(startDate)}`);
 
         // Only update LastRequestedDate for incremental runs
         if (this.runConfig.type === RUN_CONFIG_TYPE.INCREMENTAL) {

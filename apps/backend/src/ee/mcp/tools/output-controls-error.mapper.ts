@@ -31,6 +31,12 @@ const RECOGNIZED_CODES = new Set([
   'FILTER_COLUMN_UNKNOWN',
   'PRE_JOIN_FILTERS_REQUIRE_JOINED_DATA_MART',
   'AGGREGATION_REQUIRES_COLUMN_CONFIG',
+  'JOINED_UNIQUE_COUNT_REQUIRES_COLUMN_CONFIG',
+  'JOINED_UNIQUE_COUNT_SOURCE_UNAVAILABLE',
+  'UNIQUE_COUNT_FILTER_UNSUPPORTED',
+  'UNIQUE_COUNT_AGGREGATION_UNSUPPORTED',
+  'UNIQUE_COUNT_DATE_TRUNC_UNSUPPORTED',
+  'UNIQUE_COUNT_COLUMN_NOT_PROJECTABLE',
   'HAVING_FILTER_NOT_AGGREGATED',
   'HAVING_ON_BLENDED_SLEEVE_METRIC_NOT_SUPPORTED',
   'INVALID_OPERATOR_FOR_TYPE',
@@ -42,6 +48,8 @@ const RECOGNIZED_CODES = new Set([
 interface ValidatorErrorEntry {
   code?: string;
   column?: string;
+  /** Set by the codes whose explanation is data-dependent (which source, and why it failed). */
+  message?: string;
   /** OUTPUT_COLUMN_NAME_COLLISION names the colliding OUTPUT name here, not in `column`. */
   label?: string;
   function?: string;
@@ -100,6 +108,76 @@ export function translateOutputControlsError(
       code: 'fields_required_for_aggregation',
       message:
         "Aggregations require an explicit column selection: replace fields ['*'] with the exact field list — every aggregated field plus the group-by dimensions — and retry.",
+    });
+  }
+
+  // A joined Data Mart's Unique Count with fields ['*'] — the blended builder needs a projection.
+  if (errors?.some(e => e.code === 'JOINED_UNIQUE_COUNT_REQUIRES_COLUMN_CONFIG')) {
+    sections.push({
+      code: 'fields_required_for_joined_unique_count',
+      message:
+        "This report counts the unique records of a JOINED Data Mart, which requires an explicit column selection: replace fields ['*'] with the exact field list the report should show and retry.",
+    });
+  }
+
+  // A joined source can no longer produce its Unique Count (its key is gone, or it left the join
+  // tree). The report's Unique Count selection is not a parameter of any report tool, so there is
+  // no edit to retry — pointing at "fields"/"sort" would loop the model over a pseudo-field those
+  // never held. Name the one move that exists instead: a human fixes it in the OWOX UI.
+  const unavailableUniqueCounts =
+    errors?.filter(e => e.code === 'JOINED_UNIQUE_COUNT_SOURCE_UNAVAILABLE') ?? [];
+  if (unavailableUniqueCounts.length > 0) {
+    const detail = [
+      ...new Set(unavailableUniqueCounts.map(e => e.message ?? e.aliasPath).filter(Boolean)),
+    ].join(' ');
+    sections.push({
+      code: 'joined_unique_count_unavailable',
+      message: `${detail} A report's Unique Count selection cannot be changed through this tool, so retrying will not help: tell the user to open the report in OWOX and clear that source from its Unique Count selection, or to restore the joined Data Mart's Primary Key.`,
+    });
+  }
+
+  // A filter (or slice) on a Unique Count metric. The metric exists and can be selected and sorted
+  // by, so re-fetching the schema teaches the agent nothing — the validator's message is the only
+  // text naming the real reason, and the fallback would discard it.
+  const uniqueCountFilters =
+    errors?.filter(e => e.code === 'UNIQUE_COUNT_FILTER_UNSUPPORTED') ?? [];
+  if (uniqueCountFilters.length > 0) {
+    const detail = [
+      ...new Set(uniqueCountFilters.map(e => e.message ?? e.column).filter(Boolean)),
+    ].join(' ');
+    sections.push({
+      code: 'unique_count_filter_unsupported',
+      message: `${detail} Drop that filter (and any slice on the same metric) and retry; to narrow the report, filter on a column of the Data Mart instead. The field name is correct, so do not re-fetch the schema.`,
+    });
+  }
+
+  const uniqueCountClauses =
+    errors?.filter(
+      e =>
+        e.code === 'UNIQUE_COUNT_AGGREGATION_UNSUPPORTED' ||
+        e.code === 'UNIQUE_COUNT_DATE_TRUNC_UNSUPPORTED'
+    ) ?? [];
+  if (uniqueCountClauses.length > 0) {
+    const detail = [
+      ...new Set(uniqueCountClauses.map(e => e.message ?? e.column).filter(Boolean)),
+    ].join(' ');
+    sections.push({
+      code: 'unique_count_selection_only',
+      message: `${detail} A Unique Count field can only be selected and sorted by. The field name is correct, so do not re-fetch the schema.`,
+    });
+  }
+
+  // The report tools carry no Unique Count parameter, so unlike query_data_mart there is no
+  // place to move the field to — say that instead of letting the model retry the same list.
+  const unprojectableUniqueCounts =
+    errors?.filter(e => e.code === 'UNIQUE_COUNT_COLUMN_NOT_PROJECTABLE') ?? [];
+  if (unprojectableUniqueCounts.length > 0) {
+    const detail = [
+      ...new Set(unprojectableUniqueCounts.map(e => e.message ?? e.column).filter(Boolean)),
+    ].join(' ');
+    sections.push({
+      code: 'unique_count_not_reportable',
+      message: `${detail} A report's Unique Count selection cannot be set over MCP — remove the field and retry, and tell the user to turn it on for this report in the OWOX Data Marts UI. It IS available in query_data_mart.`,
     });
   }
 

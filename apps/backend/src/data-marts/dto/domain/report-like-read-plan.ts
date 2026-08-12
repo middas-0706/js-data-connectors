@@ -7,6 +7,7 @@ import { SortConfig } from '../schemas/sort-config.schema';
 import { AggregationConfig } from '../schemas/aggregation-config.schema';
 import { DateTruncConfig } from '../schemas/date-trunc-config.schema';
 import { UniqueCountConfig } from '../schemas/unique-count-config.schema';
+import { normalizeUniqueCountSources } from '../schemas/unique-count-sources';
 import { usesSuffixedJoinedFieldNames as usesSuffixedJoinedFieldNamesFor } from '../../data-destination-types/enums/data-destination-type.enum';
 
 // Must stay structurally compatible with the subset of `Report` fields read by
@@ -48,6 +49,21 @@ export function shouldIncludeRowCount(report: ReportLike): boolean {
 }
 
 /**
+ * Whether a report projects METRICS ONLY — it asks for aggregates or any Unique Count, so an empty
+ * `columnConfig` means "no dimensions" rather than "every native column". The composer and the
+ * output-controls validator both need exactly this decision, and a legacy `[]` on a report with
+ * neither is the case that must NOT be read as metrics-only. Shared so the two cannot drift.
+ */
+export function isMetricsOnlyProjection(
+  aggregations: { readonly length: number } | null | undefined,
+  uniqueCountConfig: UniqueCountConfig | undefined
+): boolean {
+  return (
+    (aggregations?.length ?? 0) > 0 || normalizeUniqueCountSources(uniqueCountConfig).length > 0
+  );
+}
+
+/**
  * Whether joined-field labels for this read should put the Data Mart name after the field name
  * (`Field name (Data Mart name)`) instead of before it. Delegates to the destination capability
  * {@link usesSuffixedJoinedFieldNamesFor}.
@@ -78,6 +94,6 @@ export function hasOutputControls(report: ReportLike): boolean {
     (report.aggregationConfig?.length ?? 0) > 0 ||
     (report.dateTruncConfig?.length ?? 0) > 0 ||
     report.limitConfig != null ||
-    report.uniqueCountConfig === true
+    normalizeUniqueCountSources(report.uniqueCountConfig).length > 0
   );
 }

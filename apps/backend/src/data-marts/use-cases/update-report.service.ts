@@ -24,6 +24,10 @@ import { AccessDecisionService, EntityType, Action } from '../services/access-de
 import { ReportAccessService } from '../services/report-access.service';
 import { ReportDataCacheService } from '../services/report-data-cache.service';
 import { OutputControlsValidatorService } from '../services/output-controls-validator.service';
+import {
+  foldEmptyUniqueCountConfig,
+  normalizeUniqueCountSources,
+} from '../dto/schemas/unique-count-sources';
 
 @Injectable()
 export class UpdateReportService {
@@ -118,6 +122,15 @@ export class UpdateReportService {
       }
     }
 
+    const previousUniqueCountConfig = foldEmptyUniqueCountConfig(report.uniqueCountConfig);
+    const nextUniqueCountConfig = foldEmptyUniqueCountConfig(command.uniqueCountConfig);
+    // Compared NORMALIZED: a report storing the legacy `true` comes back from the web as `['']`,
+    // and comparing the raw shapes would read that as a config change on a title-only save —
+    // invalidating the cached data and re-billing a warehouse query for an identical config.
+    const uniqueCountChanged =
+      JSON.stringify(normalizeUniqueCountSources(previousUniqueCountConfig)) !==
+      JSON.stringify(normalizeUniqueCountSources(nextUniqueCountConfig));
+
     await this.outputControlsValidator.validateForReport({
       storageType: report.dataMart.storage.type,
       dataMartId: report.dataMart.id,
@@ -128,8 +141,12 @@ export class UpdateReportService {
       limitConfig: command.limitConfig ?? null,
       aggregationConfig: command.aggregationConfig ?? null,
       dateTruncConfig: command.dateTruncConfig ?? null,
-      uniqueCountConfig: command.uniqueCountConfig ?? null,
+      uniqueCountConfig: nextUniqueCountConfig,
       accessor: { userId: command.userId, roles: command.roles },
+      // Only a CHANGED selection is a fresh assertion by the caller. Re-sending the stored one —
+      // what MCP update_report and every GET→PUT client do — must not turn a source going stale
+      // into a permanent 400 on renaming the report.
+      rejectUnavailableUniqueCountSources: uniqueCountChanged,
     });
 
     // Column order is part of the report output, so a serialized compare is intentional —
@@ -160,10 +177,6 @@ export class UpdateReportService {
     const nextDateTruncConfig = command.dateTruncConfig ?? null;
     const dateTruncChanged =
       JSON.stringify(previousDateTruncConfig) !== JSON.stringify(nextDateTruncConfig);
-
-    const previousUniqueCountConfig = report.uniqueCountConfig ?? null;
-    const nextUniqueCountConfig = command.uniqueCountConfig ?? null;
-    const uniqueCountChanged = previousUniqueCountConfig !== nextUniqueCountConfig;
 
     report.title = command.title;
     report.dataDestination = dataDestination;

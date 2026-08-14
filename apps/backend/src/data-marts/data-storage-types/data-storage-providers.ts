@@ -187,7 +187,7 @@ const queryBuilderProviders = [
   RedshiftQueryBuilder,
   DatabricksQueryBuilder,
 ];
-const validatorProviders = [
+export const validatorProviders = [
   BigQueryDataMartValidator,
   LegacyBigQueryDataMartValidator,
   AthenaDataMartValidator,

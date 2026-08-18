@@ -55,6 +55,7 @@ describe('RelationshipMapper', () => {
         targetDataMartId: 'target-dm-2',
         targetAlias: 'orders',
         joinConditions: [{ sourceFieldName: 'user_id', targetFieldName: 'user_id' }],
+        description: 'Each user has orders they placed',
       };
 
       const command = mapper.toCreateCommand('source-dm-1', mockContext, dto);
@@ -67,6 +68,7 @@ describe('RelationshipMapper', () => {
       expect(command.joinConditions).toEqual([
         { sourceFieldName: 'user_id', targetFieldName: 'user_id' },
       ]);
+      expect(command.description).toBe('Each user has orders they placed');
     });
   });
 
@@ -75,6 +77,7 @@ describe('RelationshipMapper', () => {
       const dto: UpdateRelationshipRequestApiDto = {
         targetAlias: 'new_alias',
         joinConditions: [{ sourceFieldName: 'id', targetFieldName: 'id' }],
+        description: 'Each user has orders they placed',
       };
 
       const command = mapper.toUpdateCommand('rel-1', 'source-dm-1', mockContext, dto);
@@ -85,6 +88,7 @@ describe('RelationshipMapper', () => {
       expect(command.projectId).toBe('project-456');
       expect(command.targetAlias).toBe('new_alias');
       expect(command.joinConditions).toEqual([{ sourceFieldName: 'id', targetFieldName: 'id' }]);
+      expect(command.description).toBe('Each user has orders they placed');
     });
 
     it('should produce undefined for optional fields when not provided', () => {
@@ -94,6 +98,15 @@ describe('RelationshipMapper', () => {
 
       expect(command.targetAlias).toBeUndefined();
       expect(command.joinConditions).toBeUndefined();
+      expect(command.description).toBeUndefined();
+    });
+
+    it('should pass null description through so the update can clear it', () => {
+      const dto: UpdateRelationshipRequestApiDto = { description: null };
+
+      const command = mapper.toUpdateCommand('rel-1', 'source-dm-1', mockContext, dto);
+
+      expect(command.description).toBeNull();
     });
   });
 
@@ -120,6 +133,15 @@ describe('RelationshipMapper', () => {
       expect(dto.createdAt).toEqual(new Date('2024-01-01T00:00:00.000Z'));
       expect(dto.modifiedAt).toEqual(new Date('2024-01-02T00:00:00.000Z'));
       expect(dto.createdByUser).toBeNull();
+      expect(dto.description).toBeUndefined();
+    });
+
+    it('should carry the relationship description when set', () => {
+      const entity = { ...mockEntity, description: 'Each user has orders they placed' };
+
+      const dto = mapper.toDomainDto(entity, null, fullAccess);
+
+      expect(dto.description).toBe('Each user has orders they placed');
     });
 
     it('falls back to userHasAccess=false when access map lacks the data mart id', () => {
@@ -369,6 +391,33 @@ describe('CreateRelationshipRequestApiDto validation', () => {
     const errors = await validate(dto);
     expect(errors).toHaveLength(0);
   });
+
+  it('accepts an omitted description and a string description', async () => {
+    const base = {
+      targetDataMartId: 'target-dm-1',
+      targetAlias: 'orders',
+      joinConditions: [],
+    };
+
+    expect(await validate(plainToInstance(CreateRelationshipRequestApiDto, base))).toHaveLength(0);
+    expect(
+      await validate(
+        plainToInstance(CreateRelationshipRequestApiDto, { ...base, description: 'Buyers' })
+      )
+    ).toHaveLength(0);
+  });
+
+  it('rejects an explicit null description — create has no "clear" semantics to opt into', async () => {
+    const dto = plainToInstance(CreateRelationshipRequestApiDto, {
+      targetDataMartId: 'target-dm-1',
+      targetAlias: 'orders',
+      joinConditions: [],
+      description: null,
+    });
+
+    const errors = await validate(dto);
+    expect(errors.find(e => e.property === 'description')).toBeDefined();
+  });
 });
 
 describe('UpdateRelationshipRequestApiDto validation', () => {
@@ -402,5 +451,21 @@ describe('UpdateRelationshipRequestApiDto validation', () => {
 
     const errors = await validate(dto);
     expect(errors).toHaveLength(0);
+  });
+
+  // Pins the null-clear contract: @IsOptional() skips validation for null, which is exactly
+  // what the update DTO relies on — losing that would break the UI's "clear description" PATCH.
+  it('accepts description as a string, as null (clear), and omitted', async () => {
+    for (const payload of [{ description: 'Buyers' }, { description: null }, {}]) {
+      const errors = await validate(plainToInstance(UpdateRelationshipRequestApiDto, payload));
+      expect(errors).toHaveLength(0);
+    }
+  });
+
+  it('rejects a non-string description', async () => {
+    const dto = plainToInstance(UpdateRelationshipRequestApiDto, { description: 42 });
+
+    const errors = await validate(dto);
+    expect(errors.find(e => e.property === 'description')).toBeDefined();
   });
 });

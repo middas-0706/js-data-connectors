@@ -38,10 +38,12 @@ import { InsightTemplateController } from './controllers/insight-template.contro
 import { ScheduledTriggerController } from './controllers/scheduled-trigger.controller';
 import { SyncDataMartsByGcpTrigger } from './entities/legacy-data-marts/sync-data-marts-by-gcp-trigger.entity';
 import { SyncGcpStoragesForProjectTrigger } from './entities/legacy-data-marts/sync-gcp-storages-for-project-trigger.entity';
-import { ConsumptionTrackingService } from './services/consumption-tracking.service';
+import { InternalProjectBillingService } from './services/project-billing/internal-project-billing.service';
+import { LicenseProjectBillingService } from './services/project-billing/license-project-billing.service';
+import { RestrictedProjectBillingService } from './services/project-billing/restricted-project-billing.service';
+import { projectBillingProvider } from './services/project-billing/project-billing.providers';
 import { SyncDataMartsByGcpTriggerHandler } from './services/legacy-data-marts/sync-data-marts-by-gcp-trigger.handler';
 import { SyncGcpStoragesForProjectTriggerHandler } from './services/legacy-data-marts/sync-gcp-storages-for-project-trigger.handler';
-import { ProjectBalanceService } from './services/project-balance.service';
 import { LegacyDataMartsService } from './services/legacy-data-marts/legacy-data-marts.service';
 import { ReportDataCacheService } from './services/report-data-cache.service';
 import { UserProjectionsFetcherService } from './services/user-projections-fetcher.service';
@@ -763,8 +765,10 @@ import { PluginEntityAuthorizationFacadeImpl } from './facades/plugin-entity-aut
     ConnectorOutputCaptureService,
     ConnectorMessageParserService,
     ConnectorStateService,
-    ConsumptionTrackingService,
-    ProjectBalanceService,
+    InternalProjectBillingService,
+    LicenseProjectBillingService,
+    RestrictedProjectBillingService,
+    projectBillingProvider,
     LegacyDataMartsService,
     LegacyDataStorageService,
     LegacySyncTriggersService,
@@ -908,6 +912,8 @@ import { PluginEntityAuthorizationFacadeImpl } from './facades/plugin-entity-aut
   ],
   exports: [
     PLUGIN_ENTITY_AUTHORIZATION_FACADE,
+    InternalProjectBillingService,
+    UserProjectionsFetcherService,
     MCP_DATA_MARTS_FACADE,
     MCP_DATA_DESTINATIONS_FACADE,
     MCP_REPORTS_FACADE,

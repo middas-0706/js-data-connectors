@@ -113,14 +113,8 @@ test.describe('Reports - Looker Studio Pattern (Card UI)', () => {
 // Reports - Email Pattern (Table UI)
 // EmailReportsTable renders reports in a table with action cells.
 // EmailActionsCell provides Run, Edit (via dropdown), Delete (via dropdown).
-// Enterprise edition only — requires LICENSE_KEY.
 // ---------------------------------------------------------------------------
 test.describe('Reports - Email Pattern (Table UI)', () => {
-  test.skip(
-    !process.env.LICENSE_KEY,
-    'Skipping: EMAIL destination requires LICENSE_KEY (Enterprise edition)'
-  );
-
   let datamartId: string;
   let destTitle: string;
   let destId: string;
@@ -143,7 +137,10 @@ test.describe('Reports - Email Pattern (Table UI)', () => {
     await expect(card).toBeVisible();
 
     // Click Add Report button within the card
-    await card.getByTestId(TESTIDS.reportCreateButton).click();
+    await card
+      .getByRole('table', { name: destTitle })
+      .getByTestId(TESTIDS.reportCreateButton)
+      .click();
 
     // Email report edit sheet opens (SheetContent without reportEditSheet testid)
     // Wait for the sheet to be visible
@@ -279,13 +276,9 @@ test.describe('Reports - Email Pattern (Table UI)', () => {
 // ---------------------------------------------------------------------------
 // RPT-02: Report list renders with correct names and count.
 // Uses EMAIL destination where titles are preserved (not overridden like
-// LOOKER_STUDIO @BeforeInsert). Enterprise edition only.
+// LOOKER_STUDIO @BeforeInsert). Report configuration remains available in Community.
 // ---------------------------------------------------------------------------
 test.describe('Reports - List Rendering', () => {
-  test.skip(
-    !process.env.LICENSE_KEY,
-    'Skipping: EMAIL destination requires LICENSE_KEY (Enterprise edition)'
-  );
   test('renders report list with correct names and count (RPT-02)', async ({
     page,
     apiHelpers,
@@ -350,13 +343,9 @@ test.describe('Reports - List Rendering', () => {
 // RPT-05: Fire-and-forget report run with Run History verification.
 // Uses EMAIL destination + report because EmailActionsCell has a Run button.
 // LOOKER_STUDIO reports don't have an explicit Run action in the UI.
-// Enterprise edition only.
+// Without a license the run finishes RESTRICTED but still lands in Run History.
 // ---------------------------------------------------------------------------
 test.describe('Reports - Fire and Forget Run', () => {
-  test.skip(
-    !process.env.LICENSE_KEY,
-    'Skipping: EMAIL destination requires LICENSE_KEY (Enterprise edition)'
-  );
   test('triggers report run and verifies in Run History (RPT-05)', async ({ page, apiHelpers }) => {
     const { datamart } = await apiHelpers.createPublishedConnectorDataMart();
     const datamartId = datamart.id;
@@ -407,7 +396,11 @@ test.describe('Reports - Fire and Forget Run', () => {
     const runContainer = page.getByTestId(TESTIDS.runHistoryTable);
     await expect(runContainer).toBeVisible({ timeout: 15000 });
 
-    // Verify at least one run entry appeared
-    await expect(runContainer.locator('.dm-card-block').first()).toBeVisible({ timeout: 15000 });
+    // Verify the unlicensed production app records the run as restricted.
+    const firstRun = runContainer.locator('.dm-card-block').first();
+    await expect(firstRun).toBeVisible({ timeout: 15000 });
+    await expect(firstRun.getByText('Restricted', { exact: true })).toBeVisible({
+      timeout: 15000,
+    });
   });
 });

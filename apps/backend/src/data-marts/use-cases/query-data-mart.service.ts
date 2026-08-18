@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { TypeResolver } from '../../common/resolver/type-resolver';
+import { ProjectOperationBlockedException } from '../../common/exceptions/project-operation-blocked.exception';
 import { DATA_STORAGE_REPORT_READER_RESOLVER } from '../data-storage-types/data-storage-providers';
 import { DataStorageType } from '../data-storage-types/enums/data-storage-type.enum';
 import { DataStorageReportReader } from '../data-storage-types/interfaces/data-storage-report-reader.interface';
@@ -22,8 +23,10 @@ import { ReportTotalsService } from '../services/report-totals.service';
 import { SourceDataLastUpdatedService } from '../services/source-data-last-updated.service';
 import { unavailableSourceDataLastUpdated } from '../dto/schemas/source-data-last-updated.schema';
 import { DataMartRunService } from '../services/data-mart-run.service';
-import { ProjectBalanceService } from '../services/project-balance.service';
-import { ConsumptionTrackingService } from '../services/consumption-tracking.service';
+import {
+  ProjectBillingService,
+  RunKind,
+} from '../services/project-billing/project-billing.service';
 import {
   McpQueryDataMartRequest,
   McpQueryDataMartResponse,
@@ -68,8 +71,7 @@ export class QueryDataMartService {
     private readonly sourceDataLastUpdatedService: SourceDataLastUpdatedService,
     private readonly dataMartRunService: DataMartRunService,
     private readonly accessDecisionService: AccessDecisionService,
-    private readonly projectBalanceService: ProjectBalanceService,
-    private readonly consumptionTrackingService: ConsumptionTrackingService,
+    private readonly projectBillingService: ProjectBillingService,
     @Optional() private readonly queryDeadlineMs: number = DEFAULT_QUERY_DEADLINE_MS,
     @Optional()
     private readonly dataLastUpdatedGraceMs: number = DEFAULT_DATA_LAST_UPDATED_GRACE_MS
@@ -129,7 +131,52 @@ export class QueryDataMartService {
       throw new NotFoundException(`Data Mart not found`);
     }
 
-    await this.projectBalanceService.verifyCanPerformOperations(r.projectId);
+    const runId = randomUUID();
+    const startedAt = new Date();
+    const queryMetadata = {
+      // `fields` no longer names the Unique Count the caller asked for — the tool splits that
+      // pseudo-field out into `uniqueCountConfig` before calling. Journal both, or Run History
+      // shows a run whose extra column came from nowhere.
+      fields: r.fields,
+      ...(r.filterConfig ? { filters: r.filterConfig } : {}),
+      ...(r.sortConfig ? { sort: r.sortConfig } : {}),
+      ...(r.aggregationConfig ? { aggregations: r.aggregationConfig } : {}),
+      ...(r.dateTruncConfig ? { dateBuckets: r.dateTruncConfig } : {}),
+      ...(r.uniqueCountConfig?.length ? { uniqueCountConfig: r.uniqueCountConfig } : {}),
+      limit: r.limit,
+    };
+
+    try {
+      await this.projectBillingService.verifyCanPerformOperations(
+        r.projectId,
+        RunKind.MCP_QUERY_RUN
+      );
+    } catch (error) {
+      try {
+        await this.dataMartRunService.recordMcpQueryRun({
+          runId,
+          dataMart,
+          createdById: r.userId,
+          startedAt,
+          status:
+            error instanceof ProjectOperationBlockedException
+              ? DataMartRunStatus.RESTRICTED
+              : DataMartRunStatus.FAILED,
+          metadata: {
+            columns: [],
+            rowCount: 0,
+            truncated: false,
+            query: queryMetadata,
+          },
+          errors: [error instanceof Error ? error.message : String(error)],
+        });
+      } catch (auditError) {
+        this.logger.warn(
+          `Failed to record rejected MCP Query run ${runId}: ${auditError instanceof Error ? auditError.message : String(auditError)}`
+        );
+      }
+      throw error;
+    }
 
     const accessor: BlendableSchemaAccessor = { userId: r.userId, roles: r.roles };
 
@@ -144,22 +191,6 @@ export class QueryDataMartService {
       dateTruncConfig: r.dateTruncConfig ?? null,
       uniqueCountConfig: r.uniqueCountConfig ?? null,
       limitConfig: overReadLimit,
-    };
-
-    const runId = randomUUID();
-    const startedAt = new Date();
-
-    const queryMetadata = {
-      // `fields` no longer names the Unique Count the caller asked for — the tool splits that
-      // pseudo-field out into `uniqueCountConfig` before calling. Journal both, or Run History
-      // shows a run whose extra column came from nowhere.
-      fields: r.fields,
-      ...(r.filterConfig ? { filters: r.filterConfig } : {}),
-      ...(r.sortConfig ? { sort: r.sortConfig } : {}),
-      ...(r.aggregationConfig ? { aggregations: r.aggregationConfig } : {}),
-      ...(r.dateTruncConfig ? { dateBuckets: r.dateTruncConfig } : {}),
-      ...(r.uniqueCountConfig?.length ? { uniqueCountConfig: r.uniqueCountConfig } : {}),
-      limit: r.limit,
     };
 
     let executionSqlQuery: string | undefined;
@@ -378,7 +409,7 @@ export class QueryDataMartService {
       // Never bill a run with no audit record — that charge would resolve to nothing (untraceable).
       if (runRecorded) {
         try {
-          await this.consumptionTrackingService.registerMcpQueryRunConsumption(dataMart, runId);
+          await this.projectBillingService.registerMcpQueryRunConsumption(dataMart, runId);
         } catch (consumptionErr) {
           this.logger.warn(
             `Failed to register MCP Query run consumption ${runId}: ${consumptionErr instanceof Error ? consumptionErr.message : String(consumptionErr)}`

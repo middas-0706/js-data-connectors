@@ -22,6 +22,10 @@ import { DataDestination } from '../entities/data-destination.entity';
 import { Report } from '../entities/report.entity';
 import { DataMartRunStatus } from '../enums/data-mart-run-status.enum';
 import { DataMartRunType } from '../enums/data-mart-run-type.enum';
+import { ProjectBlockedReason } from '../enums/project-blocked-reason.enum';
+import { ProjectOperationBlockedException } from '../../common/exceptions/project-operation-blocked.exception';
+import { ReportRunStatus } from '../enums/report-run-status.enum';
+import { RunKind } from '../services/project-billing/project-billing.service';
 import { ReportExecutionPolicyResolver } from './report-execution-policy.resolver';
 import { RunReportService } from './run-report.service';
 import { RunType } from '../../common/scheduler/shared/types';
@@ -42,9 +46,6 @@ describe('RunReportService', () => {
     };
     const reportWriterResolver = {
       resolve: jest.fn(),
-    };
-    const projectBalanceService = {
-      verifyCanPerformOperations: jest.fn().mockResolvedValue(undefined),
     };
     const blendedReportDataService = {
       // Default: no columnConfig -> no blending, no filter.
@@ -70,9 +71,6 @@ describe('RunReportService', () => {
         sources: [],
       }),
     };
-    const availableDestinationTypesService = {
-      verifyIsAllowed: jest.fn(),
-    };
     const reportRunService = {
       createPending: jest.fn(),
       loadByDataMartRunId: jest.fn(),
@@ -94,9 +92,13 @@ describe('RunReportService', () => {
     const systemTimeService = {
       now: jest.fn().mockReturnValue(new Date('2026-06-01T10:00:00.000Z')),
     };
-    const consumptionTrackingService = {
+    const projectBilling = {
+      verifyCanPerformOperations: jest.fn().mockResolvedValue(undefined),
       registerSheetsReportRunConsumption: jest.fn().mockResolvedValue(undefined),
       registerEmailBasedReportRunConsumption: jest.fn().mockResolvedValue(undefined),
+    };
+    const idpProjectionsFacade = {
+      getProjectMemberOrThrow: jest.fn().mockResolvedValue({ role: 'admin' }),
     };
 
     const reportSqlComposerService = {
@@ -111,15 +113,13 @@ describe('RunReportService', () => {
       gracefulShutdownService as never,
       systemTimeService as never,
       reportRunService as never,
-      availableDestinationTypesService as never,
-      projectBalanceService as never,
+      projectBilling as never,
       new ReportExecutionPolicyResolver(),
       reportRunTriggerService as never,
       reportAccessService as never,
       blendedReportDataService as never,
       reportSqlComposerService as never,
-      { getProjectMemberOrThrow: jest.fn().mockResolvedValue({ role: 'admin' }) } as never,
-      consumptionTrackingService as never,
+      idpProjectionsFacade as never,
       sourceDataLastUpdatedService as never
     );
 
@@ -127,16 +127,15 @@ describe('RunReportService', () => {
       service,
       reportReaderResolver,
       reportWriterResolver,
-      projectBalanceService,
+      projectBilling,
+      idpProjectionsFacade,
       blendedReportDataService,
       dataMartService,
       sourceDataLastUpdatedService,
-      availableDestinationTypesService,
       reportRunService,
       reportRunTriggerService,
       reportAccessService,
       gracefulShutdownService,
-      consumptionTrackingService,
       reportSqlComposerService,
     };
   };
@@ -192,8 +191,7 @@ describe('RunReportService', () => {
   });
 
   it('limits email-based report reads to 101 rows and truncates overflowing batch', async () => {
-    const { service, reportReaderResolver, reportWriterResolver, projectBalanceService } =
-      createService();
+    const { service, reportReaderResolver, reportWriterResolver } = createService();
     const report = createReport(DataDestinationType.EMAIL);
     const reader = createReader();
     const writer = createWriter(DataDestinationType.EMAIL);
@@ -224,7 +222,6 @@ describe('RunReportService', () => {
       }
     ).executeReport(report, { userId: 'user-1', roles: ['admin'] });
 
-    expect(projectBalanceService.verifyCanPerformOperations).toHaveBeenCalledWith('project-1');
     expect(reader.readReportDataBatch).toHaveBeenNthCalledWith(1, undefined, 101);
     expect(reader.readReportDataBatch).toHaveBeenNthCalledWith(2, 'b2', 31);
     expect(reader.readReportDataBatch).toHaveBeenCalledTimes(2);
@@ -288,7 +285,9 @@ describe('RunReportService', () => {
       reportReaderResolver,
       reportWriterResolver,
       reportRunService,
-      consumptionTrackingService,
+      projectBilling,
+      idpProjectionsFacade,
+      dataMartService,
     } = createService();
     const report = createReport(DataDestinationType.GOOGLE_SHEETS);
     const reader = createReader();
@@ -311,15 +310,28 @@ describe('RunReportService', () => {
     await service.executeExistingRun('data-mart-run-1', 'project-1', 'user-1');
 
     expect(reportRunService.finish).toHaveBeenCalled();
-    expect(consumptionTrackingService.registerSheetsReportRunConsumption).toHaveBeenCalledWith(
-      report,
-      {
-        googleSheetsDocumentTitle: 'Test Spreadsheet',
-        googleSheetsListTitle: 'Sheet1',
-      }
+    expect(projectBilling.verifyCanPerformOperations).toHaveBeenCalledWith(
+      'project-1',
+      RunKind.SHEETS_REPORT_RUN
     );
+    expect(projectBilling.verifyCanPerformOperations.mock.invocationCallOrder[0]).toBeLessThan(
+      reportReaderResolver.resolve.mock.invocationCallOrder[0]
+    );
+    expect(projectBilling.verifyCanPerformOperations.mock.invocationCallOrder[0]).toBeLessThan(
+      idpProjectionsFacade.getProjectMemberOrThrow.mock.invocationCallOrder[0]
+    );
+    expect(projectBilling.verifyCanPerformOperations.mock.invocationCallOrder[0]).toBeLessThan(
+      dataMartService.actualizeSchemaInEntity.mock.invocationCallOrder[0]
+    );
+    expect(projectBilling.verifyCanPerformOperations.mock.invocationCallOrder[0]).toBeLessThan(
+      reportRunService.markAsStarted.mock.invocationCallOrder[0]
+    );
+    expect(projectBilling.registerSheetsReportRunConsumption).toHaveBeenCalledWith(report, {
+      googleSheetsDocumentTitle: 'Test Spreadsheet',
+      googleSheetsListTitle: 'Sheet1',
+    });
     expect(reportRunService.finish.mock.invocationCallOrder[0]).toBeLessThan(
-      consumptionTrackingService.registerSheetsReportRunConsumption.mock.invocationCallOrder[0]
+      projectBilling.registerSheetsReportRunConsumption.mock.invocationCallOrder[0]
     );
   });
 
@@ -336,7 +348,7 @@ describe('RunReportService', () => {
         reportReaderResolver,
         reportWriterResolver,
         reportRunService,
-        consumptionTrackingService,
+        projectBilling,
       } = createService();
       const report = createReport(destinationType);
       const reader = createReader();
@@ -351,12 +363,9 @@ describe('RunReportService', () => {
       await service.executeExistingRun('data-mart-run-1', 'project-1', 'user-1');
 
       expect(reportRunService.finish).toHaveBeenCalled();
-      expect(
-        consumptionTrackingService.registerEmailBasedReportRunConsumption
-      ).toHaveBeenCalledWith(report);
+      expect(projectBilling.registerEmailBasedReportRunConsumption).toHaveBeenCalledWith(report);
       expect(reportRunService.finish.mock.invocationCallOrder[0]).toBeLessThan(
-        consumptionTrackingService.registerEmailBasedReportRunConsumption.mock
-          .invocationCallOrder[0]
+        projectBilling.registerEmailBasedReportRunConsumption.mock.invocationCallOrder[0]
       );
     }
   );
@@ -375,7 +384,7 @@ describe('RunReportService', () => {
         reportReaderResolver,
         reportWriterResolver,
         reportRunService,
-        consumptionTrackingService,
+        projectBilling,
       } = createService();
       const report = createReport(destinationType);
       const reader = createReader();
@@ -392,14 +401,13 @@ describe('RunReportService', () => {
             },
           },
         });
-        consumptionTrackingService.registerSheetsReportRunConsumption.mockRejectedValueOnce(
-          new Error('pubsub unavailable')
-        );
-      } else {
-        consumptionTrackingService.registerEmailBasedReportRunConsumption.mockRejectedValueOnce(
-          new Error('pubsub unavailable')
-        );
       }
+      projectBilling.registerSheetsReportRunConsumption.mockRejectedValueOnce(
+        new Error('pubsub unavailable')
+      );
+      projectBilling.registerEmailBasedReportRunConsumption.mockRejectedValueOnce(
+        new Error('pubsub unavailable')
+      );
       reportReaderResolver.resolve.mockResolvedValue(reader);
       reportWriterResolver.resolve.mockResolvedValue(writer);
       reportRunService.loadByDataMartRunId.mockResolvedValue(reportRun);
@@ -407,14 +415,41 @@ describe('RunReportService', () => {
       await service.executeExistingRun('data-mart-run-1', 'project-1', 'user-1');
 
       expect(reportRunService.finish).toHaveBeenCalled();
-      if (destinationType === DataDestinationType.GOOGLE_SHEETS) {
-        expect(consumptionTrackingService.registerSheetsReportRunConsumption).toHaveBeenCalled();
-      } else {
-        expect(
-          consumptionTrackingService.registerEmailBasedReportRunConsumption
-        ).toHaveBeenCalledWith(report);
-      }
+      const consumptionMock =
+        destinationType === DataDestinationType.GOOGLE_SHEETS
+          ? projectBilling.registerSheetsReportRunConsumption
+          : projectBilling.registerEmailBasedReportRunConsumption;
+      expect(consumptionMock).toHaveBeenCalled();
       expect(reportRun.getDataMartRun().status).toBe(DataMartRunStatus.SUCCESS);
+    }
+  );
+
+  it.each([
+    [DataDestinationType.GOOGLE_SHEETS, RunKind.SHEETS_REPORT_RUN],
+    [DataDestinationType.EMAIL, RunKind.EMAIL_BASED_REPORT_RUN],
+    [DataDestinationType.SLACK, RunKind.EMAIL_BASED_REPORT_RUN],
+  ])(
+    'finishes a %s run as RESTRICTED when billing blocks the %s kind',
+    async (destinationType, runKind) => {
+      const { service, reportReaderResolver, reportRunService, projectBilling } = createService();
+      const report = createReport(destinationType);
+      const reportRun = ReportRun.create(report, createDataMartRun(report));
+
+      projectBilling.verifyCanPerformOperations.mockRejectedValue(
+        new ProjectOperationBlockedException([ProjectBlockedReason.LICENSE_REQUIRED])
+      );
+      reportRunService.loadByDataMartRunId.mockResolvedValue(reportRun);
+
+      await service.executeExistingRun('data-mart-run-1', 'project-1', 'user-1');
+
+      expect(projectBilling.verifyCanPerformOperations).toHaveBeenCalledWith('project-1', runKind);
+      expect(reportReaderResolver.resolve).not.toHaveBeenCalled();
+      expect(report.lastRunStatus).toBe(ReportRunStatus.RESTRICTED);
+      expect(reportRun.getDataMartRun().status).toBe(DataMartRunStatus.RESTRICTED);
+      expect(reportRun.getDataMartRun().errors).toEqual([
+        expect.stringContaining('https://app.owox.com'),
+      ]);
+      expect(reportRunService.finish).toHaveBeenCalled();
     }
   );
 
@@ -424,7 +459,7 @@ describe('RunReportService', () => {
       reportReaderResolver,
       reportWriterResolver,
       reportRunService,
-      consumptionTrackingService,
+      projectBilling,
     } = createService();
     const report = createReport(DataDestinationType.GOOGLE_SHEETS);
     const reader = createReader();
@@ -439,7 +474,7 @@ describe('RunReportService', () => {
     await service.executeExistingRun('data-mart-run-1', 'project-1', 'user-1');
 
     expect(reportRunService.finish).toHaveBeenCalled();
-    expect(consumptionTrackingService.registerSheetsReportRunConsumption).not.toHaveBeenCalled();
+    expect(projectBilling.registerSheetsReportRunConsumption).not.toHaveBeenCalled();
     expect(reportRun.getDataMartRun().status).toBe(DataMartRunStatus.SUCCESS);
   });
 
@@ -449,7 +484,7 @@ describe('RunReportService', () => {
       reportReaderResolver,
       reportWriterResolver,
       reportRunService,
-      consumptionTrackingService,
+      projectBilling,
     } = createService();
     const report = createReport(DataDestinationType.GOOGLE_SHEETS);
     const reader = createReader();
@@ -475,7 +510,7 @@ describe('RunReportService', () => {
     expect(writer.finalize).toHaveBeenCalled();
     expect(reader.finalize).toHaveBeenCalled();
     expect(reportRun.getDataMartRun().status).toBe(DataMartRunStatus.FAILED);
-    expect(consumptionTrackingService.registerSheetsReportRunConsumption).not.toHaveBeenCalled();
+    expect(projectBilling.registerSheetsReportRunConsumption).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -492,7 +527,7 @@ describe('RunReportService', () => {
         reportReaderResolver,
         reportWriterResolver,
         reportRunService,
-        consumptionTrackingService,
+        projectBilling,
       } = createService();
       const report = createReport(destinationType);
       const reader = createReader();
@@ -518,15 +553,8 @@ describe('RunReportService', () => {
       await service.executeExistingRun('data-mart-run-1', 'project-1', 'user-1');
 
       expect(reportRunService.finish).toHaveBeenCalled();
-      if (destinationType === DataDestinationType.GOOGLE_SHEETS) {
-        expect(
-          consumptionTrackingService.registerSheetsReportRunConsumption
-        ).not.toHaveBeenCalled();
-      } else {
-        expect(
-          consumptionTrackingService.registerEmailBasedReportRunConsumption
-        ).not.toHaveBeenCalled();
-      }
+      expect(projectBilling.registerSheetsReportRunConsumption).not.toHaveBeenCalled();
+      expect(projectBilling.registerEmailBasedReportRunConsumption).not.toHaveBeenCalled();
     }
   );
 

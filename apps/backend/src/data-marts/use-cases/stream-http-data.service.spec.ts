@@ -9,7 +9,7 @@ import {
 import type { Response } from 'express';
 import { DataDestinationType } from '../data-destination-types/enums/data-destination-type.enum';
 import { usesSuffixedJoinedFieldNames } from '../dto/domain/report-like-read-plan';
-import { BusinessViolationException } from '../../common/exceptions/business-violation.exception';
+import { ProjectOperationBlockedException } from '../../common/exceptions/project-operation-blocked.exception';
 import { GracefulShutdownService } from '../../common/scheduler/services/graceful-shutdown.service';
 import { SystemTimeService } from '../../common/scheduler/services/system-time.service';
 import { TypeResolver } from '../../common/resolver/type-resolver';
@@ -23,13 +23,13 @@ import { StreamHttpDataCommand } from '../dto/domain/stream-http-data.command';
 import { DataMart } from '../entities/data-mart.entity';
 import { DataMartStatus } from '../enums/data-mart-status.enum';
 import { DataMartRunStatus } from '../enums/data-mart-run-status.enum';
+import { ProjectBlockedReason } from '../enums/project-blocked-reason.enum';
 import { AccessDecisionService } from '../services/access-decision/access-decision.service';
 import { BlendableSchemaService } from '../services/blendable-schema.service';
 import { BlendedReportDataService } from '../services/blended-report-data.service';
-import { ConsumptionTrackingService } from '../services/consumption-tracking.service';
 import { DataMartRunService } from '../services/data-mart-run.service';
 import { DataMartService } from '../services/data-mart.service';
-import { ProjectBalanceService } from '../services/project-balance.service';
+import { ProjectBillingService } from '../services/project-billing/project-billing.service';
 import { ReportSqlComposerService } from '../services/report-sql-composer.service';
 import { ReportService } from '../services/report.service';
 import { ReportTotalsService } from '../services/report-totals.service';
@@ -183,8 +183,7 @@ describe('StreamHttpDataService', () => {
   let blendableSchema: jest.Mocked<BlendableSchemaService>;
   let blended: jest.Mocked<BlendedReportDataService>;
   let sqlComposer: jest.Mocked<ReportSqlComposerService>;
-  let balance: jest.Mocked<ProjectBalanceService>;
-  let consumption: jest.Mocked<ConsumptionTrackingService>;
+  let projectBilling: jest.Mocked<ProjectBillingService>;
   let gracefulShutdown: jest.Mocked<GracefulShutdownService>;
   let systemTime: jest.Mocked<SystemTimeService>;
   let reader: jest.Mocked<DataStorageReportReader>;
@@ -282,13 +281,10 @@ describe('StreamHttpDataService', () => {
       () => "SELECT * FROM t WHERE date >= DATE '2026-01-01'"
     ) as never;
 
-    balance = {
-      verifyCanPerformOperations: jest.fn(async () => undefined),
-    } as unknown as jest.Mocked<ProjectBalanceService>;
-
-    consumption = {
+    projectBilling = {
+      verifyCanPerformOperations: jest.fn(async request => request),
       registerHttpDataRunConsumption: jest.fn(async () => undefined),
-    } as unknown as jest.Mocked<ConsumptionTrackingService>;
+    } as unknown as jest.Mocked<ProjectBillingService>;
 
     reader = {
       prepareReportData: jest.fn(
@@ -356,8 +352,7 @@ describe('StreamHttpDataService', () => {
       blendableSchema,
       blended,
       sqlComposer,
-      balance,
-      consumption,
+      projectBilling,
       gracefulShutdown,
       systemTime,
       readerResolver,
@@ -384,7 +379,7 @@ describe('StreamHttpDataService', () => {
         metadata: expect.objectContaining({ rowCount: 2, completed: true }),
       })
     );
-    expect(consumption.registerHttpDataRunConsumption).toHaveBeenCalled();
+    expect(projectBilling.registerHttpDataRunConsumption).toHaveBeenCalled();
     expect(reader.finalize).toHaveBeenCalled();
   });
 
@@ -550,7 +545,12 @@ describe('StreamHttpDataService', () => {
     expect(errorMapper.toStorageReadError).toHaveBeenCalledWith(expect.any(Error), {
       force: true,
     });
-    expect(dataMartRunService.recordHttpDataRun).not.toHaveBeenCalled();
+    expect(dataMartRunService.recordHttpDataRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: DataMartRunStatus.FAILED,
+        metadata: expect.objectContaining({ completed: false, format: 'ndjson' }),
+      })
+    );
   });
 
   it('defers the 200 response until the first batch read succeeds', async () => {
@@ -614,11 +614,11 @@ describe('StreamHttpDataService', () => {
     expect(dataMartRunService.recordHttpDataRun).toHaveBeenCalledWith(
       expect.objectContaining({ status: DataMartRunStatus.SUCCESS })
     );
-    expect(consumption.registerHttpDataRunConsumption).not.toHaveBeenCalled();
+    expect(projectBilling.registerHttpDataRunConsumption).not.toHaveBeenCalled();
   });
 
   it('still resolves when consumption tracking throws after a SUCCESS run', async () => {
-    consumption.registerHttpDataRunConsumption.mockRejectedValueOnce(new Error('pubsub down'));
+    projectBilling.registerHttpDataRunConsumption.mockRejectedValueOnce(new Error('pubsub down'));
     const res = mockResponse();
 
     await expect(service.stream(fakeCommand(), res)).resolves.toBeUndefined();
@@ -1174,19 +1174,43 @@ describe('StreamHttpDataService', () => {
       expect(readerResolver.resolve).not.toHaveBeenCalled();
     });
 
-    it('records no run when the project balance gate rejects', async () => {
-      // baseMetadata is seeded right after verifyCanPerformOperations (see executeStream), so a
-      // rejection here happens BEFORE the seed — unlike every execution-phase failure (config
-      // drift, missing blended SQL, storage errors), this records no run at all.
-      balance.verifyCanPerformOperations.mockRejectedValueOnce(
-        new BusinessViolationException('Project balance is insufficient to run this operation')
+    it('records a RESTRICTED run before schema work when authorization denies the project', async () => {
+      projectBilling.verifyCanPerformOperations.mockRejectedValueOnce(
+        new ProjectOperationBlockedException([ProjectBlockedReason.OVERDRAFT_LIMIT_EXCEEDED])
+      );
+
+      await expect(
+        service.streamReport(fakeReportCommand(), mockResponse())
+      ).rejects.toBeInstanceOf(ProjectOperationBlockedException);
+
+      expect(dataMartRunService.recordHttpDataRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: DataMartRunStatus.RESTRICTED,
+          reportId: 'report-1',
+          metadata: expect.objectContaining({ completed: false, format: 'ndjson' }),
+        })
+      );
+      expect(dataMartService.actualizeSchemaInEntityIfExpired).not.toHaveBeenCalled();
+      expect(blended.resolveBlendingDecision).not.toHaveBeenCalled();
+      expect(readerResolver.resolve).not.toHaveBeenCalled();
+    });
+
+    it('records a FAILED run when the authorization service is unavailable', async () => {
+      projectBilling.verifyCanPerformOperations.mockRejectedValueOnce(
+        new ServiceUnavailableException('License authorization is unavailable')
       );
 
       await expect(service.streamReport(fakeReportCommand(), mockResponse())).rejects.toThrow(
-        'Project balance is insufficient to run this operation'
+        'License authorization is unavailable'
       );
 
-      expect(dataMartRunService.recordHttpDataRun).not.toHaveBeenCalled();
+      expect(dataMartRunService.recordHttpDataRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: DataMartRunStatus.FAILED,
+          reportId: 'report-1',
+          metadata: expect.objectContaining({ completed: false, format: 'ndjson' }),
+        })
+      );
     });
 
     it('records a FAILED run tagged with reportId when prepareReportData fails', async () => {

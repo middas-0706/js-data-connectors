@@ -1,5 +1,10 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { QueryDataMartCommand, QueryDataMartService } from './query-data-mart.service';
+import { RunKind } from '../services/project-billing/project-billing.service';
 import { QueryAbortedError, QueryTimeoutError } from '../facades/mcp-data-marts.facade';
 import { ProjectOperationBlockedException } from '../../common/exceptions/project-operation-blocked.exception';
 import { ProjectBlockedReason } from '../enums/project-blocked-reason.enum';
@@ -92,7 +97,7 @@ describe('QueryDataMartService', () => {
       canAccess: jest.fn().mockResolvedValue(overrides.accessAllowed ?? true),
     };
     // Default: balance check passes. Pass balanceAllowed: false to simulate blocked project.
-    const projectBalanceService = {
+    const projectBilling = {
       verifyCanPerformOperations:
         overrides.balanceAllowed === false
           ? jest
@@ -102,9 +107,7 @@ describe('QueryDataMartService', () => {
                   ProjectBlockedReason.OVERDRAFT_LIMIT_EXCEEDED,
                 ])
               )
-          : jest.fn().mockResolvedValue(undefined),
-    };
-    const consumptionTrackingService = {
+          : jest.fn().mockImplementation(async request => request),
       registerMcpQueryRunConsumption: jest.fn().mockResolvedValue(undefined),
     };
     const service = new QueryDataMartService(
@@ -115,8 +118,7 @@ describe('QueryDataMartService', () => {
       sourceDataLastUpdatedService as never,
       dataMartRunService as never,
       accessDecisionService as never,
-      projectBalanceService as never,
-      consumptionTrackingService as never,
+      projectBilling as never,
       // Default deadline is large (constructor default) so normal tests never time out; pass a tiny
       // value to exercise the timeout path.
       overrides.deadlineMs ?? 3_600_000,
@@ -133,8 +135,7 @@ describe('QueryDataMartService', () => {
       sourceDataLastUpdatedService,
       dataMartRunService,
       accessDecisionService,
-      projectBalanceService,
-      consumptionTrackingService,
+      projectBilling,
     };
   };
 
@@ -360,7 +361,7 @@ describe('QueryDataMartService', () => {
   });
 
   it('rejects limit < 1 at the service boundary before any read or billing', async () => {
-    const { service, reader, dataMartRunService, consumptionTrackingService } = createService();
+    const { service, reader, dataMartRunService, projectBilling } = createService();
 
     await expect(
       service.run(
@@ -377,7 +378,7 @@ describe('QueryDataMartService', () => {
 
     expect(reader.readReportDataBatch).not.toHaveBeenCalled();
     expect(dataMartRunService.recordMcpQueryRun).not.toHaveBeenCalled();
-    expect(consumptionTrackingService.registerMcpQueryRunConsumption).not.toHaveBeenCalled();
+    expect(projectBilling.registerMcpQueryRunConsumption).not.toHaveBeenCalled();
   });
 
   it('rejects limit above the upper bound at the service boundary', async () => {
@@ -548,8 +549,10 @@ describe('QueryDataMartService', () => {
       stubDataLastUpdatedService() as never,
       { recordMcpQueryRun: jest.fn().mockResolvedValue(undefined) } as never,
       { canAccess: jest.fn().mockResolvedValue(true) } as never,
-      { verifyCanPerformOperations: jest.fn().mockResolvedValue(undefined) } as never,
-      { registerMcpQueryRunConsumption: jest.fn().mockResolvedValue(undefined) } as never
+      {
+        verifyCanPerformOperations: jest.fn(),
+        registerMcpQueryRunConsumption: jest.fn().mockResolvedValue(undefined),
+      } as never
     );
 
     const result = await service.run(
@@ -844,8 +847,10 @@ describe('QueryDataMartService', () => {
       stubDataLastUpdatedService() as never,
       { recordMcpQueryRun: jest.fn().mockResolvedValue(undefined) } as never,
       { canAccess: jest.fn().mockResolvedValue(true) } as never,
-      { verifyCanPerformOperations: jest.fn().mockResolvedValue(undefined) } as never,
-      { registerMcpQueryRunConsumption: jest.fn().mockResolvedValue(undefined) } as never
+      {
+        verifyCanPerformOperations: jest.fn(),
+        registerMcpQueryRunConsumption: jest.fn().mockResolvedValue(undefined),
+      } as never
     );
 
     const result = await service.run(
@@ -1159,7 +1164,7 @@ describe('QueryDataMartService', () => {
     });
 
     it('suppresses billing when the SUCCESS audit save fails (no untraceable charge)', async () => {
-      const { service, dataMartRunService, consumptionTrackingService } = createService();
+      const { service, dataMartRunService, projectBilling } = createService();
       dataMartRunService.recordMcpQueryRun.mockRejectedValue(new Error('DB write boom'));
 
       const result = await service.run(
@@ -1176,11 +1181,11 @@ describe('QueryDataMartService', () => {
       // Read still succeeds…
       expect(result.rows).toHaveLength(2);
       // …but with no Run History record, the user must NOT be billed (dangling reportRunId).
-      expect(consumptionTrackingService.registerMcpQueryRunConsumption).not.toHaveBeenCalled();
+      expect(projectBilling.registerMcpQueryRunConsumption).not.toHaveBeenCalled();
     });
 
     it('rethrows QueryTimeoutError past the deadline without recording a run, and does NOT bill', async () => {
-      const { service, reader, dataMartRunService, consumptionTrackingService } = createService({
+      const { service, reader, dataMartRunService, projectBilling } = createService({
         deadlineMs: 20,
       });
       // Hold the DWH read pending (controllable deferred) so the server-side deadline fires first.
@@ -1206,14 +1211,14 @@ describe('QueryDataMartService', () => {
 
       // No run recorded, and billing is skipped — a timed-out query is never charged.
       expect(dataMartRunService.recordMcpQueryRun).not.toHaveBeenCalled();
-      expect(consumptionTrackingService.registerMcpQueryRunConsumption).not.toHaveBeenCalled();
+      expect(projectBilling.registerMcpQueryRunConsumption).not.toHaveBeenCalled();
 
       // Settle the abandoned read so it does not linger past the test (Phase 2 adds real cancel).
       rejectRead(new Error('read abandoned after timeout'));
     });
 
     it('runs totals in parallel and still degrades to null (rows + billing) when totals rejects', async () => {
-      const { service, reportTotalsService, consumptionTrackingService } = createService();
+      const { service, reportTotalsService, projectBilling } = createService();
       reportTotalsService.computeTotals.mockRejectedValue(new Error('totals boom'));
 
       const result = await service.run(
@@ -1232,13 +1237,13 @@ describe('QueryDataMartService', () => {
       expect(result.totals).toBeNull();
       expect(reportTotalsService.computeTotals).toHaveBeenCalledTimes(1);
       // A successful read is still billed even though totals degraded.
-      expect(consumptionTrackingService.registerMcpQueryRunConsumption).toHaveBeenCalledTimes(1);
+      expect(projectBilling.registerMcpQueryRunConsumption).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('client abort (Phase 2)', () => {
     it('rejects with QueryAbortedError before any read or billing when already aborted, without recording a run', async () => {
-      const { service, reader, dataMartRunService, consumptionTrackingService } = createService();
+      const { service, reader, dataMartRunService, projectBilling } = createService();
       const controller = new AbortController();
       controller.abort();
 
@@ -1259,13 +1264,13 @@ describe('QueryDataMartService', () => {
       // An already-abandoned request never touches the warehouse and is never billed…
       expect(reader.prepareReportData).not.toHaveBeenCalled();
       expect(reader.readReportDataBatch).not.toHaveBeenCalled();
-      expect(consumptionTrackingService.registerMcpQueryRunConsumption).not.toHaveBeenCalled();
+      expect(projectBilling.registerMcpQueryRunConsumption).not.toHaveBeenCalled();
       // …and no run is recorded at all.
       expect(dataMartRunService.recordMcpQueryRun).not.toHaveBeenCalled();
     });
 
     it('rejects with QueryAbortedError without recording a run, and does NOT bill when aborted during the read', async () => {
-      const { service, reader, dataMartRunService, consumptionTrackingService } = createService();
+      const { service, reader, dataMartRunService, projectBilling } = createService();
       const controller = new AbortController();
 
       // Hold the DWH read pending and fire the client abort exactly when the read starts, so the
@@ -1293,14 +1298,14 @@ describe('QueryDataMartService', () => {
       ).rejects.toBeInstanceOf(QueryAbortedError);
 
       expect(dataMartRunService.recordMcpQueryRun).not.toHaveBeenCalled();
-      expect(consumptionTrackingService.registerMcpQueryRunConsumption).not.toHaveBeenCalled();
+      expect(projectBilling.registerMcpQueryRunConsumption).not.toHaveBeenCalled();
 
       // Settle the abandoned read so it does not linger past the test (no real cancel in Phase 2).
       rejectRead(new Error('read abandoned after abort'));
     });
 
     it('behaves exactly as before when no signal is passed (regression)', async () => {
-      const { service, dataMartRunService, consumptionTrackingService } = createService();
+      const { service, dataMartRunService, projectBilling } = createService();
 
       const result = await service.run(
         new QueryDataMartCommand({
@@ -1317,7 +1322,7 @@ describe('QueryDataMartService', () => {
       expect(result.rows).toHaveLength(2);
       const call = dataMartRunService.recordMcpQueryRun.mock.calls[0][0];
       expect(call.status).toBe(DataMartRunStatus.SUCCESS);
-      expect(consumptionTrackingService.registerMcpQueryRunConsumption).toHaveBeenCalledTimes(1);
+      expect(projectBilling.registerMcpQueryRunConsumption).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1514,8 +1519,10 @@ describe('QueryDataMartService', () => {
       stubDataLastUpdatedService() as never,
       { recordMcpQueryRun: jest.fn().mockResolvedValue(undefined) } as never,
       { canAccess: jest.fn().mockResolvedValue(true) } as never,
-      { verifyCanPerformOperations: jest.fn().mockResolvedValue(undefined) } as never,
-      { registerMcpQueryRunConsumption: jest.fn().mockResolvedValue(undefined) } as never
+      {
+        verifyCanPerformOperations: jest.fn(),
+        registerMcpQueryRunConsumption: jest.fn().mockResolvedValue(undefined),
+      } as never
     );
 
     const result = await service.run(
@@ -1798,9 +1805,10 @@ describe('QueryDataMartService', () => {
   });
 
   describe('billing gate (Task 9)', () => {
-    it('throws ProjectOperationBlockedException when verifyCanPerformOperations rejects with OVERDRAFT_LIMIT_EXCEEDED', async () => {
-      const { service, projectBalanceService } = createService();
-      projectBalanceService.verifyCanPerformOperations.mockRejectedValue(
+    it('records RESTRICTED before query work when authorization rejects the project', async () => {
+      const { service, projectBilling, dataMartRunService, composer, readerResolver } =
+        createService();
+      projectBilling.verifyCanPerformOperations.mockRejectedValue(
         new ProjectOperationBlockedException([ProjectBlockedReason.OVERDRAFT_LIMIT_EXCEEDED])
       );
 
@@ -1816,10 +1824,46 @@ describe('QueryDataMartService', () => {
           })
         )
       ).rejects.toThrow(ProjectOperationBlockedException);
+
+      expect(dataMartRunService.recordMcpQueryRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: DataMartRunStatus.RESTRICTED,
+          metadata: expect.objectContaining({ columns: [], rowCount: 0, truncated: false }),
+        })
+      );
+      expect(composer.compose).not.toHaveBeenCalled();
+      expect(readerResolver.resolve).not.toHaveBeenCalled();
     });
 
-    it('calls verifyCanPerformOperations with the project id', async () => {
-      const { service, projectBalanceService } = createService();
+    it('records FAILED when the authorization service is unavailable', async () => {
+      const { service, projectBilling, dataMartRunService } = createService();
+      projectBilling.verifyCanPerformOperations.mockRejectedValue(
+        new ServiceUnavailableException('License authorization is unavailable')
+      );
+
+      await expect(
+        service.run(
+          new QueryDataMartCommand({
+            projectId: 'p1',
+            userId: 'u1',
+            roles: ['admin'],
+            dataMartId: 'dm1',
+            fields: ['channel'],
+            limit: 100,
+          })
+        )
+      ).rejects.toThrow('License authorization is unavailable');
+
+      expect(dataMartRunService.recordMcpQueryRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: DataMartRunStatus.FAILED,
+          metadata: expect.objectContaining({ columns: [], rowCount: 0, truncated: false }),
+        })
+      );
+    });
+
+    it('authorizes the run with the project id', async () => {
+      const { service, projectBilling } = createService();
 
       await service.run(
         new QueryDataMartCommand({
@@ -1832,11 +1876,14 @@ describe('QueryDataMartService', () => {
         })
       );
 
-      expect(projectBalanceService.verifyCanPerformOperations).toHaveBeenCalledWith('p1');
+      expect(projectBilling.verifyCanPerformOperations).toHaveBeenCalledWith(
+        'p1',
+        RunKind.MCP_QUERY_RUN
+      );
     });
 
-    it('calls registerMcpQueryRunConsumption once with (dataMart, runId) on success', async () => {
-      const { service, consumptionTrackingService } = createService();
+    it('registers MCP Query consumption once with the data mart and run id on success', async () => {
+      const { service, projectBilling } = createService();
 
       await service.run(
         new QueryDataMartCommand({
@@ -1849,19 +1896,16 @@ describe('QueryDataMartService', () => {
         })
       );
 
-      expect(consumptionTrackingService.registerMcpQueryRunConsumption).toHaveBeenCalledTimes(1);
-      const [calledDm, calledRunId] =
-        consumptionTrackingService.registerMcpQueryRunConsumption.mock.calls[0];
-      expect(calledDm).toEqual(dataMart);
-      expect(typeof calledRunId).toBe('string');
-      expect(calledRunId).toHaveLength(36); // UUID v4
+      expect(projectBilling.registerMcpQueryRunConsumption).toHaveBeenCalledTimes(1);
+      const [dataMartArg, runId] = projectBilling.registerMcpQueryRunConsumption.mock.calls[0];
+      expect(dataMartArg).toEqual(dataMart);
+      expect(typeof runId).toBe('string');
+      expect(runId).toHaveLength(36); // UUID v4
     });
 
-    it('does NOT fail the read when registerMcpQueryRunConsumption rejects', async () => {
-      const { service, consumptionTrackingService } = createService();
-      consumptionTrackingService.registerMcpQueryRunConsumption.mockRejectedValue(
-        new Error('pubsub down')
-      );
+    it('does NOT fail the read when consumption registration rejects', async () => {
+      const { service, projectBilling } = createService();
+      projectBilling.registerMcpQueryRunConsumption.mockRejectedValue(new Error('pubsub down'));
 
       const result = await service.run(
         new QueryDataMartCommand({

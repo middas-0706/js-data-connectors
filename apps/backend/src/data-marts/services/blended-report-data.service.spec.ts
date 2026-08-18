@@ -2301,7 +2301,7 @@ describe('BlendedReportDataService', () => {
       });
     });
 
-    describe('rowCount driven by aggregationConfig (blended path)', () => {
+    describe('no rowCount flag reaches buildBlendedQuery (blended path)', () => {
       async function resolveAndCaptureRowCount(
         overrides: Partial<Report>
       ): Promise<boolean | undefined> {
@@ -2354,28 +2354,24 @@ describe('BlendedReportDataService', () => {
         await service.resolveBlendingDecision(report, { userId: 'user-1', roles: ['admin'] });
 
         const [, context] = blendedQueryBuilderFacade.buildBlendedQuery.mock.calls[0];
-        return context?.rowCount;
+        return (context as Record<string, unknown> | undefined)?.['rowCount'] as
+          | boolean
+          | undefined;
       }
 
-      it('passes rowCount=true to buildBlendedQuery when aggregationConfig is non-empty', async () => {
+      it('passes no rowCount to buildBlendedQuery even when aggregationConfig is non-empty', async () => {
+        // The Row Count concept was removed — the context must not carry the flag at all.
         const rowCount = await resolveAndCaptureRowCount({
           aggregationConfig: [{ column: 'field', function: 'SUM' }] as any,
         });
-        expect(rowCount).toBe(true);
+        expect(rowCount).toBeUndefined();
       });
 
-      it('passes rowCount=false to buildBlendedQuery when aggregationConfig is empty', async () => {
+      it('passes no rowCount to buildBlendedQuery when aggregationConfig is empty', async () => {
         const rowCount = await resolveAndCaptureRowCount({
           aggregationConfig: [],
         });
-        expect(rowCount).toBe(false);
-      });
-
-      it('passes rowCount=false when aggregationConfig is absent', async () => {
-        const rowCount = await resolveAndCaptureRowCount({
-          aggregationConfig: undefined,
-        });
-        expect(rowCount).toBe(false);
+        expect(rowCount).toBeUndefined();
       });
     });
 

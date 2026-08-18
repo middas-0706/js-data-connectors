@@ -3,7 +3,6 @@ import { PrepareReportDataOptions } from '../interfaces/data-storage-report-read
 import { DataStorageType } from '../enums/data-storage-type.enum';
 import { computeEffectiveType, integerTypeFor } from '../field-aggregation';
 import {
-  ROW_COUNT_LABEL,
   UNIQUE_COUNT_LABEL,
   aggregatedColumnAlias,
   aggregatedColumnLabel,
@@ -30,17 +29,13 @@ import {
  *   more than one function (each becomes its own output column). Readers map result rows to
  *   headers BY NAME, so the header name MUST equal the SQL alias. Header order does NOT have
  *   to equal SELECT column order, and on the blended path it does not: a metric-sleeve pull
- * (joined COUNT DISTINCT / SUM / AVG,) is appended after `Row Count`, while the
+ * (joined COUNT DISTINCT / SUM / AVG,) is appended after the non-sleeve select items, while the
  *   header for it sits at its own column's position.
  * - `uniqueCountSources` appends one header per joined source, after the main Data Mart's
  *   `Unique Count`. Its `name` is the SQL-safe `outputLabel` (`orders__unique_count`) the sleeve
  *   aliased, and its display alias is the free-form `displayLabel` (`Orders Unique Count`) — the
  *   same name/alias split every blended column header already uses. It is the SAME list the blended
  *   builder rendered its sleeves from, so a source dropped there has no header here either.
- * - When `aggregationConfig` is non-empty, a synthetic `Row Count` header (matching the
- *   `COUNT(*) AS "Row Count"` output column) is appended last. Row Count is automatic
- *   for aggregated reports, unless `options.rowCount === false` (the Totals reader opts
- *   out — Row Count is a per-group column, not a grand total).
  */
 export function resolveReportDataHeaders(
   nativeHeaders: ReportDataHeader[],
@@ -55,7 +50,7 @@ export function resolveReportDataHeaders(
   const mainUniqueCount =
     options?.uniqueCount === true && (options?.primaryKeyColumns?.length ?? 0) > 0;
   // A metrics-only query has no projected dimensions: the SELECT emits only the
-  // synthetic metric / Row Count / Unique Count columns. This is the totals query and the
+  // synthetic metric / Unique Count columns. This is the totals query and the
   // uniqueCount-only report. It reads the GATED `mainUniqueCount`, not the raw flag: with the
   // key gone the SQL emits no metric and falls back to a plain SELECT, so a metrics-only header
   // list here would leave the report with no columns at all for a result full of them.
@@ -108,22 +103,6 @@ export function resolveReportDataHeaders(
           )
       );
     });
-  }
-
-  // Row Count is automatic for aggregated reports, unless the caller opts out
-  // (`rowCount: false`) — the Totals reader does, since Row Count is a per-group column.
-  const includeRowCount = options?.rowCount ?? (options?.aggregationConfig?.length ?? 0) > 0;
-  if (includeRowCount) {
-    headers = [
-      ...headers,
-      new ReportDataHeader(
-        ROW_COUNT_LABEL,
-        undefined,
-        undefined,
-        integerTypeFor(storageType),
-        'COUNT'
-      ),
-    ];
   }
 
   if (mainUniqueCount) {

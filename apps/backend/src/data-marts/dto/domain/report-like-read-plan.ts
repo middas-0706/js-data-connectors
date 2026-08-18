@@ -27,26 +27,9 @@ export interface ReportLikeReadPlan {
   groupRestriction?: GroupRestriction;
   dateTruncConfig?: DateTruncConfig;
   uniqueCountConfig?: UniqueCountConfig;
-  /**
-   * Explicit opt-out of the automatic `COUNT(*)` Row Count column. When unset, Row Count
-   * is on for any aggregated report. The Totals plan sets this to `false`: Row Count is a
-   * per-group column, not a grand total, so it must not appear in the totals block.
-   */
-  rowCount?: boolean;
 }
 
 export type ReportLike = Report | ReportLikeReadPlan;
-
-/**
- * Whether the automatic `COUNT(*)` Row Count column should be projected. Defaults to "on
- * for any aggregated report"; a read plan may explicitly opt out via `rowCount: false`
- * (the Totals query does this). Single source so the compose, blended-build, and header
- * paths cannot drift.
- */
-export function shouldIncludeRowCount(report: ReportLike): boolean {
-  const explicit = 'rowCount' in report ? report.rowCount : undefined;
-  return explicit ?? (report.aggregationConfig?.length ?? 0) > 0;
-}
 
 /**
  * Whether a report projects METRICS ONLY — it asks for aggregates or any Unique Count, so an empty
@@ -84,7 +67,7 @@ export function usesSuffixedJoinedFieldNames(report: ReportLike): boolean {
 
 /**
  * True when the report carries any output control — a filter, sort, limit,
- * aggregation, date-trunc bucket, or Row Count. Single source for this predicate (run /
+ * aggregation, or date-trunc bucket. Single source for this predicate (run /
  * cache / compose / run-record paths) so the copies cannot drift.
  */
 export function hasOutputControls(report: ReportLike): boolean {

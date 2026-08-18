@@ -45,7 +45,7 @@ export interface PrepareReportDataOptions {
   aggregationConfig?: AggregationRule[];
 
   /**
-   * When true, a synthetic `Unique Count` header is appended after `Row Count`.
+   * When true, a synthetic `Unique Count` header is appended after the aggregated columns.
    * Set by callers that pass `uniqueCount: true` to the query builder.
    */
   uniqueCount?: boolean;
@@ -64,13 +64,6 @@ export interface PrepareReportDataOptions {
    * builder rendered its sleeves from.
    */
   uniqueCountSources?: JoinedUniqueCountHeaderSource[];
-
-  /**
-   * Explicit opt-out of the automatic `Row Count` header. When unset, Row Count is on for
-   * any non-empty `aggregationConfig`. The Totals reader sets this to `false` so the totals
-   * row carries only the metric aggregates (Row Count is a per-group column, not a total).
-   */
-  rowCount?: boolean;
 
   /**
    * Server-side per-query timeout (ms). BigQuery/Snowflake abort the job/statement at the

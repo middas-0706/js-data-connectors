@@ -8,6 +8,7 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { ReportResponseApiDto } from '../../dto/presentation/report-response-api.dto';
+import { ReconnectGoogleSheetResponseDto } from '../../dto/presentation/google-sheets/reconnect-google-sheet-response.dto';
 import {
   createReportRequestBodySchema,
   REPORT_OPENAPI_MODELS,
@@ -64,6 +65,23 @@ export function RunReportSpec() {
     ApiParam({ name: 'id', description: 'Report ID' }),
     ApiCreatedResponse({
       description: 'The manual report run trigger has been successfully created.',
+    })
+  );
+}
+
+export function ReconnectGoogleSheetSpec() {
+  return applyDecorators(
+    ApiOperation({
+      summary: 'Reconnect a Google Sheets report to a sheet named after the report',
+      description:
+        'Points the report at a sheet (tab) named after the report title, creating it when ' +
+        'the spreadsheet has none, and repairs the stored sheet ID. Recovers a report whose ' +
+        'sheet was deleted or re-created. No request body.',
+    }),
+    ApiParam({ name: 'id', description: 'Report ID' }),
+    ApiOkResponse({
+      description: 'The report has been reconnected to the sheet.',
+      type: ReconnectGoogleSheetResponseDto,
     })
   );
 }

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { MoreHorizontal, Pencil, Trash2, Play } from 'lucide-react';
+import { MoreHorizontal, Pencil, Trash2, Play, Link2 } from 'lucide-react';
 import { Button } from '@owox/ui/components/button';
 import {
   DropdownMenu,
@@ -8,9 +8,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@owox/ui/components/dropdown-menu';
+import toast from 'react-hot-toast';
 import { ConfirmationDialog } from '../../../../../../shared/components/ConfirmationDialog';
+import { showApiErrorToast } from '../../../../../../shared/utils/showApiErrorToast';
 import type { DataMartReport } from '../../../shared/model/types/data-mart-report';
-import { useReport, ReportStatusEnum } from '../../../shared';
+import { useReport, ReportStatusEnum, reportService } from '../../../shared';
+
+/** One sentence with a sheet name needs longer than the 2s default. */
+const RECONNECT_TOAST_DURATION_MS = 6000;
 
 interface GoogleSheetsActionsCellProps {
   row: { original: DataMartReport };
@@ -32,6 +37,7 @@ export function GoogleSheetsActionsCell({
   );
   const [menuOpen, setMenuOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
   const { deleteReport, fetchReportsByDataMartId, runReport } = useReport();
 
   // Generate unique ID for the actions menu
@@ -75,13 +81,72 @@ export function GoogleSheetsActionsCell({
 
     try {
       setIsRunning(true);
-      await runReport(row.original.id);
+      // runReport never throws — it reports the outcome as a boolean. Release
+      // the optimistic flag on a failed start, or the row stays on a disabled
+      // "Running report..." (lastRunStatus doesn't change, so the sync effect
+      // keyed on it never fires).
+      const started = await runReport(row.original.id);
+      if (!started) {
+        setIsRunning(false);
+        return;
+      }
       await onRunSuccess?.();
     } catch (error) {
       setIsRunning(false);
       console.error('Failed to run report:', error);
     }
   }, [canRun, onRunSuccess, runReport, row.original.id]);
+
+  // Rebinds the report to a sheet named after it (reuse or create), then runs.
+  // Renaming the sheet in Google Sheets later is safe — the report stores the gid.
+  // Requires canRun on top of canEditConfig: the action's second half is a run,
+  // and a mutate-only user would repair the sheet only to watch /run 403.
+  const handleReconnectSheet = useCallback(async () => {
+    if (!canEditConfig || !canRun || isReconnecting) return;
+
+    setMenuOpen(false);
+    setIsReconnecting(true);
+    try {
+      const result = await reportService.reconnectSheet(row.original.id);
+      // One shared tail so the variants can't drift apart. It claims only what is
+      // known before the run starts. `changed: false` means the report's sheet was
+      // alive and the backend left it alone — the run below is then the whole
+      // point, so don't claim a repair that didn't happen.
+      const dataNote = 'Starting a run to load your data.';
+      const outcome = !result.changed
+        ? `The report is already connected to the sheet "${result.sheetTitle}"`
+        : result.created
+          ? `Created sheet "${result.sheetTitle}"`
+          : `Reconnected to the existing sheet "${result.sheetTitle}"`;
+      toast.success(`${outcome}. ${dataNote}`, { duration: RECONNECT_TOAST_DURATION_MS });
+      // runReport never throws — it reports the outcome as a boolean (it also
+      // refreshes the report, starts polling and toasts "Report run started").
+      // Release the optimistic flag on a failed start, or the row stays on a
+      // disabled "Running report..." until reload.
+      setIsRunning(true);
+      const started = await runReport(row.original.id);
+      if (!started) {
+        setIsRunning(false);
+      }
+      // Refresh so the row (and the "Open document" link built from the sheet
+      // ID) reflects the new destination.
+      await fetchReportsByDataMartId(row.original.dataMart.id);
+    } catch (error) {
+      // Reconnect itself failed before the run was attempted.
+      setIsRunning(false);
+      showApiErrorToast(error, 'Failed to reconnect sheet');
+    } finally {
+      setIsReconnecting(false);
+    }
+  }, [
+    canEditConfig,
+    canRun,
+    isReconnecting,
+    runReport,
+    fetchReportsByDataMartId,
+    row.original.id,
+    row.original.dataMart.id,
+  ]);
 
   const handleDeleteClick = useCallback(() => {
     if (!canEditConfig) return;
@@ -136,6 +201,25 @@ export function GoogleSheetsActionsCell({
             <Pencil className='text-foreground h-4 w-4' aria-hidden='true' />
             Edit report
           </DropdownMenuItem>
+
+          {/* Only offered after a failed run — the error text names this button.
+              On a healthy report the click would not no-op: it rebinds the
+              destination to a sheet named after the report, silently moving
+              where data lands. */}
+          {row.original.lastRunStatus === ReportStatusEnum.ERROR && (
+            <DropdownMenuItem
+              disabled={!canEditConfig || !canRun || isReconnecting}
+              onClick={e => {
+                e.stopPropagation();
+                void handleReconnectSheet();
+              }}
+              role='menuitem'
+              aria-label={`Reconnect sheet and run report: ${row.original.title}`}
+            >
+              <Link2 className='text-foreground h-4 w-4' aria-hidden='true' />
+              {isReconnecting ? 'Reconnecting…' : 'Reconnect & run'}
+            </DropdownMenuItem>
+          )}
 
           <DropdownMenuSeparator />
 

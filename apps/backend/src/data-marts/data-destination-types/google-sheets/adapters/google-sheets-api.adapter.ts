@@ -33,6 +33,17 @@ export interface FolderAccess {
 /**
  * Adapter for Google Sheets API operations
  */
+/**
+ * Quotes a sheet (tab) title for use in an A1 range. Embedded apostrophes are
+ * doubled per the A1 grammar — `Bob's data` becomes `'Bob''s data'` — so any
+ * title a user can type in Google Sheets produces a parseable range. Every
+ * range interpolation site must go through this; a raw `'${title}'` breaks on
+ * the first apostrophe.
+ */
+export function quoteA1SheetTitle(title: string): string {
+  return `'${title.replace(/'/g, "''")}'`;
+}
+
 export class GoogleSheetsApiAdapter {
   private static readonly SHEETS_SCOPE = ['https://www.googleapis.com/auth/spreadsheets'];
 
@@ -503,8 +514,8 @@ export class GoogleSheetsApiAdapter {
   ): Promise<string[]> {
     const range =
       toCol !== undefined
-        ? `'${sheetTitle}'!${GoogleSheetsApiAdapter.colToA1(fromCol)}${row}:${GoogleSheetsApiAdapter.colToA1(toCol)}${row}`
-        : `'${sheetTitle}'!${row}:${row}`;
+        ? `${quoteA1SheetTitle(sheetTitle)}!${GoogleSheetsApiAdapter.colToA1(fromCol)}${row}:${GoogleSheetsApiAdapter.colToA1(toCol)}${row}`
+        : `${quoteA1SheetTitle(sheetTitle)}!${row}:${row}`;
     const resp = await this.executeWithRetry(() =>
       this.service.spreadsheets.values.get({
         spreadsheetId,
@@ -535,7 +546,7 @@ export class GoogleSheetsApiAdapter {
     fromCol: number,
     toCol: number
   ): Promise<string[]> {
-    const range = `'${sheetTitle}'!${GoogleSheetsApiAdapter.colToA1(fromCol)}${row}:${GoogleSheetsApiAdapter.colToA1(toCol)}${row}`;
+    const range = `${quoteA1SheetTitle(sheetTitle)}!${GoogleSheetsApiAdapter.colToA1(fromCol)}${row}:${GoogleSheetsApiAdapter.colToA1(toCol)}${row}`;
     const resp = await this.executeWithRetry(() =>
       this.service.spreadsheets.values.get({
         spreadsheetId,
@@ -597,7 +608,7 @@ export class GoogleSheetsApiAdapter {
     if (width <= 0 || rowTo < rowFrom) {
       return [];
     }
-    const range = `'${sheetTitle}'!${GoogleSheetsApiAdapter.colToA1(fromCol)}${rowFrom}:${GoogleSheetsApiAdapter.colToA1(toCol)}${rowTo}`;
+    const range = `${quoteA1SheetTitle(sheetTitle)}!${GoogleSheetsApiAdapter.colToA1(fromCol)}${rowFrom}:${GoogleSheetsApiAdapter.colToA1(toCol)}${rowTo}`;
     const resp = await this.executeWithRetry(() =>
       this.service.spreadsheets.get({
         spreadsheetId,
@@ -740,7 +751,7 @@ export class GoogleSheetsApiAdapter {
     await this.executeWithRetry(() =>
       this.service.spreadsheets.values.clear({
         spreadsheetId,
-        range: `'${sheetTitle}'`,
+        range: quoteA1SheetTitle(sheetTitle),
       })
     );
   }
@@ -797,6 +808,40 @@ export class GoogleSheetsApiAdapter {
       },
     ];
     await this.batchUpdate(spreadsheetId, requests);
+  }
+
+  /**
+   * Creates a new sheet (tab) in an existing spreadsheet and returns its numeric ID.
+   *
+   * Google rejects a duplicate title with a 400, so a caller that means "reuse the
+   * sheet if it is already there" must look the title up first — see
+   * {@link findSheetByTitle} and ReconnectGoogleSheetService.
+   */
+  public async addSheet(spreadsheetId: string, title: string): Promise<number> {
+    const response = await this.executeWithRetry(() =>
+      this.service.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: { requests: [{ addSheet: { properties: { title } } }] },
+      })
+    );
+
+    const sheetId = response.data.replies?.[0]?.addSheet?.properties?.sheetId;
+    // Compared against null/undefined, never falsiness: gid 0 is a real sheet ID.
+    if (sheetId === null || sheetId === undefined) {
+      throw new Error(`Google Sheets returned no ID for the created sheet "${title}"`);
+    }
+    return sheetId;
+  }
+
+  /**
+   * Finds a sheet by its exact title. Google treats titles as unique within a
+   * spreadsheet, so at most one sheet can match.
+   */
+  public findSheetByTitle(
+    spreadsheet: sheets_v4.Schema$Spreadsheet,
+    title: string
+  ): sheets_v4.Schema$Sheet | undefined {
+    return spreadsheet.sheets?.find(s => s?.properties?.title === title);
   }
 
   /**

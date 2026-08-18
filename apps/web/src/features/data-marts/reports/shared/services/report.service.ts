@@ -1,5 +1,10 @@
 import { ApiService } from '../../../../../services';
-import type { CreateReportRequestDto, ReportResponseDto, UpdateReportRequestDto } from './types';
+import type {
+  CreateReportRequestDto,
+  ReconnectSheetResponseDto,
+  ReportResponseDto,
+  UpdateReportRequestDto,
+} from './types';
 import type { AxiosRequestConfig } from '../../../../../app/api';
 
 const PROJECT_REPORTS_FETCH_PAGE_SIZE = 100;
@@ -126,6 +131,17 @@ export class ReportService extends ApiService {
    */
   async runReport(id: string): Promise<void> {
     return this.post(`/${id}/run`);
+  }
+
+  /**
+   * Point a Google Sheets report at a sheet named after the report, creating
+   * that sheet when the spreadsheet has none. Repairs a report whose sheet was
+   * deleted. No request body — the backend derives the name from the report.
+   * @param id Report ID
+   * @returns Which sheet the report is connected to now, and whether it was created
+   */
+  async reconnectSheet(id: string): Promise<ReconnectSheetResponseDto> {
+    return this.post<ReconnectSheetResponseDto>(`/${id}/google-sheets/reconnect-sheet`, {});
   }
 
   /**

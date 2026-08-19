@@ -1,10 +1,4 @@
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from '@owox/ui/components/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@owox/ui/components/sheet';
 import { UnsavedChangesConfirmationDialog } from '../../../../../../shared/components/UnsavedChangesConfirmationDialog';
 import type { DataMartReport } from '../../../shared/model/types/data-mart-report.ts';
 import { LookerStudioReportEditForm } from '../LookerStudioReportEditForm';
@@ -13,6 +7,7 @@ import { ReportFormMode } from '../../../shared';
 import type { DataDestination } from '../../../../../data-destination';
 import { useUnsavedGuard } from '../../../../../../hooks/useUnsavedGuard';
 import { useIntercomLauncher } from '../../../../../../shared/hooks/useIntercomLauncher';
+import { ReportSheetDescription } from '../ReportSheetDescription';
 
 interface LookerStudioReportEditSheetProps {
   isOpen: boolean;
@@ -54,11 +49,11 @@ export function LookerStudioReportEditSheet({
       <SheetContent data-testid='reportEditSheet'>
         <SheetHeader>
           <SheetTitle>{preSelectedDestination?.title ?? 'Data Studio'}</SheetTitle>
-          <SheetDescription>
+          <ReportSheetDescription mode={mode} report={initialReport}>
             {mode === ReportFormMode.CREATE
               ? 'Set up Data Mart as a data source'
               : 'Update connection details'}
-          </SheetDescription>
+          </ReportSheetDescription>
         </SheetHeader>
 
         <DataDestinationProvider>

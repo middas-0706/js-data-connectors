@@ -1,10 +1,4 @@
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@owox/ui/components/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@owox/ui/components/sheet';
 import { useCallback } from 'react';
 import { UnsavedChangesConfirmationDialog } from '../../../../../../shared/components/UnsavedChangesConfirmationDialog';
 import { DataDestinationProvider } from '../../../../../data-destination';
@@ -17,6 +11,7 @@ import { toast } from 'sonner';
 import { Link, useLocation, useParams } from 'react-router';
 import { useUnsavedGuard } from '../../../../../../hooks/useUnsavedGuard';
 import { useIntercomLauncher } from '../../../../../../shared/hooks/useIntercomLauncher';
+import { ReportSheetDescription } from '../ReportSheetDescription';
 
 interface EmailReportEditSheetProps {
   isOpen: boolean;
@@ -99,11 +94,11 @@ export function EmailReportEditSheet({
             {preSelectedDestination?.title ??
               (mode === ReportFormMode.CREATE ? 'Create Report' : 'Report')}
           </SheetTitle>
-          <SheetDescription>
+          <ReportSheetDescription mode={mode} report={initialReport}>
             {mode === ReportFormMode.CREATE
               ? 'Fill in the details to create a new report'
               : 'Update details of an existing report'}
-          </SheetDescription>
+          </ReportSheetDescription>
         </SheetHeader>
 
         <DataDestinationProvider>

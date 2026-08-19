@@ -1,10 +1,4 @@
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from '@owox/ui/components/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@owox/ui/components/sheet';
 import { UnsavedChangesConfirmationDialog } from '../../../../../../shared/components/UnsavedChangesConfirmationDialog';
 import type { DataMartReport } from '../../../shared/model/types/data-mart-report.ts';
 import { GoogleSheetsReportEditForm } from '../GoogleSheetsReportEditForm';
@@ -13,6 +7,7 @@ import { ReportFormMode } from '../../../shared';
 import type { DataDestination } from '../../../../../data-destination';
 import { useUnsavedGuard } from '../../../../../../hooks/useUnsavedGuard';
 import { useIntercomLauncher } from '../../../../../../shared/hooks/useIntercomLauncher';
+import { ReportSheetDescription } from '../ReportSheetDescription';
 
 interface GoogleSheetsReportEditSheetProps {
   isOpen: boolean;
@@ -56,11 +51,11 @@ export function GoogleSheetsReportEditSheet({
           <SheetTitle>
             {mode === ReportFormMode.CREATE ? 'Create new report' : 'Edit report'}
           </SheetTitle>
-          <SheetDescription>
+          <ReportSheetDescription mode={mode} report={initialReport}>
             {mode === ReportFormMode.CREATE
               ? 'Fill in the details to create a new Google Sheets report'
               : 'Update details of an existing Google Sheets report'}
-          </SheetDescription>
+          </ReportSheetDescription>
         </SheetHeader>
 
         <DataDestinationProvider>

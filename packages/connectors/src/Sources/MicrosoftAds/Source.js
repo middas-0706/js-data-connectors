@@ -483,10 +483,12 @@ var MicrosoftAdsSource = class MicrosoftAdsSource extends AbstractSource {
    * @param {string} opts.submitUrl - API endpoint URL
    * @param {Object} opts.downloadBody - Request body
    * @param {Object} opts.submitOpts - Request options
-   * @returns {Array<Object>}
+   * @param {Function} [opts.onRecordsChunk] - When provided, records are streamed to this
+   *   callback in chunks instead of being returned as one array (keeps peak memory low)
+   * @returns {Array<Object>} - Empty array when onRecordsChunk is provided
    * @private
    */
-  async _downloadEntity({ submitUrl, submitOpts }) {
+  async _downloadEntity({ submitUrl, submitOpts, onRecordsChunk }) {
     const submitResp = await HttpUtils.fetch(submitUrl, submitOpts);
     const text = await submitResp.getContentText();
     const responseData = JSON.parse(text);
@@ -512,6 +514,11 @@ var MicrosoftAdsSource = class MicrosoftAdsSource extends AbstractSource {
         return status.RequestStatus === 'Completed';
       }
     });
+    if (onRecordsChunk) {
+      await MicrosoftAdsHelper.processCsvRecordsFromUrl(pollResult.ResultFileUrl, onRecordsChunk);
+      return [];
+    }
+
     const csvRows = await MicrosoftAdsHelper.downloadCsvRows(pollResult.ResultFileUrl);
     const result = MicrosoftAdsHelper.csvRowsToObjects(csvRows);
 
@@ -537,30 +544,55 @@ var MicrosoftAdsSource = class MicrosoftAdsSource extends AbstractSource {
     // Start with batch size of 100 campaigns per batch
     let batchSize = Math.max(1, Math.min(50, Math.floor(campaignIds.length / 10)));
 
-    for (let i = 0; i < campaignIds.length; i += batchSize) {
+    // Stream records to storage chunk by chunk: buffering a whole batch of
+    // keyword rows in memory OOMs the runner process on large accounts.
+    // Storage errors are tagged so a message containing '100MB' coming from
+    // onBatchReady can never trigger the download batch-halving retry below.
+    const streamBatch = async (batch) => {
+      let recordCount = 0;
+      await this._downloadEntityBatch({
+        accountId,
+        entityType,
+        campaignBatch: batch,
+        onRecordsChunk: async (recordsChunk) => {
+          recordCount += recordsChunk.length;
+          try {
+            await onBatchReady(recordsChunk);
+          } catch (storageError) {
+            storageError.isStorageError = true;
+            throw storageError;
+          }
+        }
+      });
+      return recordCount;
+    };
+    const isTooLargeError = (error) =>
+      !error.isStorageError && error.message && error.message.includes('100MB');
+
+    let i = 0;
+    while (i < campaignIds.length) {
       const campaignBatch = campaignIds.slice(i, i + batchSize);
       this.config.logMessage(`Fetching ${entityType} for campaigns batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(campaignIds.length / batchSize)} (${campaignBatch.length} campaigns)`);
 
       try {
-        const batchRecords = await this._downloadEntityBatch({ accountId, entityType, campaignBatch });
-        this.config.logMessage(`Fetched ${batchRecords.length} ${entityType.toLowerCase()} from current batch`);
-
-        await onBatchReady(batchRecords);
+        const batchRecordCount = await streamBatch(campaignBatch);
+        this.config.logMessage(`Fetched ${batchRecordCount} ${entityType.toLowerCase()} from current batch`);
+        i += campaignBatch.length;
       } catch (error) {
-        if (error.message && error.message.includes('100MB')) {
+        if (isTooLargeError(error)) {
           // If still too large, reduce batch size and retry
+          const retryRangeEnd = Math.min(i + batchSize, campaignIds.length);
           const newBatchSize = Math.max(1, Math.floor(batchSize / 2));
           this.config.logMessage(`Batch too large (${batchSize} campaigns), retrying with smaller batch size: ${newBatchSize}`);
 
           // Retry current batch with smaller size
-          for (let j = i; j < Math.min(i + batchSize, campaignIds.length); j += newBatchSize) {
+          for (let j = i; j < retryRangeEnd; j += newBatchSize) {
             const smallerBatch = campaignIds.slice(j, j + newBatchSize);
             try {
-              const smallerBatchRecords = await this._downloadEntityBatch({ accountId, entityType, campaignBatch: smallerBatch });
-              this.config.logMessage(`Fetched ${smallerBatchRecords.length} ${entityType.toLowerCase()} from smaller batch (${smallerBatch.length} campaigns)`);
-              await onBatchReady(smallerBatchRecords);
+              const smallerBatchRecordCount = await streamBatch(smallerBatch);
+              this.config.logMessage(`Fetched ${smallerBatchRecordCount} ${entityType.toLowerCase()} from smaller batch (${smallerBatch.length} campaigns)`);
             } catch (smallerError) {
-              if (smallerError.message && smallerError.message.includes('100MB')) {
+              if (isTooLargeError(smallerError)) {
                 throw new Error(`Failed to fetch ${entityType}: batch size of ${smallerBatch.length} campaigns still exceeds 100MB limit`);
               } else {
                 throw new Error(`Failed to fetch ${entityType}: ${smallerError.message}`);
@@ -568,7 +600,9 @@ var MicrosoftAdsSource = class MicrosoftAdsSource extends AbstractSource {
             }
           }
 
-          // Update batch size for future iterations
+          // Advance past the whole retried range so its tail is not fetched twice,
+          // and keep the smaller batch size for future iterations
+          i = retryRangeEnd;
           batchSize = newBatchSize;
         } else {
           this.config.logMessage(`Failed to fetch ${entityType.toLowerCase()} for campaigns ${campaignBatch.join(', ')}: ${error.message}`);
@@ -586,10 +620,11 @@ var MicrosoftAdsSource = class MicrosoftAdsSource extends AbstractSource {
    * @param {string} opts.accountId
    * @param {string} opts.entityType
    * @param {Array<string>} opts.campaignBatch
-   * @returns {Array<Object>}
+   * @param {Function} [opts.onRecordsChunk] - Streams records in chunks when provided
+   * @returns {Array<Object>} - Empty array when onRecordsChunk is provided
    * @private
    */
-  async _downloadEntityBatch({ accountId, entityType, campaignBatch }) {
+  async _downloadEntityBatch({ accountId, entityType, campaignBatch, onRecordsChunk }) {
     const developerToken = this._getDeveloperToken();
 
     const downloadBody = {
@@ -620,7 +655,8 @@ var MicrosoftAdsSource = class MicrosoftAdsSource extends AbstractSource {
 
     return await this._downloadEntity({
       submitUrl: 'https://bulk.api.bingads.microsoft.com/Bulk/v13/Campaigns/DownloadByCampaignIds',
-      submitOpts
+      submitOpts,
+      onRecordsChunk
     });
   }
 

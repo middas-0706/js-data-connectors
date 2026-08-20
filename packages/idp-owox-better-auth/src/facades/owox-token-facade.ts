@@ -4,6 +4,7 @@ import {
   IdentityOwoxClient,
   IntrospectionRequest,
   IntrospectionResponse,
+  MicrosoftExtensionIdentityExchangeRequest,
   RevocationRequest,
   TokenRequest,
   TokenResponse,
@@ -125,9 +126,34 @@ export class OwoxTokenFacade {
     };
   }
 
+  async exchangeMicrosoftExtensionIdentity(
+    request: MicrosoftExtensionIdentityExchangeRequest
+  ): Promise<AuthResult> {
+    const response = await this.identityClient.exchangeMicrosoftExtensionIdentity(request);
+    return OwoxTokenFacade.toAuthResult(response);
+  }
+
+  async refreshExtensionProjectToken(refreshToken: string): Promise<AuthResult> {
+    await this.assertExtensionProjectToken(refreshToken);
+    return this.refreshToken(refreshToken);
+  }
+
+  async revokeExtensionProjectToken(refreshToken: string): Promise<void> {
+    await this.assertExtensionProjectToken(refreshToken);
+    const revoked = await this.requestTokenRevocation(refreshToken);
+    if (!revoked) {
+      throw new IdpFailedException('Failed to revoke extension project token');
+    }
+  }
+
   async revokeToken(token: string): Promise<void> {
+    await this.requestTokenRevocation(token);
+  }
+
+  private async requestTokenRevocation(token: string): Promise<boolean> {
     const request: RevocationRequest = { token: token, tokenType: 'refresh_token' };
-    await this.identityClient.revokeToken(request);
+    const response = await this.identityClient.revokeToken(request);
+    return response.success;
   }
 
   async accessTokenMiddleware(
@@ -189,5 +215,28 @@ export class OwoxTokenFacade {
       refreshToken,
       buildCookieOptions(req, { maxAgeMs: expiresIn * 1000 })
     );
+  }
+
+  private static toAuthResult(response: {
+    accessToken: string;
+    refreshToken: string;
+    accessTokenExpiresIn: number;
+    refreshTokenExpiresIn: number;
+  }): AuthResult {
+    return {
+      accessToken: response.accessToken,
+      refreshToken: response.refreshToken,
+      accessTokenExpiresIn: response.accessTokenExpiresIn,
+      refreshTokenExpiresIn: response.refreshTokenExpiresIn,
+    };
+  }
+
+  private async assertExtensionProjectToken(token: string): Promise<void> {
+    const payload = await this.tokenService.parse(token);
+    if (payload?.authFlow !== 'extension') {
+      throw new AuthenticationException('Token was not issued for extension project auth', {
+        description: 'invalid_project_refresh_token',
+      });
+    }
   }
 }

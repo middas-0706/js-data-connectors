@@ -39,15 +39,18 @@ import { AuthErrorController } from './controllers/auth-error-controller.js';
 import { PageController } from './controllers/page-controller.js';
 import { PasswordFlowController } from './controllers/password-flow-controller.js';
 import { GoogleSheetsExtensionAuthController } from './controllers/google-sheets-auth.controller.js';
+import { ExtensionAuthController } from './controllers/extension-auth.controller.js';
 import { AUTH_BASE_PATH, CORE_REFRESH_TOKEN_COOKIE, SOURCE } from './core/constants.js';
 import { AuthenticationException, IdpFailedException } from './core/exceptions.js';
 import { isPersonalEmailDomain } from './core/personal-email-domains.js';
 import { createServiceLogger } from './core/logger.js';
 import { OwoxTokenFacade, type TokenResponseWithContext } from './facades/owox-token-facade.js';
 import { BetterAuthSessionService } from './services/auth/better-auth-session-service.js';
+import { ExtensionAuthService } from './services/auth/extension-auth-service.js';
 import { MagicLinkService } from './services/auth/magic-link-service.js';
 import { PkceFlowOrchestrator } from './services/auth/pkce-flow-orchestrator.js';
 import { PlatformAuthFlowClient } from './services/auth/platform-auth-flow-client.js';
+import { MicrosoftEntraAccessTokenVerifier } from './services/auth/microsoft-entra-access-token-verifier.js';
 import { MembershipRequestsService } from './services/core/membership-requests-service.js';
 import { ProjectMembersService } from './services/core/project-members-service.js';
 import type { ProjectMembersServiceOptions } from './types/index.js';
@@ -88,6 +91,7 @@ export class OwoxBetterAuthIdp implements IdpProvider {
   private readonly pageController: PageController;
   private readonly passwordFlowController: PasswordFlowController;
   private readonly googleSheetsAuthController: GoogleSheetsExtensionAuthController;
+  private readonly extensionAuthController?: ExtensionAuthController;
   private readonly betterAuthSessionService: BetterAuthSessionService;
   private readonly authFlowMiddleware: AuthFlowMiddleware;
   private readonly identityClient: IdentityOwoxClient;
@@ -147,6 +151,17 @@ export class OwoxBetterAuthIdp implements IdpProvider {
       userAccountResolver
     );
     this.googleSheetsAuthController = new GoogleSheetsExtensionAuthController(this.tokenFacade);
+    if (this.config.idpOwox.extensionAuth) {
+      const extensionAuthConfig = this.config.idpOwox.extensionAuth;
+      const microsoftVerifier = new MicrosoftEntraAccessTokenVerifier({
+        ...extensionAuthConfig.microsoft,
+        clockTolerance: extensionAuthConfig.clockTolerance,
+      });
+      const extensionAuthService = new ExtensionAuthService(microsoftVerifier, this.tokenFacade);
+      this.extensionAuthController = new ExtensionAuthController(extensionAuthService, {
+        allowedOrigins: extensionAuthConfig.allowedOrigins,
+      });
+    }
     this.pkceFlowOrchestrator = new PkceFlowOrchestrator(
       this.config.idpOwox,
       this.tokenFacade,
@@ -346,6 +361,7 @@ export class OwoxBetterAuthIdp implements IdpProvider {
     this.pageController.registerRoutes(app);
     this.passwordFlowController.registerRoutes(app);
     this.googleSheetsAuthController.registerRoutes(app);
+    this.extensionAuthController?.registerRoutes(app);
 
     app.get(
       `${AUTH_BASE_PATH}/idp-start`,

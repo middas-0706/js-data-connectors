@@ -31,6 +31,7 @@ import {
   McpOAuthTokenVerificationRequest,
   McpOAuthTokenVerificationRequestSchema,
   McpOAuthTokenVerificationResponseSchema,
+  MicrosoftExtensionIdentityExchangeRequest,
   OwoxApproveMembershipRequestResponse,
   OwoxApproveMembershipRequestResponseSchema,
   OwoxInviteProjectMemberResponse,
@@ -123,6 +124,31 @@ export class IdentityOwoxClient {
       return TokenResponseSchema.parse(data);
     } catch (err) {
       this.handleAxiosError(err, { req }, 'Failed to exchange Google identity token');
+    }
+  }
+
+  /** POST /idp/auth-flow/extension/microsoft-identity. */
+  async exchangeMicrosoftExtensionIdentity(
+    req: MicrosoftExtensionIdentityExchangeRequest
+  ): Promise<TokenResponse> {
+    const authHeader = await this.getC2cAuthHeader('exchange Microsoft extension identity', {
+      hasProjectId: Boolean(req.biProjectId),
+      projectId: req.biProjectId,
+    });
+
+    try {
+      const { data } = await this.http.post<TokenResponse>(
+        `${this.clientBackchannelPrefix}/idp/auth-flow/extension/microsoft-identity`,
+        req,
+        { headers: authHeader }
+      );
+      return TokenResponseSchema.parse(data);
+    } catch (err) {
+      this.handleAxiosError(
+        err,
+        { projectId: req.biProjectId },
+        'Failed to exchange Microsoft extension identity'
+      );
     }
   }
 
@@ -267,7 +293,8 @@ export class IdentityOwoxClient {
       return { success: resp.status >= 200 && resp.status < 300 };
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        return { success: false };
+        const status = err.response?.status;
+        return { success: status === 400 || status === 401 || status === 404 };
       }
       throw err;
     }

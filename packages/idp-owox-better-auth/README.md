@@ -31,6 +31,12 @@ IDP_OWOX_PLATFORM_SIGN_UP_URL=https://platform.example.com/auth/sign-up
 IDP_OWOX_SIGN_OUT_REDIRECT_URL=https://platform.example.com/auth/signed-out
 IDP_OWOX_JWT_ISSUER=https://idp.example.com
 
+# Microsoft NAA extension exchange (disabled unless explicitly enabled)
+# IDP_OWOX_EXTENSION_MICROSOFT_ENABLED=true
+# IDP_OWOX_EXTENSION_MICROSOFT_AUDIENCES=api://your-entra-api-app-id
+# IDP_OWOX_EXTENSION_MICROSOFT_SCOPE=identity.exchange
+# IDP_OWOX_EXTENSION_ALLOWED_ORIGINS=https://addin.example.com
+
 # Better Auth IDP
 IDP_BETTER_AUTH_SECRET=your-super-secret-key-at-least-32-characters-long
 IDP_BETTER_AUTH_MAGIC_LINK_TTL=3600

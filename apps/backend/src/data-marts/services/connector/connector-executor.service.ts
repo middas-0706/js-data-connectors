@@ -508,19 +508,44 @@ export class ConnectorExecutorService {
           });
         } else if (configErrors.length === 0) {
           const errorMessage = 'Connector process finished without terminal success status';
-          addMessageToArray(configErrors, {
-            type: ConnectorMessageType.ERROR,
-            at: this.systemTimeService.now().toISOString(),
-            error: errorMessage,
-            toFormattedString: () => `[ERROR] ${errorMessage}`,
-          });
-          this.logger.error(`Configuration ${configIndex + 1} failed: ${errorMessage}`, {
+          // Only a shutdown makes this transient: that run is marked INTERRUPTED and the
+          // retry sweep resumes it, continuing from its last completed date. Every other
+          // cause reaching here — exiting 0 without IMPORT_DONE, or reporting STATUS:ERROR
+          // with no detail — ends FAILED and is never resumed, so it stays an error.
+          // Downgrading those would leave a fleet-wide regression with no error signal.
+          const wasInterrupted = this.gracefulShutdownService.isInShutdownMode();
+          const summary = `Configuration ${configIndex + 1} failed: ${errorMessage}`;
+          const at = this.systemTimeService.now().toISOString();
+          const logMeta = {
             dataMartId: dataMart.id,
             projectId: dataMart.projectId,
             runId,
             configId,
             configIndex,
-          });
+          };
+
+          addMessageToArray(
+            configErrors,
+            wasInterrupted
+              ? {
+                  type: ConnectorMessageType.WARNING,
+                  at,
+                  warning: errorMessage,
+                  toFormattedString: () => `[WARNING] ${errorMessage}`,
+                }
+              : {
+                  type: ConnectorMessageType.ERROR,
+                  at,
+                  error: errorMessage,
+                  toFormattedString: () => `[ERROR] ${errorMessage}`,
+                }
+          );
+
+          if (wasInterrupted) {
+            this.logger.warn(summary, logMeta);
+          } else {
+            this.logger.error(summary, logMeta);
+          }
         }
       } catch (error) {
         success = false;

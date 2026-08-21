@@ -702,7 +702,23 @@ describe('ConnectorExecutorService', () => {
     expect(errors.join()).not.toContain('finished without terminal success status');
   });
 
+  // The fallback fires whenever the process resolves with no terminal success status and
+  // no captured error. Only a shutdown makes that resumable, so severity splits on it.
+  const findFallbackEntry = (dataMartRunRepository: Repository<DataMartRun>, status: string) => {
+    const finalUpdate = (dataMartRunRepository.update as jest.Mock).mock.calls.find(
+      call => call[1]?.status === status
+    );
+    const entry = (finalUpdate![1].errors as string[])
+      .map(raw => JSON.parse(raw))
+      .find(parsed => `${parsed.warning ?? parsed.error}`.includes('without terminal success'));
+
+    expect(entry).toBeDefined();
+    return entry;
+  };
+
   it('still reports a failure when the connector sends a status flag and no detail', async () => {
+    // status 5 is the connector explicitly reporting failure on a healthy backend: the run
+    // ends FAILED and is never swept, so this must stay an error rather than a warning.
     const { service, dataMartRunRepository, processSpawner, emitMessage } = createService();
     (processSpawner.spawnConnector as jest.Mock).mockImplementation(async () => {
       emitMessage({
@@ -715,13 +731,40 @@ describe('ConnectorExecutorService', () => {
 
     await service.executeInBackground(createDataMart(), createRun(), null);
 
-    const finalUpdate = (dataMartRunRepository.update as jest.Mock).mock.calls.find(
-      call => call[1]?.status === DataMartRunStatus.FAILED
-    );
+    const fallback = findFallbackEntry(dataMartRunRepository, DataMartRunStatus.FAILED);
+    expect(fallback.type).toBe(ConnectorMessageType.ERROR);
+    expect(fallback.error).toBe('Connector process finished without terminal success status');
+    expect(fallback.warning).toBeUndefined();
+  });
 
-    expect((finalUpdate![1].errors as string[]).join()).toContain(
-      'finished without terminal success status'
-    );
+  it('keeps a silent exit an error when the backend is healthy', async () => {
+    // A connector that exits 0 without ever emitting IMPORT_DONE is a bug, not a blip —
+    // downgrading it would let a runner regression fail every run with no error signal.
+    const { service, dataMartRunRepository, processSpawner } = createService();
+    (processSpawner.spawnConnector as jest.Mock).mockResolvedValue(undefined);
+
+    await service.executeInBackground(createDataMart(), createRun(), null);
+
+    const fallback = findFallbackEntry(dataMartRunRepository, DataMartRunStatus.FAILED);
+    expect(fallback.type).toBe(ConnectorMessageType.ERROR);
+  });
+
+  it('records a shutdown-interrupted run as a warning, not an error', async () => {
+    // The run is marked INTERRUPTED and the retry sweep resumes it, continuing from its
+    // last completed date, so a single such attempt is not individually actionable.
+    const { service, dataMartRunRepository, processSpawner, gracefulShutdownService } =
+      createService();
+    (processSpawner.spawnConnector as jest.Mock).mockImplementation(async () => {
+      // The process is killed mid-run; the spawner resolves quietly during shutdown.
+      (gracefulShutdownService.isInShutdownMode as jest.Mock).mockReturnValue(true);
+    });
+
+    await service.executeInBackground(createDataMart(), createRun(), null);
+
+    const fallback = findFallbackEntry(dataMartRunRepository, DataMartRunStatus.INTERRUPTED);
+    expect(fallback.type).toBe(ConnectorMessageType.WARNING);
+    expect(fallback.warning).toBe('Connector process finished without terminal success status');
+    expect(fallback.error).toBeUndefined();
   });
 
   it('persists a cancelled configuration as a warning, not an error', async () => {

@@ -130,6 +130,29 @@ Cover meaningful behavior at the service/hook/component layer closest to the
 change. Use browser E2E only when the regression requires the real route and
 application stack.
 
+## Release Readiness and Changesets
+
+Read the changeset policy in
+[`docs/contributing/repository/release-strategy.md`](contributing/repository/release-strategy.md)
+and evaluate the observable release impact. Do not require a changeset merely
+because application code changed, and do not waive one merely because a change
+is implemented in an internal layer.
+
+When the policy requires a changeset, verify that:
+
+- the changed release outcome is covered by a new `.changeset` file;
+- for OWOX-managed work, the filename starts with the owning Fibery Work Item's
+  public numeric ID followed by a short kebab-case summary;
+- the selected package and version bump follow the repository release strategy;
+- the title and body accurately explain the user-visible outcome without
+  unnecessary implementation detail.
+
+If the owning Fibery ID is missing or ambiguous, request clarification rather
+than guessing it or substituting a pull request number. Treat a missing required
+changeset, an unconfirmed filename ID, or misleading release text as an
+approval-blocking release-readiness gap and report it separately from code-risk
+findings. The absence of an optional changeset is not a finding.
+
 ## Tests and Validation
 
 Use the narrowest relevant command from

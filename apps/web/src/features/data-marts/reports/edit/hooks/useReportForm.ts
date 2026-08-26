@@ -3,15 +3,20 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import type { DataMartReport } from '../../shared/model/types/data-mart-report.ts';
-import { isGoogleSheetsDestinationConfig } from '../../shared/model/types/data-mart-report.ts';
 import {
   DestinationTypeConfigEnum,
   extractGoogleSheetsUrlComponents,
+  getGoogleSheetsReportDocumentUrl,
   isValidGoogleSheetsUrl,
   ReportFormMode,
   useReport,
 } from '../../shared';
 import type { DataDestination } from '../../../../data-destination/shared/model/types';
+import {
+  DataDestinationType,
+  reportNamesTargetDocument,
+} from '../../../../data-destination/shared/enums';
+import type { DestinationConfigDto } from '../../shared/services';
 import { DEFAULT_REPORT_TITLE } from '../../shared';
 import {
   AggregationRuleSchema,
@@ -20,7 +25,7 @@ import {
   SortRuleSchema,
 } from '../../../shared/types/output-config';
 
-export const GoogleSheetsReportEditFormSchema = z.object({
+export const ReportEditFormSchema = z.object({
   title: z.string().min(1, 'Title is required'),
   documentUrl: z.string().refine(isValidGoogleSheetsUrl, 'Enter a valid Google Sheets URL'),
   dataDestinationId: z.string().min(1, 'Destination is required'),
@@ -36,9 +41,19 @@ export const GoogleSheetsReportEditFormSchema = z.object({
   uniqueCountConfig: z.array(z.string()),
 });
 
-export type GoogleSheetsReportEditFormValues = z.infer<typeof GoogleSheetsReportEditFormSchema>;
+export type ReportEditFormValues = z.infer<typeof ReportEditFormSchema>;
 
-interface UseGoogleSheetsReportFormOptions {
+/**
+ * A destination that names no document is not asked for one, so its URL must not be validated
+ * either. Everything else is identical: the output controls decide what the destination reads.
+ */
+export function buildReportEditFormSchema(destinationType: DataDestinationType) {
+  return reportNamesTargetDocument(destinationType)
+    ? ReportEditFormSchema
+    : ReportEditFormSchema.extend({ documentUrl: z.string() });
+}
+
+interface UseReportFormOptions {
   initialReport?: DataMartReport;
   mode: ReportFormMode;
   dataMartId: string;
@@ -46,9 +61,11 @@ interface UseGoogleSheetsReportFormOptions {
   onSuccess?: () => void;
   preSelectedDestination?: DataDestination | null;
   pendingOwnerIdsRef?: RefObject<string[] | null>;
+  /** The destination this report is being configured for. */
+  destinationType?: DataDestinationType;
 }
 
-export function useGoogleSheetsReportForm({
+export function useReportForm({
   initialReport,
   mode,
   dataMartId,
@@ -56,7 +73,8 @@ export function useGoogleSheetsReportForm({
   onSuccess,
   preSelectedDestination,
   pendingOwnerIdsRef,
-}: UseGoogleSheetsReportFormOptions) {
+  destinationType = DataDestinationType.GOOGLE_SHEETS,
+}: UseReportFormOptions) {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { updateReport, createReport, error: reportError, clearError } = useReport();
@@ -68,15 +86,11 @@ export function useGoogleSheetsReportForm({
     }
   }, [reportError, isSubmitting]);
 
-  const form = useForm<GoogleSheetsReportEditFormValues>({
-    resolver: zodResolver(GoogleSheetsReportEditFormSchema),
+  const form = useForm<ReportEditFormValues>({
+    resolver: zodResolver(buildReportEditFormSchema(destinationType)),
     defaultValues: {
       title: initialReport?.title ?? DEFAULT_REPORT_TITLE,
-      documentUrl:
-        initialReport?.destinationConfig &&
-        isGoogleSheetsDestinationConfig(initialReport.destinationConfig)
-          ? `https://docs.google.com/spreadsheets/d/${initialReport.destinationConfig.spreadsheetId}/edit#gid=${initialReport.destinationConfig.sheetId}`
-          : '',
+      documentUrl: getGoogleSheetsReportDocumentUrl(initialReport?.destinationConfig),
       dataDestinationId: initialReport?.dataDestination.id ?? preSelectedDestination?.id ?? '', // Use preSelectedDestination here
       columnConfig: initialReport?.columnConfig ?? null,
       filterConfig: initialReport?.filterConfig ?? null,
@@ -93,18 +107,39 @@ export function useGoogleSheetsReportForm({
   const { errors, isDirty, isValid } = formState;
 
   const onSubmit = useCallback(
-    async (data: GoogleSheetsReportEditFormValues) => {
+    async (data: ReportEditFormValues) => {
       try {
         // Clear any previous errors
         setFormError(null);
         clearError();
         setIsSubmitting(true);
 
-        // Extract spreadsheetId and sheetId from the document URL
-        const { spreadsheetId, sheetId } = extractGoogleSheetsUrlComponents(data.documentUrl);
-        if (!spreadsheetId) {
-          setFormError('Invalid Google Sheets URL');
-          return;
+        // Named one by one rather than derived from reportNamesTargetDocument: that predicate is
+        // false for every destination that stores no document — Data Studio, Email, Slack and the
+        // rest — so a fallback branch would save any of them as an Excel report, silently and
+        // with no error anywhere. Only two types reach this form today; a third one has to be
+        // added here deliberately, and until it is, it fails where it can still be seen.
+        let destinationConfig: DestinationConfigDto;
+        switch (destinationType) {
+          case DataDestinationType.GOOGLE_SHEETS: {
+            const { spreadsheetId, sheetId } = extractGoogleSheetsUrlComponents(data.documentUrl);
+            if (!spreadsheetId) {
+              setFormError('Invalid Google Sheets URL');
+              return;
+            }
+            destinationConfig = {
+              type: DestinationTypeConfigEnum.GOOGLE_SHEETS_CONFIG,
+              spreadsheetId,
+              sheetId,
+            };
+            break;
+          }
+          case DataDestinationType.EXCEL:
+            destinationConfig = { type: DestinationTypeConfigEnum.EXCEL_CONFIG };
+            break;
+          default:
+            setFormError(`This form cannot configure a ${destinationType} report`);
+            return;
         }
 
         let result;
@@ -114,11 +149,7 @@ export function useGoogleSheetsReportForm({
             title: data.title,
             dataMartId: dataMartId,
             dataDestinationId: data.dataDestinationId,
-            destinationConfig: {
-              type: DestinationTypeConfigEnum.GOOGLE_SHEETS_CONFIG,
-              spreadsheetId,
-              sheetId,
-            },
+            destinationConfig,
             ...(pendingOwnerIdsRef?.current != null
               ? { ownerIds: pendingOwnerIdsRef.current }
               : {}),
@@ -138,11 +169,7 @@ export function useGoogleSheetsReportForm({
           result = await updateReport(initialReport.id, {
             title: data.title,
             dataDestinationId: data.dataDestinationId,
-            destinationConfig: {
-              type: DestinationTypeConfigEnum.GOOGLE_SHEETS_CONFIG,
-              spreadsheetId,
-              sheetId,
-            },
+            destinationConfig,
             ...(pendingOwnerIdsRef?.current != null
               ? { ownerIds: pendingOwnerIdsRef.current }
               : {}),
@@ -187,6 +214,7 @@ export function useGoogleSheetsReportForm({
       clearError,
       reportError,
       pendingOwnerIdsRef,
+      destinationType,
     ]
   );
 

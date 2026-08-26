@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReportFormMode } from '../../../shared';
 import type { DataMartReport } from '../../../shared/model/types/data-mart-report';
-import { GoogleSheetsReportEditSheet } from './GoogleSheetsReportEditSheet';
+import { ReportEditSheet } from './ReportEditSheet';
 
 const authMock = vi.hoisted(() => ({
   value: {
@@ -18,8 +18,8 @@ vi.mock('../../../../../idp', () => ({
   useAuth: () => authMock.value,
 }));
 
-vi.mock('../GoogleSheetsReportEditForm', () => ({
-  GoogleSheetsReportEditForm: () => null,
+vi.mock('../ReportEditForm', () => ({
+  ReportEditForm: () => null,
 }));
 
 vi.mock('../../../../../data-destination', () => ({
@@ -48,7 +48,7 @@ const initialReport = {
 function renderSheet(mode: ReportFormMode = ReportFormMode.EDIT) {
   return render(
     <MemoryRouter initialEntries={['/ui/project-1/data-marts/mart-1/reports']}>
-      <GoogleSheetsReportEditSheet
+      <ReportEditSheet
         isOpen
         onClose={vi.fn()}
         mode={mode}
@@ -58,7 +58,7 @@ function renderSheet(mode: ReportFormMode = ReportFormMode.EDIT) {
   );
 }
 
-describe('GoogleSheetsReportEditSheet', () => {
+describe('ReportEditSheet', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
@@ -84,6 +84,15 @@ describe('GoogleSheetsReportEditSheet', () => {
         `${window.location.origin}/ui/project-1/data-marts/mart-1/reports?reportId=report-1`
       );
     });
+  });
+
+  it('names no destination rather than naming the word "report" twice', () => {
+    // This is the path the sheet takes with no preSelectedDestination. The name is a prefix
+    // with its own trailing space, so its absence has to leave "a new report" — not "a new
+    // report report", and not a double space where the name would have been.
+    renderSheet(ReportFormMode.CREATE);
+
+    expect(screen.getByText('Fill in the details to create a new report')).toBeTruthy();
   });
 
   it('hides the copy link button in create mode', () => {

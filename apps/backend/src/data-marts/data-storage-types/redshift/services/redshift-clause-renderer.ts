@@ -126,11 +126,18 @@ export class RedshiftClauseRenderer extends SqlClauseRenderer {
     return `DATE_TRUNC('${unit.toLowerCase()}', ${expr})`;
   }
 
+  // Redshift TRIM strips only the space character by default; BTRIM with an explicit
+  // set makes tab/CR/LF-only cells blank too, matching the other dialects (#6779).
+  // CHR() instead of escape literals — Redshift string literals don't interpret \t.
+  protected override blankTrimmedExpression(columnRef: string): string {
+    return `BTRIM(${columnRef}, ' ' || CHR(9) || CHR(10) || CHR(13))`;
+  }
+
   protected renderFilterFragment(
     rule: FilterRule,
     _paramName: string,
     col: string,
-    _columnType?: string,
+    columnType?: string,
     valueCastType?: string
   ): RenderedClause {
     const lit = (v: string | number | boolean | null): string => {
@@ -179,6 +186,10 @@ export class RedshiftClauseRenderer extends SqlClauseRenderer {
           sql: `(${col} IS NULL OR ${col} !~ ${text(rule.value)})`,
           params: [],
         };
+      case 'is_blank':
+      case 'is_not_blank':
+        return this.renderBlankFragment(rule.operator, col, columnType);
+      // Legacy pair (#6779): accepted for saved configs, no longer offered by pickers.
       case 'is_empty':
         return { sql: `(${col} IS NULL OR ${col} = '')`, params: [] };
       case 'is_not_empty':

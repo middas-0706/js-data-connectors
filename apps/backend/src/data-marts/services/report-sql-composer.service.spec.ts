@@ -500,6 +500,80 @@ describe('ReportSqlComposerService', () => {
     });
   });
 
+  it('throws BLANK_FILTER_COLUMN_TYPE_UNRESOLVED when a blank filter runs with no schema types', async () => {
+    // With no actualized schema there is no column type to branch on, and the
+    // renderer would silently degrade a string is_blank to the NULL-only form —
+    // wrong rows instead of an error (#6779). The composer refuses instead.
+    const { service, queryBuilderFacade } = createService({
+      needsBlending: false,
+      columnFilter: ['name'],
+    });
+    const report = buildReport({
+      columnConfig: ['name'],
+      filterConfig: [{ column: 'name', operator: 'is_blank' }],
+    } as never);
+    await expect(
+      service.compose(report, { userId: 'user-1', roles: ['admin'] })
+    ).rejects.toMatchObject({
+      response: {
+        details: {
+          errors: [{ code: 'BLANK_FILTER_COLUMN_TYPE_UNRESOLVED', column: 'name' }],
+        },
+      },
+    });
+    expect(queryBuilderFacade.buildQuery).not.toHaveBeenCalled();
+  });
+
+  it('throws BLANK_FILTER_COLUMN_TYPE_UNRESOLVED when every schema field is hidden (non-empty schema, empty type map)', async () => {
+    // schemaFields.length > 0 but collectSchemaFieldPathTypes drops hidden fields, so
+    // the type map is empty — a map-existence-only guard would let a string is_blank
+    // silently render as bare IS NULL. The guard must resolve each blank column.
+    const { service, queryBuilderFacade } = createService({
+      needsBlending: false,
+      columnFilter: ['name'],
+    });
+    const report = buildReport({
+      dataMart: {
+        id: 'dm-1',
+        definition: { sqlQuery: 'SELECT 1' },
+        storage: { id: 'storage-1', type: 'GOOGLE_BIGQUERY' },
+        schema: {
+          type: 'bigquery-data-mart-schema',
+          fields: [
+            { name: 'name', type: 'STRING', status: 'CONNECTED', isHiddenForReporting: true },
+          ],
+        },
+      },
+      columnConfig: ['name'],
+      filterConfig: [{ column: 'name', operator: 'is_blank' }],
+    } as never);
+    await expect(
+      service.compose(report, { userId: 'user-1', roles: ['admin'] })
+    ).rejects.toMatchObject({
+      response: {
+        details: {
+          errors: [{ code: 'BLANK_FILTER_COLUMN_TYPE_UNRESOLVED', column: 'name' }],
+        },
+      },
+    });
+    expect(queryBuilderFacade.buildQuery).not.toHaveBeenCalled();
+  });
+
+  it('legacy is_null composes without an actualized schema — it needs no column type', async () => {
+    const { service, queryBuilderFacade } = createService(
+      { needsBlending: false, columnFilter: ['name'] },
+      'SELECT 1'
+    );
+    const report = buildReport({
+      columnConfig: ['name'],
+      filterConfig: [{ column: 'name', operator: 'is_null' }],
+    } as never);
+    await expect(
+      service.compose(report, { userId: 'user-1', roles: ['admin'] })
+    ).resolves.toBeDefined();
+    expect(queryBuilderFacade.buildQuery).toHaveBeenCalled();
+  });
+
   it('throws OUTPUT_CONTROLS_NOT_SUPPORTED on the simple-query path for unsupported storages', async () => {
     // Non-blended path with output controls on a storage that lacks output
     // controls support — must throw the existing structured error before

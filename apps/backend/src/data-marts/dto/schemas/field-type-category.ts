@@ -87,8 +87,17 @@ export function categorizeFieldType(fieldType: string): FieldTypeCategory {
 // advertised operator matrix from the same map — one source, no service import.
 // ---------------------------------------------------------------------------
 
-/** Valid for any column type, including ones not in the category sets. */
-export const TYPE_AGNOSTIC_OPS: ReadonlySet<string> = new Set(['is_null', 'is_not_null']);
+/**
+ * Valid for any column type, including ones not in the category sets.
+ * is_null/is_not_null are legacy (#6779): kept accepted for saved configs, no
+ * longer offered by the pickers — is_blank/is_not_blank replace them everywhere.
+ */
+export const TYPE_AGNOSTIC_OPS: ReadonlySet<string> = new Set([
+  'is_blank',
+  'is_not_blank',
+  'is_null',
+  'is_not_null',
+]);
 
 const STRING_OPS = new Set([
   'eq',
@@ -99,6 +108,9 @@ const STRING_OPS = new Set([
   'ends_with',
   'in',
   'not_in',
+  'is_blank',
+  'is_not_blank',
+  // Legacy null/empty cluster (#6779) — accepted for saved configs only.
   'is_empty',
   'is_not_empty',
   'is_null',
@@ -116,6 +128,8 @@ const NUMBER_OPS = new Set([
   'between',
   'in',
   'not_in',
+  'is_blank',
+  'is_not_blank',
   'is_null',
   'is_not_null',
 ]);
@@ -130,6 +144,8 @@ const DATE_OPS = new Set([
   'in',
   'not_in',
   'relative_date',
+  'is_blank',
+  'is_not_blank',
   'is_null',
   'is_not_null',
 ]);
@@ -144,10 +160,19 @@ const TIME_OPS = new Set([
   'between',
   'in',
   'not_in',
+  'is_blank',
+  'is_not_blank',
   'is_null',
   'is_not_null',
 ]);
-const BOOL_OPS = new Set(['is_true', 'is_false', 'is_null', 'is_not_null']);
+const BOOL_OPS = new Set([
+  'is_true',
+  'is_false',
+  'is_blank',
+  'is_not_blank',
+  'is_null',
+  'is_not_null',
+]);
 
 export const INTERNAL_OPERATORS_BY_CATEGORY: Record<FieldTypeCategory, ReadonlySet<string>> = {
   string: STRING_OPS,

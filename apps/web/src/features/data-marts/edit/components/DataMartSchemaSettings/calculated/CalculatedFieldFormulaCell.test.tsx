@@ -134,12 +134,12 @@ function renderCell({
   live = false,
   fieldName,
 }: CellOptions = {}) {
-  render(
+  const cell = (withFormula: string) => (
     // The provider the schema page puts above every table: the live check has to be told what the
     // editor is HOLDING, or it resolves a sibling reference against the schema on disk.
     <DraftCalculatedFieldsContext.Provider value={collectDraftCalculatedFields(own)}>
       <CalculatedFieldFormulaCell
-        formula={formula}
+        formula={withFormula}
         index={[...buildReferenceIndex(own), ...buildJoinedReferenceIndex(joined)]}
         functionNames={aggregateFunctionsFor(DataStorageType.GOOGLE_BIGQUERY)}
         joinedFieldsStatus={joinedFieldsStatus}
@@ -150,17 +150,57 @@ function renderCell({
       />
     </DraftCalculatedFieldsContext.Provider>
   );
+  const view = render(cell(formula));
+  // The cell is controlled: a test that needs the SAVED formula back on screen re-renders with it,
+  // the way the schema page does after `onSave`.
+  saveAndReRender = next => {
+    view.rerender(cell(next));
+  };
   return onSave;
 }
+
+/** Set by the most recent `renderCell`. */
+let saveAndReRender: (formula: string) => void = () => {
+  throw new Error('renderCell has not run yet');
+};
 
 /**
  * The row showing `text`. Found by its title rather than its text because a resolved reference is
  * its own `<span>` chip now, so the formula is several text nodes and `getByText` matches none.
  */
+/**
+ * The row's formula cell, and an assertion that it shows `text`.
+ *
+ * Located by slot rather than by text — a resolved reference is its own `<span>` chip, so the
+ * formula is several text nodes and `getByText` matches none — but the text is still checked,
+ * which is what `getByTitle` used to do implicitly at every call site. One cell per render, so
+ * the first trigger is this cell's. Pass `''` for a row whose formula is not set yet: it shows a
+ * placeholder instead.
+ */
 function formulaRow(text: string): HTMLElement {
-  // An empty formula shows the placeholder instead, which is one text node and carries no title.
-  const row = screen.queryByTitle(text) ?? screen.getByText(text);
-  return row.querySelector<HTMLElement>('[data-slot="popover-trigger"]') ?? row;
+  const cell = document.querySelector<HTMLElement>('[data-slot="hover-card-trigger"]');
+  if (!cell) throw new Error('no formula cell rendered');
+  const shown = cell.textContent;
+  if (text !== '' && shown !== text) {
+    throw new Error(
+      `formula cell shows ${JSON.stringify(shown)}, expected ${JSON.stringify(text)}`
+    );
+  }
+  return cell.querySelector<HTMLElement>('[data-slot="popover-trigger"]') ?? cell;
+}
+
+/** The hover card's own copy of the formula, or null while it is closed. */
+function hoverCard(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-slot="hover-card-content"]');
+}
+
+function hoverRow() {
+  const trigger = formulaRow('').closest('[data-slot="hover-card-trigger"]');
+  if (!trigger) throw new Error('no hover-card trigger on the row');
+  fireEvent.pointerEnter(trigger, { pointerType: 'mouse' });
+  act(() => {
+    vi.advanceTimersByTime(400);
+  });
 }
 
 function openEditor(triggerText: string) {
@@ -505,8 +545,6 @@ describe('CalculatedFieldFormulaCell', () => {
       );
 
       expect(titles).toEqual([null, 'amount from the joined Data Mart \u201COrders\u201D']);
-      // The whole formula stays on the cell, so a hover anywhere else still shows it.
-      expect(screen.getByTitle('SUM(clicks) + SUM(orders.amount)')).toBeInTheDocument();
     });
   });
 
@@ -793,5 +831,87 @@ describe('CalculatedFieldFormulaCell', () => {
       expect(onSave).not.toHaveBeenCalled();
       expect(screen.getByRole('alert')).toHaveTextContent('orders.secret');
     });
+  });
+});
+
+describe('the row preview', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const MULTILINE =
+    'SAFE_DIVIDE(\n  SUM({{ref field="clicks"}}),\n  SUM({{ref field="impressions"}})\n)';
+
+  it('holds the row to two lines however many the formula was authored over', () => {
+    renderCell({ formula: MULTILINE });
+
+    // The fold is CSS, which happy-dom lays out nowhere, so the classes ARE the assertion — they
+    // are also the whole mechanism: nothing rewrites the formula's text, which still holds its
+    // newlines and is what the hover card and the editor read.
+    const preview = formulaRow('');
+    expect(preview.className).toContain('line-clamp-2');
+    expect(preview.className).toContain('whitespace-normal');
+    expect(preview.textContent).toContain('\n');
+  });
+
+  it('shows the whole formula on hover, line breaks and all', () => {
+    renderCell({ formula: MULTILINE });
+    expect(hoverCard()).toBeNull();
+
+    hoverRow();
+
+    expect(hoverCard()?.textContent).toBe('SAFE_DIVIDE(\n  SUM(clicks),\n  SUM(impressions)\n)');
+  });
+
+  it('stands down while the editor is open, so one row never carries two popovers', () => {
+    renderCell({ formula: MULTILINE });
+    hoverRow();
+    expect(hoverCard()).not.toBeNull();
+
+    openEditor('');
+
+    expect(screen.getByTestId('formula-editor')).toBeInTheDocument();
+    expect(hoverCard()).toBeNull();
+  });
+
+  it('lets a keyboard reach a read-only formula, which has no editor to focus instead', () => {
+    renderCell({ formula: MULTILINE, readOnly: true });
+
+    const preview = document.querySelector<HTMLElement>('[data-slot="hover-card-trigger"]');
+    expect(preview?.tabIndex).toBe(0);
+    // The clamp hides nothing from a screen reader: the whole formula is still text in the DOM.
+    expect(preview?.textContent).toBe('SAFE_DIVIDE(\n  SUM(clicks),\n  SUM(impressions)\n)');
+  });
+
+  // The wrapper stays mounted for an empty formula — swapping it in and out on the first Apply
+  // replaced the subtree and cost the cell the editor's own close report — but it has nothing to
+  // show and never opens.
+  it('opens no card for a formula that is not there yet', () => {
+    renderCell({ formula: '' });
+
+    expect(document.querySelector('[data-slot="hover-card-trigger"]')).not.toBeNull();
+    hoverRow();
+    expect(hoverCard()).toBeNull();
+  });
+
+  // Applying the first formula of a NEW field used to swap `children` for the card wrapper in the
+  // same commit that closed the editor: React unmounted `EditableText` before its close could be
+  // reported, `isEditing` stuck at true, and the row's card never opened again.
+  it('still opens after the first formula is applied to a new field', () => {
+    const renderCellResult = renderCell({ formula: '' });
+
+    const onSave = renderCellResult;
+    fireEvent.click(formulaRow(''));
+    typeFormula('SUM(clicks)');
+    apply();
+    expect(onSave).toHaveBeenCalledWith('SUM({{ref field="clicks"}})');
+    saveAndReRender('SUM({{ref field="clicks"}})');
+
+    hoverRow();
+    expect(hoverCard()?.textContent).toBe('SUM(clicks)');
   });
 });

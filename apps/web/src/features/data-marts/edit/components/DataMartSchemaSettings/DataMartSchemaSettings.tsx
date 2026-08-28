@@ -1,4 +1,5 @@
 import { Button } from '@owox/ui/components/button';
+import { extractApiError } from '../../../../../app/api';
 import { TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import toast from 'react-hot-toast';
@@ -20,6 +21,7 @@ import { useAiHelper, useAiHelperAvailability } from '../../model/hooks';
 import type { ResolvedSchema } from '../../model/hooks';
 import type { SchemaToolbar } from './types/schema-toolbar';
 import {
+  rejectedFormulaMessage,
   useCalculatedFieldSave,
   type ViolationsByField,
 } from './calculated/useCalculatedFieldSave';
@@ -371,7 +373,18 @@ export function DataMartSchemaSettings({ definitionType }: DataMartSchemaSetting
   const guardSave = useCallback(async (): Promise<ResolvedSchema> => {
     const current = schemaRef.current;
     if (dataMartId && current) {
-      await saveCalculatedFields(current);
+      try {
+        await saveCalculatedFields(current);
+      } catch (error) {
+        // The dialog can only render a string, and an axios rejection's own `message` is
+        // "Request failed with status code 400" — which names neither the field nor the fix. The
+        // field-grouped detail is already on screen behind the dialog; point at it.
+        throw new Error(
+          rejectedFormulaMessage(error) ??
+            extractApiError(error).message ??
+            'Failed to save changes'
+        );
+      }
       markSchemaSaved(current);
       invalidateBlendableSchema();
     }

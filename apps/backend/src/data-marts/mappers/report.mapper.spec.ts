@@ -5,6 +5,8 @@ import { DataMartMapper } from './data-mart.mapper';
 import { DataDestinationMapper } from './data-destination.mapper';
 import { Report } from '../entities/report.entity';
 import { ReportDto } from '../dto/domain/report.dto';
+import { ReportDataHeader } from '../dto/domain/report-data-header.dto';
+import { BigQueryFieldType } from '../data-storage-types/bigquery/enums/bigquery-field-type.enum';
 import { CreateReportRequestApiDto } from '../dto/presentation/create-report-request-api.dto';
 import { UpdateReportRequestApiDto } from '../dto/presentation/update-report-request-api.dto';
 import { AuthorizationContext } from '../../idp';
@@ -223,5 +225,58 @@ describe('ReportMapper — uniqueCountConfig round-trip', () => {
 
     expect(cmd.aggregationConfig).toEqual([{ column: 'revenue', function: 'SUM' }]);
     expect(cmd.dateTruncConfig).toEqual([{ column: 'date', unit: 'MONTH' }]);
+  });
+
+  it('toOutputSchemaResponse: publishes alias as title', () => {
+    expect(
+      mapper.toOutputSchemaResponse([
+        new ReportDataHeader('date', 'Date', 'Reporting day', BigQueryFieldType.DATE),
+        new ReportDataHeader('clicks'),
+      ])
+    ).toEqual([
+      {
+        name: 'date',
+        title: 'Date',
+        description: 'Reporting day',
+        type: 'DATE',
+        aggregateFunction: undefined,
+        calculatedFieldLevel: undefined,
+      },
+      {
+        name: 'clicks',
+        title: undefined,
+        description: undefined,
+        type: undefined,
+        aggregateFunction: undefined,
+        calculatedFieldLevel: undefined,
+      },
+    ]);
+  });
+
+  // `type` alone cannot separate a non-additive calculated metric from an ordinary numeric column,
+  // and a consumer that re-aggregates the first is wrong at any grain. Both discriminators travel.
+  it('toOutputSchemaResponse: carries the aggregate function and the calculated-field level', () => {
+    expect(
+      mapper.toOutputSchemaResponse([
+        new ReportDataHeader(
+          'revenue | SUM',
+          'Revenue, $ | SUM',
+          undefined,
+          BigQueryFieldType.NUMERIC,
+          'SUM'
+        ),
+        new ReportDataHeader(
+          'ctr',
+          'CTR, %',
+          undefined,
+          BigQueryFieldType.FLOAT,
+          undefined,
+          'metric'
+        ),
+      ])
+    ).toEqual([
+      expect.objectContaining({ name: 'revenue | SUM', aggregateFunction: 'SUM' }),
+      expect.objectContaining({ name: 'ctr', calculatedFieldLevel: 'metric' }),
+    ]);
   });
 });

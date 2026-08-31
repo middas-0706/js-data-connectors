@@ -387,20 +387,51 @@ describe('SyncPluginReleasesService', () => {
       expect(result.report.acceptedSemvers).toEqual(['1.0.0']);
     });
 
-    // The collection-compatibility gate is temporarily off; see the ponytail note in
-    // processCandidate. A release that redefines an existing collection must publish.
-    it('accepts a release that redefines a collection from the current manifest', async () => {
+    // The reported case: a patch release binds an already-released collection to an entity.
+    const boundDashboards = {
+      name: 'dashboards',
+      scope: 'project',
+      entityBinding: {
+        type: 'data-mart',
+        actions: { read: 'SEE', create: 'SEE', update: 'EDIT', delete: 'DELETE' },
+      },
+    };
+
+    it('rejects a patch release that redefines a released collection', async () => {
       const s = setup();
-      // The reported case: a patch release binds an already-released collection to an entity.
-      const boundDashboards = {
-        name: 'dashboards',
-        scope: 'project',
-        entityBinding: {
-          type: 'data-mart',
-          actions: { read: 'SEE', create: 'SEE', update: 'EDIT', delete: 'DELETE' },
-        },
-      };
       s.githubApi.listReleases.mockResolvedValue([release('v0.1.1')]);
+      s.githubApi.getFileAtCommit.mockResolvedValue(
+        JSON.stringify({ ...JSON.parse(MANIFEST), collections: [boundDashboards] })
+      );
+      s.versionService.findAllByPluginId.mockResolvedValue([
+        {
+          id: 'v1',
+          semver: '0.1.0',
+          collections: [{ name: 'dashboards', scope: 'project' }],
+        },
+      ] as never);
+
+      const result = await run(s, false);
+
+      expect(result.report.acceptedSemvers).toEqual([]);
+      expect(result.report.rejections).toEqual([
+        expect.objectContaining({
+          tagName: 'v0.1.1',
+          code: ReleaseRejectionCode.COLLECTIONS_INCOMPATIBLE,
+          // The detail names the way out, because the publisher reads it with no
+          // other context. On 0.x the proportionate escape is a minor bump (SemVer
+          // §4), not being forced out of 0.x entirely.
+          detail: expect.stringContaining('bump the minor version'),
+        }),
+      ]);
+      expect(s.versionService.insertVersionForLease).not.toHaveBeenCalled();
+    });
+
+    // Below 1.0.0 the compatibility line is the minor version: 0.2.0 opens a new line,
+    // so the 0.1.x structure is not its contract.
+    it('accepts a 0.x minor bump that redefines a released collection', async () => {
+      const s = setup();
+      s.githubApi.listReleases.mockResolvedValue([release('v0.2.0')]);
       s.githubApi.getFileAtCommit.mockResolvedValue(
         JSON.stringify({ ...JSON.parse(MANIFEST), collections: [boundDashboards] })
       );
@@ -415,11 +446,54 @@ describe('SyncPluginReleasesService', () => {
       const result = await run(s);
 
       expect(result.report.rejections).toEqual([]);
-      expect(result.report.acceptedSemvers).toEqual(['0.1.1']);
+      expect(result.report.acceptedSemvers).toEqual(['0.2.0']);
+    });
+
+    it('accepts a major release that redefines a released collection', async () => {
+      const s = setup();
+      s.githubApi.listReleases.mockResolvedValue([release('v2.0.0')]);
+      s.githubApi.getFileAtCommit.mockResolvedValue(
+        JSON.stringify({ ...JSON.parse(MANIFEST), collections: [boundDashboards] })
+      );
+      s.versionService.findAllByPluginId.mockResolvedValue([
+        {
+          id: 'v1',
+          semver: '1.4.0',
+          collections: [{ name: 'dashboards', scope: 'project' }],
+        },
+      ] as never);
+
+      const result = await run(s);
+
+      expect(result.report.rejections).toEqual([]);
+      expect(result.report.acceptedSemvers).toEqual(['2.0.0']);
       expect(s.versionService.insertVersionForLease).toHaveBeenCalledWith(
         expect.objectContaining({ collections: [boundDashboards] }),
         'lease-1'
       );
+    });
+
+    // The baseline is the candidate's own line, not the globally highest version: a 1.x
+    // release answers to the 1.x structure even after 2.x moved on.
+    it('checks a release against its own compatibility line, not a higher one', async () => {
+      const s = setup();
+      s.githubApi.listReleases.mockResolvedValue([release('v1.1.0')]);
+      // Compatible with 1.x (adds the binding 2.x already made), incompatible with
+      // nothing in its line.
+      s.githubApi.getFileAtCommit.mockResolvedValue(
+        JSON.stringify({ ...JSON.parse(MANIFEST), collections: [] })
+      );
+      s.versionService.findAllByPluginId.mockResolvedValue([
+        { id: 'v2', semver: '2.0.0', collections: [boundDashboards] },
+        { id: 'v1', semver: '1.0.0', collections: [] },
+      ] as never);
+
+      const result = await run(s);
+
+      // Against 2.0.0 this would be "dashboards cannot be removed"; against its own
+      // 1.0.0 baseline it is fine.
+      expect(result.report.rejections).toEqual([]);
+      expect(result.report.acceptedSemvers).toEqual(['1.1.0']);
     });
 
     // One broken release must not take the good ones down with it.

@@ -54,6 +54,30 @@ export function formatSemver(parts: SemverParts): string {
   return `${parts.major}.${parts.minor}.${parts.patch}`;
 }
 
+/** Major component of a canonical `X.Y.Z` string. */
+export function majorOf(semver: string): number {
+  return Number(semver.split('.')[0]);
+}
+
+/**
+ * True when two canonical versions sit in the same compatibility line: the range a
+ * release cannot break out of without declaring it.
+ *
+ * From 1.0.0 on, the line is the major version. Below 1.0.0 SemVer makes no stability
+ * promise at all (§4), so the line narrows to the minor: a 0.y plugin declares a
+ * breaking change by bumping the minor version, without being forced out of 0.x.
+ */
+export function sameCompatibilityLine(a: string, b: string): boolean {
+  const [aMajor, aMinor] = a.split('.');
+  const [bMajor, bMinor] = b.split('.');
+
+  if (aMajor !== bMajor) {
+    return false;
+  }
+
+  return aMajor !== '0' || aMinor === bMinor;
+}
+
 /**
  * Field-by-field numeric comparison. Usable directly as an Array#sort comparator.
  *

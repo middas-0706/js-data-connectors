@@ -19,6 +19,11 @@ export enum ReleaseRejectionCode {
   MANIFEST_MISSING = 'MANIFEST_MISSING',
   MANIFEST_INVALID_JSON = 'MANIFEST_INVALID_JSON',
   MANIFEST_SCHEMA = 'MANIFEST_SCHEMA',
+  /**
+   * A minor or patch release removes, rescopes or rebinds a collection that an earlier
+   * release declared. The released structure is a contract within a major line; a major
+   * version bump is how a publisher ships such a change deliberately.
+   */
   COLLECTIONS_INCOMPATIBLE = 'COLLECTIONS_INCOMPATIBLE',
   DELIVERY_UNSUPPORTED = 'DELIVERY_UNSUPPORTED',
   URL_NOT_HTTPS = 'URL_NOT_HTTPS',
@@ -28,3 +33,39 @@ export enum ReleaseRejectionCode {
   /** This SemVer is already recorded against a different Release or commit. */
   VERSION_CONFLICT = 'VERSION_CONFLICT',
 }
+
+/**
+ * Whether each rejection marks something the publisher can and should act on: a release
+ * that wanted to become current and could not.
+ *
+ * `false` marks the candidacy codes -- releases that are ineligible by design and
+ * permanently. A repository full of drafts and release candidates would repeat them on
+ * every daily check while nothing is actually wrong, burying the one line that matters.
+ *
+ * `satisfies` over the full enum so that adding a code without deciding its visibility
+ * is a compile error, not a silent disappearance from the log and audit trail.
+ */
+const REJECTION_IS_PUBLISHER_ACTIONABLE = {
+  [ReleaseRejectionCode.DRAFT]: false,
+  [ReleaseRejectionCode.PRERELEASE_FLAG]: false,
+  [ReleaseRejectionCode.PRERELEASE_TAG]: false,
+  [ReleaseRejectionCode.BUILD_METADATA_TAG]: false,
+  [ReleaseRejectionCode.INVALID_TAG]: false,
+  [ReleaseRejectionCode.COMMIT_UNRESOLVABLE]: true,
+  [ReleaseRejectionCode.MANIFEST_MISSING]: true,
+  [ReleaseRejectionCode.MANIFEST_INVALID_JSON]: true,
+  [ReleaseRejectionCode.MANIFEST_SCHEMA]: true,
+  [ReleaseRejectionCode.COLLECTIONS_INCOMPATIBLE]: true,
+  [ReleaseRejectionCode.DELIVERY_UNSUPPORTED]: true,
+  [ReleaseRejectionCode.URL_NOT_HTTPS]: true,
+  [ReleaseRejectionCode.URL_PRIVATE_NETWORK]: true,
+  [ReleaseRejectionCode.URL_UNREACHABLE]: true,
+  [ReleaseRejectionCode.IFRAME_BLOCKED]: true,
+  [ReleaseRejectionCode.VERSION_CONFLICT]: true,
+} satisfies Record<ReleaseRejectionCode, boolean>;
+
+export const PUBLISHER_ACTIONABLE_REJECTION_CODES: ReadonlySet<ReleaseRejectionCode> = new Set(
+  (Object.keys(REJECTION_IS_PUBLISHER_ACTIONABLE) as ReleaseRejectionCode[]).filter(
+    code => REJECTION_IS_PUBLISHER_ACTIONABLE[code]
+  )
+);

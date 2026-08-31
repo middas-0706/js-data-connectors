@@ -22,8 +22,17 @@ import { PluginService, PluginSyncSlotClaim } from '../services/plugin.service';
 import { PluginVersionService } from '../services/plugin-version.service';
 import { RemoteUrlValidatorService } from '../services/remote-url-validator.service';
 import { GithubRepoRef, parseGithubRepoLocator } from '../utils/github-repo-locator.util';
-import { parsePluginManifest } from '../utils/plugin-manifest.util';
-import { compareSemver, formatSemver, parseReleaseTag } from '../utils/semver.util';
+import {
+  findIncompatibleCollectionChange,
+  parsePluginManifest,
+} from '../utils/plugin-manifest.util';
+import {
+  compareSemver,
+  formatSemver,
+  majorOf,
+  parseReleaseTag,
+  sameCompatibilityLine,
+} from '../utils/semver.util';
 
 /** A release that survived the free checks and is worth spending network calls on. */
 interface Candidate {
@@ -211,11 +220,37 @@ export class SyncPluginReleasesService {
       return false;
     }
 
-    // ponytail: collection-compatibility gate temporarily off, so a release that redefines
-    // an existing collection publishes instead of being rejected. It returns gated on
-    // SemVer: enforced for minor and patch, waived for a major release, so a plugin author
-    // decides when a breaking change is intended. findIncompatibleCollectionChange and
-    // COLLECTIONS_INCOMPATIBLE are kept for that.
+    // Collection compatibility is enforced only against the candidate's own
+    // compatibility line -- the highest released version with the same major (same
+    // minor too while below 1.0.0, per SemVer §4). A release that opens a new line is
+    // the publisher's declared breaking change, and versions from other lines are not
+    // its contract.
+    const baseline = (await this.versionService.findAllByPluginId(pluginId))
+      .filter(version => sameCompatibilityLine(version.semver, semver))
+      .reduce<
+        { semver: string; collections: PluginVersionCollections } | undefined
+      >((highest, version) => (!highest || compareSemver(version.semver, highest.semver) > 0 ? { semver: version.semver, collections: version.collections ?? [] } : highest), undefined);
+    if (baseline) {
+      const incompatibility = findIncompatibleCollectionChange(
+        baseline.collections ?? [],
+        manifest.manifest.collections
+      );
+      if (incompatibility) {
+        const escape =
+          majorOf(semver) === 0
+            ? 'bump the minor version to ship this breaking change while below 1.0.0'
+            : 'publish a new major version to ship this breaking change';
+        into.rejections.push(
+          this.rejection(
+            release,
+            ReleaseRejectionCode.COLLECTIONS_INCOMPATIBLE,
+            `${incompatibility} within the ${baseline.semver} compatibility line; ${escape}`
+          )
+        );
+        return false;
+      }
+    }
+
     const delivery = await this.remoteUrlValidator.validate(manifest.manifest.delivery.url);
     if (!delivery.ok) {
       into.rejections.push(this.rejection(release, delivery.code, delivery.detail));
@@ -376,3 +411,7 @@ export class SyncPluginReleasesService {
     return { tagName: release.tagName, githubReleaseId: release.githubReleaseId, code, detail };
   }
 }
+
+type PluginVersionCollections = NonNullable<
+  Awaited<ReturnType<PluginVersionService['findById']>>
+>['collections'];

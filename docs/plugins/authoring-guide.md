@@ -276,9 +276,14 @@ Choose the scope based on who owns the state:
 | `member` | Private to the current member for this plugin and project. It is not shared with other project members or with the same member in another project. | Preferences, personal layouts, drafts, and last-used settings. This is the usual replacement for `localStorage`. |
 | `project` | Shared by eligible members of the project. | Shared dashboards, configuration, and other collaborative state. |
 
-Collection declarations are immutable in structure once released. Later versions may add
+Collection declarations are immutable in structure within a compatibility line. A release may add
 collections and change action mappings, but cannot remove a collection or change its name, scope,
-or entity binding.
+or entity binding — such a release is rejected and the previous version stays current; the reason
+appears in the publisher diagnostics and on the plugin page. Opening a new line waives the check —
+it is how a breaking collection change ships deliberately. From 1.0.0 on, the line is the major
+version, so the declared break is a major bump. Below 1.0.0, where SemVer promises no stability,
+the line narrows to the minor version: a 0.x plugin ships a breaking change by bumping the minor,
+without leaving 0.x.
 
 ### Bind collection documents to OWOX entities
 

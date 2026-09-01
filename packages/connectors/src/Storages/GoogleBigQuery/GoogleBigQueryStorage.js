@@ -160,7 +160,7 @@ var GoogleBigQueryStorage = class GoogleBigQueryStorage extends AbstractStorage 
           WHERE schema_name = '${this.config.DestinationDatasetName.value}'
         );
         IF dataset_exists THEN 
-          SELECT column_name, data_type
+          SELECT column_name, data_type, is_partitioning_column
           FROM \`${this.config.DestinationDatasetID.value}.INFORMATION_SCHEMA.COLUMNS\`
           WHERE table_name = '${this.config.DestinationTableName.value}'
           ORDER BY ordinal_position;
@@ -176,11 +176,11 @@ var GoogleBigQueryStorage = class GoogleBigQueryStorage extends AbstractStorage 
 
         if( queryResults.rows ) {
           queryResults.rows.map(row => {
-            columns[ row.f[0].v ]  = {"name": row.f[0].v, "type": row.f[1].v}
+            columns[ row.f[0].v ]  = {"name": row.f[0].v, "type": row.f[1].v, "isPartitioningColumn": row.f[2].v === "YES"}
           });
         } else if (Array.isArray(queryResults)) {
           queryResults.map(row => {
-            columns[ row.column_name ] = {"name": row.column_name, "type": row.data_type}
+            columns[ row.column_name ] = {"name": row.column_name, "type": row.data_type, "isPartitioningColumn": row.is_partitioning_column === "YES"}
           });
         }
 
@@ -226,7 +226,9 @@ var GoogleBigQueryStorage = class GoogleBigQueryStorage extends AbstractStorage 
           columnDescription = ` OPTIONS(description="${this.obfuscateSpecialCharacters(this.schema[ columnName ]["description"])}")`;
         }
 
-        if( "GoogleBigQueryPartitioned" in this.schema[ columnName ] 
+        // Last flagged column wins — LinkedIn flags two; existing tables
+        // were created under this rule, so it must not change
+        if( "GoogleBigQueryPartitioned" in this.schema[ columnName ]
         && this.schema[ columnName ]["GoogleBigQueryPartitioned"] ) {
           columnPartitioned = columnName;
         }
@@ -249,7 +251,17 @@ var GoogleBigQueryStorage = class GoogleBigQueryStorage extends AbstractStorage 
       query += `CREATE TABLE IF NOT EXISTS \`${this.config.DestinationDatasetID.value}.${this.config.DestinationTableName.value}\` (\n${columns})`
 
       if( columnPartitioned ) {
-        query += `\nPARTITION BY ${quoteColumnNames ? quoteBigQueryIdentifier(columnPartitioned) : columnPartitioned}`;
+        const sqlName = quoteColumnNames ? quoteBigQueryIdentifier(columnPartitioned) : columnPartitioned;
+        const partitionExpression = this.buildPartitionByExpression(sqlName, this.getColumnType(columnPartitioned));
+        if( partitionExpression ) {
+          query += `\nPARTITION BY ${partitionExpression}`;
+          // Record table truth for buildPartitionPredicate in same-run flows
+          existingColumns[ columnPartitioned ]["isPartitioningColumn"] = true;
+        } else {
+          // A silent skip here would ship a dead flag: the table is created
+          // unpartitioned and every MERGE full-scans with no symptom but cost
+          this.config.logMessage(`Column '${columnPartitioned}' has type '${this.getColumnType(columnPartitioned)}' which cannot be a partition column; creating the table without partitioning`);
+        }
       }
 
       if( this.description ) {
@@ -575,6 +587,205 @@ var GoogleBigQueryStorage = class GoogleBigQueryStorage extends AbstractStorage 
       }
     }
 
+  //---- formatColumnValue -------------------------------------------
+    /**
+     * Casts a record value to the string form used in generated SQL
+     * @param {*} rawValue - the raw record value
+     * @param {string} columnType - the BigQuery column type
+     * @return {string|null} - the formatted value, or null for missing values
+     */
+    formatColumnValue(rawValue, columnType) {
+
+      if (rawValue === undefined || rawValue === null) {
+        return null;
+      }
+
+      const type = String(columnType).toUpperCase();
+      // instanceof alone fails across realms (the Apps Script target); the
+      // constructor-name fallback matches getUniqueKeyByRecordFields and
+      // stringifyNeastedFields in AbstractStorage
+      const isDateValue = rawValue instanceof Date
+        || (typeof rawValue === "object" && rawValue.constructor && rawValue.constructor.name == "Date");
+
+      if( type == "DATE" && isDateValue ) {
+        return DateUtils.formatDate( rawValue );
+      }
+
+      if( (type == "DATETIME" || type == "TIMESTAMP") && isDateValue ) {
+        // YYYY-MM-DD HH:MM:SS — toISOString is UTC, which is exactly what a
+        // zone-less BigQuery TIMESTAMP literal denotes
+        const isoString = rawValue.toISOString();
+        return isoString.replace('T', ' ').substring(0, 19);
+      }
+
+      const stringValue = this.obfuscateSpecialCharacters( rawValue );
+
+      if( type == "DATETIME" || type == "TIMESTAMP" ) {
+        // 'T' and ' ' separators are equivalent to BigQuery; normalizing in
+        // the shared helper keeps source rows and the partition predicate
+        // comparable by construction rather than by coincidence
+        return stringValue.replace("T", " ");
+      }
+
+      return stringValue;
+    }
+
+  //---- buildPartitionByExpression ----------------------------------
+    /**
+     * DDL expression for PARTITION BY, or null for types BigQuery cannot
+     * partition by. DATETIME/TIMESTAMP columns need daily truncation.
+     */
+    buildPartitionByExpression(sqlColumnName, columnType) {
+      switch( String(columnType).toUpperCase() ) {
+        case "DATE": return sqlColumnName;
+        case "DATETIME": return `DATETIME_TRUNC(${sqlColumnName}, DAY)`;
+        case "TIMESTAMP": return `TIMESTAMP_TRUNC(${sqlColumnName}, DAY)`;
+        default: return null;
+      }
+    }
+
+  //---- isRealCalendarValue -----------------------------------------
+    /**
+     * True when a canonical 'YYYY-MM-DD[ HH:MM:SS]' string denotes a real
+     * calendar date and time. The shape regex accepts impossible values like
+     * 2026-02-31; SAFE_CAST turns those into NULL inside source rows, but a
+     * typed literal in the predicate would fail the whole query.
+     */
+    isRealCalendarValue(value) {
+      const [datePart, timePart] = value.split(" ");
+      const [year, month, day] = datePart.split("-").map(Number);
+      const date = new Date(Date.UTC(year, month - 1, day));
+      // Date.UTC maps years 0-99 to 1900-1999, so this round-trip also
+      // rejects years 0001-0099 (legal in BigQuery, absent in ad data).
+      // Deliberate: the same quirk is what rejects garbage like '0000-00-00'.
+      if( date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day ) {
+        return false;
+      }
+      if( timePart ) {
+        const [hours, minutes, seconds] = timePart.split(":").map(Number);
+        if( hours > 23 || minutes > 59 || seconds > 59 ) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+  //---- suppressPartitionPredicate ----------------------------------
+    /**
+     * Logs once per run why partition pruning is off — so a full-scan MERGE
+     * is distinguishable from pruning working as intended — then returns
+     * null for buildPartitionPredicate to pass through.
+     */
+    suppressPartitionPredicate(reason) {
+      if( !this._partitionPredicateSuppressionLogged ) {
+        this._partitionPredicateSuppressionLogged = true;
+        this.config.logMessage(`Partition pruning is disabled for this run (${reason}); MERGE scans the whole table`);
+      }
+      return null;
+    }
+
+  //---- buildPartitionPredicate -------------------------------------
+    /**
+     * Builds a constant partition filter for the MERGE ON clause, so BigQuery
+     * prunes partitions instead of scanning the whole target table.
+     * `target.date = source.date` alone does not prune: the source is a
+     * subquery of literals, and pruning needs a constant filter on the target.
+     *
+     * The partition column is taken from the destination table itself
+     * (INFORMATION_SCHEMA, or recorded at CREATE TABLE time), not from the
+     * schema flag: a legacy table can be partitioned by a different flagged
+     * field, or by nothing at all.
+     *
+     * Returns null (no predicate, the MERGE falls back to a full table scan)
+     * whenever the range cannot be derived safely: the destination table has
+     * no partitioning column, that column is not part of the unique key, its
+     * type is not date-like, no record carries a partition value, or a value
+     * is not a real calendar date/time in canonical shape. Records with a
+     * NULL partition value are skipped instead of suppressing the predicate:
+     * their source rows can only INSERT, so no target range affects them.
+     * Every suppression except the missing partition column logs its reason
+     * once per run via suppressPartitionPredicate().
+     *
+     * @param {Array} recordKeys - Record keys of the batch being merged
+     * @return {string|null} - SQL predicate for the target table, or null
+     */
+    buildPartitionPredicate(recordKeys) {
+
+      // Exactly one fixed-width shape per type: min/max below compares strings
+      // lexicographically, which matches chronological order only when every
+      // value has the same width and no zone marker. Fractions, Z and offsets
+      // are rejected on purpose — mixed shapes in one batch would let the
+      // string min/max diverge from the true time range and produce a BETWEEN
+      // that excludes rows the MERGE must see.
+      const DATE_LIKE_LITERALS = {
+        "DATE": /^\d{4}-\d{2}-\d{2}$/,
+        "DATETIME": /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/,
+        "TIMESTAMP": /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/
+      };
+
+      // The destination table's real partitioning column, as reported by
+      // INFORMATION_SCHEMA or recorded at CREATE TABLE time. The schema flag
+      // is not trusted here: a legacy table can be partitioned by a different
+      // flagged field (LinkedIn flags two), or by nothing at all.
+      const partitionColumn = Object.keys(this.existingColumns).find(
+        name => this.existingColumns[ name ] && this.existingColumns[ name ]["isPartitioningColumn"]
+      );
+      if( !partitionColumn ) {
+        return null;
+      }
+
+      // The predicate is only safe when the partition column is part of the
+      // unique key: the ON clause then already contains
+      // `target.<col> = source.<col>`, so bounding the target changes nothing.
+      // Without this, a matching target row in an out-of-range partition would
+      // be invisible to the MERGE and its source row inserted as a duplicate.
+      if( !this.uniqueKeyColumns || !this.uniqueKeyColumns.includes(partitionColumn) ) {
+        return this.suppressPartitionPredicate(`partition column '${partitionColumn}' is not part of the unique key`);
+      }
+
+      const columnInfo = this.existingColumns[ partitionColumn ];
+
+      const columnType = String(columnInfo.type).toUpperCase();
+      const literalPattern = DATE_LIKE_LITERALS[ columnType ];
+      if( !literalPattern ) {
+        return this.suppressPartitionPredicate(`partition column '${partitionColumn}' has non-date type '${columnInfo.type}'`);
+      }
+
+      let minValue = null;
+      let maxValue = null;
+
+      for (const key of recordKeys) {
+        const record = this.updatedRecordsBuffer[ key ];
+        const value = this.formatColumnValue( record ? record[ partitionColumn ] : null, columnType );
+
+        // A record without a partition value emits SAFE_CAST(NULL ...) in its
+        // source row: NULL never equals any target value, so the row is an
+        // INSERT either way and no target range can affect it — skip it
+        // rather than giving up on pruning for the whole batch
+        if( value === null ) {
+          continue;
+        }
+
+        // One malformed value and the whole predicate is off: unlike NULL, a
+        // string this regex rejects may still SAFE_CAST to a real value in
+        // the source row, and a range that misses that row's partition would
+        // hide its target row from the MERGE and insert a duplicate
+        if( typeof value !== "string" || !literalPattern.test(value) || !this.isRealCalendarValue(value) ) {
+          return this.suppressPartitionPredicate(`a record value in '${partitionColumn}' is not a canonical date/datetime`);
+        }
+
+        if( minValue === null || value < minValue ) minValue = value;
+        if( maxValue === null || value > maxValue ) maxValue = value;
+      }
+
+      if( minValue === null ) {
+        return this.suppressPartitionPredicate(`no record carries a value in partition column '${partitionColumn}'`);
+      }
+
+      const targetColumn = `target.${this.formatFieldIdentifier(partitionColumn)}`;
+      return `${targetColumn} BETWEEN ${columnType} '${minValue}' AND ${columnType} '${maxValue}'`;
+    }
+
   //---- buildMergeQuery ---------------------------------------------
     /**
      * Builds a MERGE query for the specified record keys
@@ -593,29 +804,8 @@ var GoogleBigQueryStorage = class GoogleBigQueryStorage extends AbstractStorage 
 
           let columnName = this.existingColumns[j]["name"];
           let columnType = this.existingColumns[j]["type"];
-          let columnValue = null;
+          let columnValue = this.formatColumnValue( record[ columnName ], columnType );
 
-          if (record[columnName] === undefined || record[columnName] === null) {
-
-            columnValue = null;
-
-          } else if( ( columnType.toUpperCase() == "DATE") && (record[ columnName ] instanceof Date) ) {
-
-            columnValue = DateUtils.formatDate( record[ columnName ] );
-
-          } else if( (columnType.toUpperCase() == "DATETIME") && (record[ columnName ] instanceof Date) ) {
-
-            // Format as YYYY-MM-DD HH:MM:SS for BigQuery DATETIME
-            const isoString = record[ columnName ].toISOString();
-            columnValue = isoString.replace('T', ' ').substring(0, 19);
-
-          } else {
-
-            columnValue = this.obfuscateSpecialCharacters( record[ columnName ] );
-
-          }
-          
-          
           if (columnValue === null) {
             fields.push(`SAFE_CAST(NULL AS ${columnType}) ${this.formatFieldIdentifier(columnName)}`);
           } else {
@@ -628,12 +818,17 @@ var GoogleBigQueryStorage = class GoogleBigQueryStorage extends AbstractStorage 
       }
        
       let existingColumnsNames = Object.keys(this.existingColumns);
+
+      // Constant filter on the target's partition column enables partition
+      // pruning; without it every MERGE scans the whole destination table
+      const partitionPredicate = this.buildPartitionPredicate(recordKeys);
+
       let query = `MERGE INTO \`${this.config.DestinationDatasetID.value}.${this.config.DestinationTableName.value}\` AS target
       USING (
         ${rows.join("\n\nUNION ALL\n\n")}
       ) AS source
-      
-      ON ${this.uniqueKeyColumns.map(item => (`target.${this.formatFieldIdentifier(item)} = source.${this.formatFieldIdentifier(item)}`)).join("\n AND ")}
+
+      ON ${this.uniqueKeyColumns.map(item => (`target.${this.formatFieldIdentifier(item)} = source.${this.formatFieldIdentifier(item)}`)).join("\n AND ")}${partitionPredicate ? `\n AND ${partitionPredicate}` : ""}
 
         WHEN MATCHED THEN
         UPDATE SET

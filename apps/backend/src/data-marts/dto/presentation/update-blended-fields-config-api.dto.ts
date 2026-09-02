@@ -1,5 +1,5 @@
 import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -76,6 +76,19 @@ export class BlendedSourceApiDto {
   @IsOptional()
   @IsBoolean()
   isExcluded?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Overrides the relationship description for this join node only. Omit to inherit the relationship-level description.',
+  })
+  @IsOptional()
+  @IsString()
+  // Trimmed before the length checks: a whitespace-only value is a cleared override in the UI,
+  // so it must not reach storage as a present one that suppresses the inherited description.
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @MinLength(1)
+  @MaxLength(10000)
+  description?: string;
 
   @ApiPropertyOptional({
     description:

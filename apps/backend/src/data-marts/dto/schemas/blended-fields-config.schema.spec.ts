@@ -143,4 +143,29 @@ describe('BlendedFieldsConfigSchema', () => {
   it('should reject missing sources', () => {
     expect(() => BlendedFieldsConfigSchema.parse({})).toThrow();
   });
+
+  // The column transformer parses on both write and load. A blank override must not survive
+  // as a present description that hides the inherited one — but it must not throw either,
+  // or one bad row would make its whole data mart unloadable. It normalizes to absent.
+  it.each([
+    ['empty', ''],
+    ['spaces', '   '],
+    ['tab', '\t'],
+    ['newline', '\n'],
+  ])(
+    'should drop a blank description override (%s) instead of storing it',
+    (_label, description) => {
+      const result = BlendedFieldsConfigSchema.parse({
+        sources: [{ path: 'orders', alias: 'Orders', description }],
+      });
+      expect(result.sources[0].description).toBeUndefined();
+    }
+  );
+
+  it('should trim a description override before storing it', () => {
+    const result = BlendedFieldsConfigSchema.parse({
+      sources: [{ path: 'orders', alias: 'Orders', description: '  Orders of this company  ' }],
+    });
+    expect(result.sources[0].description).toBe('Orders of this company');
+  });
 });

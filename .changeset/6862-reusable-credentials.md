@@ -11,5 +11,6 @@ the host. External Credential definitions can be added from public GitHub reposi
 repositories available through the deployment's configured GitHub access. Plugin authors use the
 same typed `exactCredential` helper for built-in and external definitions.
 
-See [Credentials](../docs/project/credentials.md) and
-[Credential definitions](../docs/plugins/credential-definitions.md) for setup and authoring details.
+See [Credentials](https://docs.owox.com/docs/project/credentials/) and
+[Credential definitions](https://docs.owox.com/docs/plugins/credential-definitions/) for setup and
+authoring details.

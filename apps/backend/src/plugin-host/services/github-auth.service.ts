@@ -75,6 +75,11 @@ export class GithubAuthService {
     return this.access(GithubAccessMode.ANONYMOUS);
   }
 
+  /** Used by callers that deliberately restrict a read to public GitHub data. */
+  getAnonymousAccess(): GithubAccess {
+    return this.access(GithubAccessMode.ANONYMOUS);
+  }
+
   /** Where a publisher goes to grant access. Null when this deployment has no App. */
   buildInstallationUrl(): string | null {
     const slug = this.config.githubAppSlug;

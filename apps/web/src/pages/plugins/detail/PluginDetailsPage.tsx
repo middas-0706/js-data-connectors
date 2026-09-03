@@ -97,14 +97,13 @@ export default function PluginDetailsPage() {
    * §13: if the version moved on since this screen rendered, the server refuses and the
    * dialog reappears with the version that is current now.
    */
-  const installPlugin = async (target: PluginGalleryEntry) => {
-    const stale = await install(target.pluginId, target.currentVersionId);
+  const installPlugin = async (
+    target: PluginGalleryEntry,
+    credentialSelections: Readonly<Record<string, string | null>>
+  ) => {
+    const stale = await install(target.pluginId, target.currentVersionId, credentialSelections);
     if (stale) {
-      setConfirming({
-        ...target,
-        currentSemver: stale.currentSemver,
-        currentVersionId: stale.currentVersionId,
-      });
+      setConfirming(stale);
       return;
     }
 
@@ -112,9 +111,10 @@ export default function PluginDetailsPage() {
   };
 
   const isInstalled = plugin.installationState === 'installed';
+  const isConfiguringCredentials = isInstalled && (plugin.credentialRequirements?.length ?? 0) > 0;
   // Label / confirm path: only a live install says "Reinstall". Uninstalled looks like
   // Install again (dialog), even though the API reactivates the same installation row.
-  const showReinstall = isInstalled;
+  const showReinstall = isInstalled && !isConfiguringCredentials;
   const installation = installations.find(item => item.pluginId === plugin.pluginId);
   const visibility = describeVisibility(plugin.visibleViaScopes);
   // Source URLs travel as untrusted strings; only absolute https becomes an href.
@@ -172,12 +172,7 @@ export default function PluginDetailsPage() {
                 if (isInstalling) {
                   return;
                 }
-                // Live install: reinstall in place without re-confirming.
-                // not_installed / uninstalled: same Install + dialog path (backend reactivates).
-                if (showReinstall) {
-                  void installPlugin(plugin);
-                  return;
-                }
+                // Every install/restore/reconfigure uses the same explicit Credential grant flow.
                 setConfirming(plugin);
               }}
             >
@@ -185,10 +180,14 @@ export default function PluginDetailsPage() {
               {isInstalling
                 ? showReinstall
                   ? 'Reinstalling…'
-                  : 'Installing…'
+                  : isConfiguringCredentials
+                    ? 'Saving…'
+                    : 'Installing…'
                 : showReinstall
                   ? 'Reinstall'
-                  : 'Install'}
+                  : isConfiguringCredentials
+                    ? 'Configure Credentials'
+                    : 'Install'}
             </Button>
 
             <DropdownMenu>
@@ -457,8 +456,9 @@ export default function PluginDetailsPage() {
               setConfirming(null);
             }
           }}
-          onConfirm={() => void installPlugin(confirming)}
+          onConfirm={credentialSelections => void installPlugin(confirming, credentialSelections)}
           isInstalling={isInstalling}
+          mode={isConfiguringCredentials ? 'configure' : 'install'}
         />
       )}
     </div>

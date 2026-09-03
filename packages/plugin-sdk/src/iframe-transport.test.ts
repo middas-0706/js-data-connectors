@@ -1,6 +1,10 @@
 import { OWOXApiClient } from '@owox/api-client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createIframeTransport, PluginTransportError } from './iframe-transport.js';
+import {
+  createIframeRequester,
+  createIframeTransport,
+  PluginTransportError,
+} from './iframe-transport.js';
 import type { PluginRequest, PluginResponse } from './protocol.js';
 
 const openPorts: MessagePort[] = [];
@@ -16,8 +20,11 @@ function hostSide() {
   };
   channel.port1.start();
 
+  const requester = createIframeRequester(channel.port2);
+
   return {
-    transport: createIframeTransport(channel.port2),
+    requester,
+    transport: createIframeTransport(requester),
     received,
     waitForReceived: async (count = 1) => {
       await vi.waitFor(() => {
@@ -238,6 +245,37 @@ describe('iframe transport', () => {
     await assertion;
   });
 
+  it('keeps non-stream AI work alive beyond the ordinary 30 second API timeout', async () => {
+    const host = hostSide();
+    vi.useFakeTimers();
+    let settled = false;
+
+    const pending = host.requester.send({
+      kind: 'credentialAi',
+      version: 1,
+      handle: 'ai',
+      operation: 'generate',
+      model: 'reasoning',
+      options: {},
+    });
+    void pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      }
+    );
+    await host.waitForReceived();
+
+    await vi.advanceTimersByTimeAsync(30_001);
+
+    expect(settled).toBe(false);
+    expect(host.received).toHaveLength(1);
+    host.answer({ id: host.received[0].id, ok: true, status: 200, headers: {}, body: {} });
+    await expect(pending).resolves.toMatchObject({ ok: true });
+  });
+
   describe('streams', () => {
     // NDJSON traversals legitimately run for minutes, so the timer that guards a plain
     // request would kill them.
@@ -289,6 +327,30 @@ describe('iframe transport', () => {
       const response = await pending;
       // The traversal reads this header, so it has to survive the trip.
       expect(response.headers.get('x-owox-run-id')).toBe('run-7');
+    });
+
+    it('cancels the host request when the transferred stream is cancelled after headers', async () => {
+      const host = hostSide();
+      const streamed = new ReadableStream<Uint8Array>();
+      const pending = host.transport.getStream('/api/x');
+      await host.waitForReceived();
+      const requestId = host.received[0].id;
+      host.answer(
+        {
+          id: requestId,
+          ok: true,
+          status: 200,
+          headers: {},
+          stream: streamed,
+        },
+        [streamed]
+      );
+
+      const response = await pending;
+      await response.body?.cancel('not needed');
+      await host.waitForReceived(2);
+
+      expect(host.received[1]).toMatchObject({ kind: 'cancel', targetId: requestId });
     });
 
     it('reports a stream answer that carries no stream', async () => {

@@ -95,14 +95,13 @@ export default function PluginsGalleryPage() {
    * First install and restore of an uninstalled plugin both go through the confirmation
    * dialog. Backend soft-deletes only, so restore reactivates the same installation row.
    */
-  const installPlugin = async (plugin: PluginGalleryEntry) => {
-    const stale = await install(plugin.pluginId, plugin.currentVersionId);
+  const installPlugin = async (
+    plugin: PluginGalleryEntry,
+    credentialSelections: Readonly<Record<string, string | null>>
+  ) => {
+    const stale = await install(plugin.pluginId, plugin.currentVersionId, credentialSelections);
     if (stale) {
-      setCandidate({
-        ...plugin,
-        currentSemver: stale.currentSemver,
-        currentVersionId: stale.currentVersionId,
-      });
+      setCandidate(stale);
       return;
     }
 
@@ -245,7 +244,7 @@ export default function PluginsGalleryPage() {
               setCandidate(null);
             }
           }}
-          onConfirm={() => void installPlugin(candidate)}
+          onConfirm={credentialSelections => void installPlugin(candidate, credentialSelections)}
           isInstalling={isInstalling}
         />
       )}

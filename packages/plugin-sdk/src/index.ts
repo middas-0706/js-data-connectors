@@ -1,6 +1,7 @@
 import { OWOXApiClient } from '@owox/api-client';
 import { createPluginCollection, type PluginCollection } from './collections.js';
-import { createIframeTransport } from './iframe-transport.js';
+import { createIframeRequester, createIframeTransport } from './iframe-transport.js';
+import { createPluginCredentials, type PluginCredentials } from './credentials.js';
 import {
   isHostInit,
   PLUGIN_PROTOCOL_VERSION,
@@ -9,7 +10,15 @@ import {
 } from './protocol.js';
 
 export { PLUGIN_PROTOCOL_VERSION } from './protocol.js';
+export { exactCredential } from './credentials.js';
 export type { PluginErrorCode, PluginErrorPayload, PluginHostContext } from './protocol.js';
+export type {
+  AiCredentialHandle,
+  CredentialFetch,
+  CredentialHandle,
+  PluginCredentialHandleDescriptor,
+  PluginCredentials,
+} from './credentials.js';
 export type {
   PluginCollection,
   PluginCollectionDocument,
@@ -46,6 +55,9 @@ export interface PluginContext extends PluginHostContext {
    * enters this document -- every call is brokered by the trusted host page.
    */
   readonly owox: OWOXApiClient;
+
+  /** Project-owned Credentials selected for this installation. Secrets never enter the frame. */
+  readonly credentials: PluginCredentials;
 
   /**
    * Opens a host-stored JSON collection declared by this plugin in plugin.json.
@@ -172,11 +184,13 @@ function bind(
     teardown.abort();
   });
 
-  const owox = new OWOXApiClient({ transport: createIframeTransport(port) });
+  const requester = createIframeRequester(port);
+  const owox = new OWOXApiClient({ transport: createIframeTransport(requester) });
 
   return {
     ...init.context,
     owox,
+    credentials: createPluginCredentials(requester, init.context.credentialHandles ?? []),
     collections: <T>(name: string) => createPluginCollection<T>(owox, name),
     ui: {
       openExternal: (url: string) => {

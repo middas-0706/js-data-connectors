@@ -52,8 +52,21 @@ class PluginsService extends ApiService {
    * expectedVersionId is the version the member was shown. The server refuses a stale
    * one rather than installing something they never read about.
    */
-  async install(pluginId: string, expectedVersionId: string | null): Promise<PluginInstallation> {
-    return this.post<PluginInstallation>(`/${pluginId}/installation`, { expectedVersionId });
+  async install(
+    pluginId: string,
+    expectedVersionId: string | null,
+    credentialSelections: Readonly<Record<string, string | null>> = {}
+  ): Promise<PluginInstallation> {
+    const payload: {
+      expectedVersionId: string | null;
+      credentialSelections?: Readonly<Record<string, string | null>>;
+    } = {
+      expectedVersionId,
+    };
+    if (Object.keys(credentialSelections).length > 0) {
+      payload.credentialSelections = credentialSelections;
+    }
+    return this.post<PluginInstallation>(`/${pluginId}/installation`, payload);
   }
 
   async uninstall(pluginId: string): Promise<void> {

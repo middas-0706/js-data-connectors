@@ -1,6 +1,12 @@
 import { QueryFailedError } from 'typeorm';
 
-const UNIQUE_CONSTRAINT_CODES = new Set(['23505', 'ER_DUP_ENTRY', 'ER_DUP_KEY', '1062']);
+const UNIQUE_CONSTRAINT_CODES = new Set([
+  '23505',
+  'ER_DUP_ENTRY',
+  'ER_DUP_KEY',
+  '1062',
+  'SQLITE_CONSTRAINT_UNIQUE',
+]);
 
 export function isUniqueConstraintViolation(error: unknown): boolean {
   if (!(error instanceof QueryFailedError)) {

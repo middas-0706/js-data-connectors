@@ -23,11 +23,15 @@ var AbstractSource = class AbstractSource {
         MaxFetchRetries: {
           requiredType: "number",
           default: 3,
+          label: "Max Fetch Retries",
+          description: "Total attempts for a failed API request, including the first request, before the run stops",
           attributes: [CONFIG_ATTRIBUTES.ADVANCED]
         },
         InitialRetryDelay: {
           requiredType: "number",
           default: 5000,
+          label: "Initial Retry Delay (ms)",
+          description: "Delay before the first retry in milliseconds. Each retry doubles the delay",
           attributes: [CONFIG_ATTRIBUTES.ADVANCED]
         }
       });

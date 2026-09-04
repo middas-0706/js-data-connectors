@@ -37,6 +37,7 @@ import {
   EDGE_STROKE_WIDTH,
   EDGE_WARNING_DASH,
   HIGHLIGHT_COLOR,
+  MINIMAP_NODE_COLOR,
   NODE_PULSE_KEYFRAMES,
   OWOX_BLUE,
   SOCKET_STYLE,
@@ -63,7 +64,6 @@ import { ErdCardFieldsSection } from '../../../shared/canvas/erd-fields-section'
 import type { ObjectLabelsHidden } from '../../../shared/canvas/object-labels';
 import type { CanvasViewMode } from '../../../shared/canvas/view-mode';
 import { OWOX_GRAY_DARK, OWOX_YELLOW_BASE } from '../../../shared/canvas/owox-palette';
-import { definitionTypeAccent } from '../../../shared/canvas/definition-type-accent';
 import { ErdDefinitionBadge, ErdStatusDot } from '../../../shared/canvas/erd-card';
 import { computeCanvasHighlight, NO_HIGHLIGHT } from '../../../shared/canvas/highlight';
 import { clampCanvasViewport, getCanvasGraphBounds } from '../../../shared/canvas/viewport';
@@ -254,11 +254,9 @@ export function RelationshipFlowNode({ id, data, selected }: NodeProps<Relations
     updateNodeInternals(id);
   }, [expanded, id, updateNodeInternals]);
 
-  const accent = definitionTypeAccent(data.definitionType);
-
-  // Object labels mirror the Models canvas: accent stripe + source badge,
-  // field count and status dot toggle independently. The alias badge is join
-  // configuration (not an object label), so it always stays.
+  // Object labels: source badge, field count and status dot toggle
+  // independently. The alias badge is join configuration (not an object
+  // label), so it always stays.
   const labels = data.objectLabels;
   const withSource = !labels.source;
   const withFieldCount = !labels.fields;
@@ -280,13 +278,6 @@ export function RelationshipFlowNode({ id, data, selected }: NodeProps<Relations
         style={{ ...cardStateStyle(data, selected), height: SRC_H, padding: '0 14px' }}
       >
         <IndicatorLabel data={data} />
-        {withSource && (
-          <span
-            className='h-4 w-1 shrink-0 rounded-sm'
-            style={{ background: accent }}
-            aria-hidden='true'
-          />
-        )}
         <span
           className='text-foreground flex-1 truncate text-[13px] font-semibold'
           title={data.label}
@@ -318,15 +309,8 @@ export function RelationshipFlowNode({ id, data, selected }: NodeProps<Relations
       <IndicatorLabel data={data} />
       <Handle type='target' position={targetPosition} isConnectable={false} style={SOCKET_STYLE} />
 
-      {/* Header: accent stripe + title + status + actions — mirrors the Models canvas ERD card */}
+      {/* Header: title + status + actions */}
       <div className='flex items-center gap-2 px-3.5 pt-3 pb-1'>
-        {withSource && (
-          <span
-            className='h-4 w-1 shrink-0 rounded-sm'
-            style={{ background: accent }}
-            aria-hidden='true'
-          />
-        )}
         <span
           className='text-foreground flex-1 truncate text-[13px] font-semibold'
           title={data.label}
@@ -1175,7 +1159,7 @@ function RelationshipCanvasInner({
             pannable
             zoomable
             style={{ width: 140, height: 100 }}
-            nodeColor={node => definitionTypeAccent(node.data.definitionType)}
+            nodeColor={MINIMAP_NODE_COLOR}
           />
         </ReactFlow>
         {graphResult.nodes.length === 1 && graphResult.filteredOutCount > 0 && (

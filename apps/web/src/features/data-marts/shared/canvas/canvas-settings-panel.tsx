@@ -19,15 +19,15 @@ import { VIEW_MODE_OPTIONS, type CanvasViewMode } from './view-mode';
 const OBJECT_LABEL_META: Record<ObjectLabelPart, { label: string; helper: string }> = {
   source: {
     label: 'Input source',
-    helper: 'The source badge (VIEW / TABLE / SQL / PATTERN / CONNECTOR) and its accent stripe',
+    helper: 'The source badge (VIEW / TABLE / SQL / PATTERN / CONNECTOR)',
   },
   fields: {
     label: 'Field count',
     helper: 'The field count shown on each object',
   },
   status: {
-    label: 'Status dot',
-    helper: 'The published/draft status dot in the card header',
+    label: 'Status',
+    helper: 'The published/draft indicator',
   },
 };
 

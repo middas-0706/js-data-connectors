@@ -9,6 +9,63 @@ function quoteBigQueryIdentifier(identifier) {
   return `\`${String(identifier).replace(/`/g, '``')}\``;
 }
 
+/**
+ * BigQuery error reasons that Google documents as worth retrying: the statement was fine,
+ * the service could not run it right now.
+ *
+ * These are the reasons the client library never retries on its own. Its `shouldRetryRequest`
+ * acts on the HTTP status of a single request, so it cannot see a job that was accepted and
+ * then failed while running — which is the case this list exists for.
+ *
+ * A reason outside this list is not by itself grounds for a retry, but it does not veto one
+ * either: a reason-less transport failure is still classified by its code. The permanent
+ * reasons (invalidQuery, notFound, accessDenied, quotaExceeded) arrive with a 4xx, so they
+ * surface immediately. That includes 'invalidQuery' for an oversized query, which the MERGE
+ * loop then handles by halving the batch.
+ */
+const RETRYABLE_BIGQUERY_REASONS = [
+  'backendError',
+  'internalError',
+  'jobBackendError',
+  'jobInternalError',
+  'rateLimitExceeded',
+  'jobRateLimitExceeded',
+];
+
+/**
+ * Transport-level failures with no BigQuery reason attached: the answer to a request never
+ * came back, so whatever it was asking about may still be fine.
+ *
+ * HTTP statuses are deliberately absent. @google-cloud/common already retries 408/429/5xx
+ * through `shouldRetryRequest`, so listing them here would only stack a second ladder on
+ * top of the client's own and report the total as one attempt.
+ */
+const RETRYABLE_BIGQUERY_ERROR_CODES = ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN'];
+
+const DEFAULT_MAX_QUERY_ATTEMPTS = 3;
+const DEFAULT_INITIAL_RETRY_DELAY_MS = 5000;
+
+/**
+ * Ceiling for a single backoff wait. `MaxFetchRetries` has no maximum, and a run holds one
+ * of the project's concurrent slots while it sleeps, so uncapped doubling lets one BigQuery
+ * outage park a run for over an hour before it reports the failure.
+ */
+const MAX_RETRY_DELAY_MS = 60000;
+
+/**
+ * Reads a retry setting that comes from user configuration. Config validation only checks
+ * `typeof value === 'number'`, and NaN passes that — which would leave the retry loop with
+ * a comparison that is never true. Anything not a real number falls back to the default.
+ *
+ * @param {*} value - The configured value
+ * @param {number} fallback - Used when the value is not a finite number
+ * @param {number} minimum - Lower bound applied to a finite value
+ * @return {number} A usable setting
+ */
+function retrySettingOrDefault(value, fallback, minimum) {
+  return Number.isFinite(value) ? Math.max(minimum, value) : fallback;
+}
+
 function normalizeBigQueryType(type) {
   const normalized = String(type || '').toUpperCase();
   const aliases = {
@@ -928,9 +985,130 @@ var GoogleBigQueryStorage = class GoogleBigQueryStorage extends AbstractStorage 
         useLegacySql: false,
       };
 
-      const [job] = await bigqueryClient.createQueryJob(options);
-      const [rows] = await job.getQueryResults();
-      return rows;
+      // Both are guaranteed finite here, so the exit condition below always becomes true.
+      const maxAttempts = retrySettingOrDefault(
+        this.config.MaxFetchRetries?.value,
+        DEFAULT_MAX_QUERY_ATTEMPTS,
+        1
+      );
+      const initialRetryDelay = retrySettingOrDefault(
+        this.config.InitialRetryDelay?.value,
+        DEFAULT_INITIAL_RETRY_DELAY_MS,
+        0
+      );
+
+      // Whether a retry resubmits the statement or polls the job again turns on what
+      // failed, because createQueryJob does not wait for the job to finish. It only
+      // inspects `status.errors` on the insert response, and a MERGE that BigQuery
+      // accepts comes back RUNNING — so a job that fails during execution resolves
+      // createQueryJob successfully and reports the failure through getQueryResults.
+      //
+      // Once a job exists, only the job itself can say which happened: a failed job and
+      // a failed poll of a healthy job both arrive as a reasoned error. Getting it wrong
+      // either abandons a live job or runs a second copy of the statement beside it, so
+      // the job is asked rather than inferred.
+      let job = null;
+
+      for (let attempt = 1; ; attempt++) {
+        try {
+          if (!job) {
+            const [createdJob] = await bigqueryClient.createQueryJob(options);
+            job = createdJob;
+          }
+
+          const [rows] = await job.getQueryResults();
+          return rows;
+        } catch (error) {
+          if (attempt >= maxAttempts || !this._isRetryableBigQueryError(error)) {
+            throw error;
+          }
+
+          const reasons = this._bigQueryErrorReasons(error);
+
+          // Nothing left to poll: the statement has to be sent again.
+          if (job && (await this._hasJobFinishedWithError(job))) {
+            job = null;
+          }
+
+          const delay = Math.min(
+            AsyncUtils.backoffDelay(initialRetryDelay, attempt),
+            MAX_RETRY_DELAY_MS
+          );
+          const reason = reasons[0] || error.code || 'unknown error';
+
+          this.config.logMessage(
+            `BigQuery query failed (${reason}), retrying in ${Math.round(delay / 1000)}s (attempt ${attempt + 1} of ${maxAttempts})`
+          );
+
+          await AsyncUtils.delay(delay);
+        }
+      }
+    }
+
+  //---- _bigQueryErrorReasons ---------------------------------------
+    /**
+     * Reason codes BigQuery attached to a failure, e.g. ['backendError'].
+     * Empty for transport-level errors, which carry no reason.
+     *
+     * @param {Error} error - The error thrown by the BigQuery client
+     * @return {Array<string>} The reason codes, in the order BigQuery reported them
+     */
+    _bigQueryErrorReasons(error) {
+      if (!error || !Array.isArray(error.errors)) {
+        return [];
+      }
+
+      return error.errors.map(item => item && item.reason).filter(Boolean);
+    }
+
+  //---- _hasJobFinishedWithError ------------------------------------
+    /**
+     * Whether BigQuery considers this job finished and failed, so that polling it again
+     * can only return the same error.
+     *
+     * The error alone does not answer this. A transient 5xx on `GET /queries/{id}` carries
+     * `backendError` in its body, and a per-user `rateLimitExceeded` on the poll describes
+     * the request, not the job — both while the statement keeps running. This is the same
+     * check the client library's own `poll_` makes.
+     *
+     * A job whose status cannot be read counts as not failed: polling a finished job again
+     * wastes an attempt, while resubmitting beside a running one pays for a second scan and
+     * lets two mutations of the same rows overlap.
+     *
+     * @param {object} job - The job returned by createQueryJob
+     * @return {Promise<boolean>} True when the job is DONE and carries an errorResult
+     */
+    async _hasJobFinishedWithError(job) {
+      try {
+        const [metadata] = await job.getMetadata();
+
+        return metadata?.status?.state === 'DONE' && Boolean(metadata.status.errorResult);
+      } catch {
+        return false;
+      }
+    }
+
+  //---- _isRetryableBigQueryError -----------------------------------
+    /**
+     * Whether a failed query is worth running again. A failure matching neither a known
+     * reason nor a network-level code is treated as permanent, so a new failure mode
+     * surfaces to the user instead of silently consuming the configured attempts.
+     *
+     * @param {Error} error - The error thrown by the BigQuery client
+     * @return {boolean} True when the same query may succeed on another attempt
+     */
+    _isRetryableBigQueryError(error) {
+      if (!error) {
+        return false;
+      }
+
+      const reasons = this._bigQueryErrorReasons(error);
+
+      if (reasons.some(reason => RETRYABLE_BIGQUERY_REASONS.includes(reason))) {
+        return true;
+      }
+
+      return RETRYABLE_BIGQUERY_ERROR_CODES.includes(error.code);
     }
 
   //---- obfuscateSpecialCharacters ----------------------------------

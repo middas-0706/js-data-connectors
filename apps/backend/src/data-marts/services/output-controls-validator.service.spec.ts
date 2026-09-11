@@ -938,11 +938,333 @@ describe('OutputControlsValidatorService', () => {
       expect(response.details.errors[0].code).toBe('INVALID_OPERATOR_FOR_TYPE');
     });
 
-    it('throws BadRequestException with SORT_COLUMN_NOT_SELECTED for sort on non-selected column', async () => {
+    // An ungrouped query with an explicit projection resolves ORDER BY against the source row, so
+    // a sort on a column the report does not print is valid SQL — exactly like a filter on one.
+    it('accepts a sort on a known column that is not selected when the report does not aggregate', async () => {
       const capabilitySvc = makeCapabilityService(true);
       const schemaSvc = makeBlendableSchemaService([
         { name: 'date', type: BigQueryFieldType.DATE },
         { name: 'amount', type: BigQueryFieldType.INTEGER },
+      ]);
+      const validator = new OutputControlsValidatorService(
+        capabilitySvc as never,
+        schemaSvc as never
+      );
+
+      await expect(
+        validator.validateForReport({
+          storageType: supportedStorageType,
+          dataMartId: 'dm-1',
+          projectId: 'proj-1',
+          columnConfig: ['date'],
+          filterConfig: null,
+          sortConfig: [{ column: 'amount', direction: 'asc' }],
+          limitConfig: null,
+          accessor: { userId: 'user-1', roles: ['admin'] },
+        })
+      ).resolves.toBeUndefined();
+    });
+
+    it('accepts a sort on a known blended column that is not selected when the report does not aggregate', async () => {
+      const capabilitySvc = makeCapabilityService(true);
+      const schemaSvc = makeBlendableSchemaService(
+        [{ name: 'date', type: BigQueryFieldType.DATE }],
+        {
+          blendedFields: [
+            {
+              name: 'users__role',
+              aliasPath: 'users',
+              originalFieldName: 'role',
+              type: BigQueryFieldType.STRING,
+            },
+          ],
+          availableSources: [{ aliasPath: 'users' }],
+        }
+      );
+      const validator = new OutputControlsValidatorService(
+        capabilitySvc as never,
+        schemaSvc as never
+      );
+
+      await expect(
+        validator.validateForReport({
+          storageType: supportedStorageType,
+          dataMartId: 'dm-1',
+          projectId: 'proj-1',
+          columnConfig: ['date'],
+          filterConfig: null,
+          sortConfig: [{ column: 'users__role', direction: 'asc' }],
+          limitConfig: null,
+          accessor: { userId: 'user-1', roles: ['admin'] },
+        })
+      ).resolves.toBeUndefined();
+    });
+
+    // A GROUP BY query resolves ORDER BY through its output aliases: a sort there can only name a
+    // printed column, or it renders as a bare column outside GROUP BY.
+    it.each([
+      [
+        'an aggregation',
+        { aggregationConfig: [{ column: 'amount', function: 'SUM' }], dateTruncConfig: null },
+      ],
+      [
+        'a date bucket',
+        { aggregationConfig: null, dateTruncConfig: [{ column: 'date', unit: 'MONTH' }] },
+      ],
+    ])(
+      'rejects a sort on a non-selected column once %s groups the report (SORT_COLUMN_NOT_SELECTED)',
+      async (_shape, controls) => {
+        const capabilitySvc = makeCapabilityService(true);
+        const schemaSvc = makeBlendableSchemaService([
+          { name: 'date', type: BigQueryFieldType.DATE },
+          { name: 'amount', type: BigQueryFieldType.INTEGER },
+          { name: 'country', type: BigQueryFieldType.STRING },
+        ]);
+        const validator = new OutputControlsValidatorService(
+          capabilitySvc as never,
+          schemaSvc as never
+        );
+
+        let caught: BadRequestException | undefined;
+        try {
+          await validator.validateForReport({
+            storageType: supportedStorageType,
+            dataMartId: 'dm-1',
+            projectId: 'proj-1',
+            columnConfig: ['date', 'amount'],
+            filterConfig: null,
+            sortConfig: [{ column: 'country', direction: 'asc' }],
+            limitConfig: null,
+            aggregationConfig: controls.aggregationConfig,
+            dateTruncConfig: controls.dateTruncConfig,
+            accessor: { userId: 'user-1', roles: ['admin'] },
+          });
+        } catch (e) {
+          caught = e as BadRequestException;
+        }
+
+        expect(caught).toBeDefined();
+        const response = caught!.getResponse() as { details: { errors: { code: string }[] } };
+        expect(response.details.errors).toEqual([
+          { code: 'SORT_COLUMN_NOT_SELECTED', column: 'country' },
+        ]);
+      }
+    );
+
+    // An AGGREGATE-level calculated field IS an aggregate: selecting one groups the query with no
+    // aggregation rule in sight, so the sort menu narrows to the printed columns with it.
+    it('rejects a sort on a non-selected column when a selected aggregate-level calculated field groups the report', async () => {
+      const fields = [
+        { name: 'clicks', type: BigQueryFieldType.INTEGER },
+        { name: 'impressions', type: BigQueryFieldType.INTEGER },
+        { name: 'country', type: BigQueryFieldType.STRING },
+        {
+          name: 'ctr',
+          type: BigQueryFieldType.FLOAT,
+          calculated: {
+            formula: 'SUM({{ref field="clicks"}}) / NULLIF(SUM({{ref field="impressions"}}), 0)',
+            level: 'metric',
+          },
+        },
+      ];
+      const capabilitySvc = makeCapabilityService(true);
+      const schemaSvc = makeBlendableSchemaService(fields as never);
+      const validator = new OutputControlsValidatorService(
+        capabilitySvc as never,
+        schemaSvc as never
+      );
+
+      let caught: BadRequestException | undefined;
+      try {
+        await validator.validateForReport({
+          storageType: supportedStorageType,
+          dataMartId: 'dm-1',
+          projectId: 'proj-1',
+          columnConfig: ['ctr'],
+          filterConfig: null,
+          sortConfig: [{ column: 'country', direction: 'asc' }],
+          limitConfig: null,
+          dataMartSchemaFields: fields as never,
+          accessor: { userId: 'user-1', roles: ['admin'] },
+        });
+      } catch (e) {
+        caught = e as BadRequestException;
+      }
+
+      expect(caught).toBeDefined();
+      const response = caught!.getResponse() as { details: { errors: { code: string }[] } };
+      expect(response.details.errors).toEqual([
+        { code: 'SORT_COLUMN_NOT_SELECTED', column: 'country' },
+      ]);
+    });
+
+    // A calculated field renders as a SELECT alias, and only a SELECTED one is planned — a sort
+    // on an unselected one would fall back to `src.<name>`, a column the warehouse does not have.
+    it('rejects a sort on a calculated field that is not selected even when the report does not aggregate', async () => {
+      const fields = [
+        { name: 'clicks', type: BigQueryFieldType.INTEGER },
+        { name: 'country', type: BigQueryFieldType.STRING },
+        {
+          name: 'clicks_x2',
+          type: BigQueryFieldType.INTEGER,
+          calculated: { formula: '{{ref field="clicks"}} * 2', level: 'column' },
+        },
+      ];
+      const capabilitySvc = makeCapabilityService(true);
+      const schemaSvc = makeBlendableSchemaService(fields as never);
+      const validator = new OutputControlsValidatorService(
+        capabilitySvc as never,
+        schemaSvc as never
+      );
+
+      let caught: BadRequestException | undefined;
+      try {
+        await validator.validateForReport({
+          storageType: supportedStorageType,
+          dataMartId: 'dm-1',
+          projectId: 'proj-1',
+          columnConfig: ['country'],
+          filterConfig: null,
+          sortConfig: [{ column: 'clicks_x2', direction: 'asc' }],
+          limitConfig: null,
+          dataMartSchemaFields: fields as never,
+          accessor: { userId: 'user-1', roles: ['admin'] },
+        });
+      } catch (e) {
+        caught = e as BadRequestException;
+      }
+
+      expect(caught).toBeDefined();
+      const response = caught!.getResponse() as { details: { errors: { code: string }[] } };
+      expect(response.details.errors).toEqual([
+        { code: 'SORT_COLUMN_NOT_SELECTED', column: 'clicks_x2' },
+      ]);
+    });
+
+    // A real column may own a Unique Count output name. Unselected, the blended builder strips that
+    // name from the columns it carries into its CTEs (it reads it as the synthetic alias), so the
+    // ORDER BY would name a column the main CTE no longer projects — refused here, like the base
+    // validator did, rather than accepted into an unrunnable report.
+    it.each([
+      [
+        'the main label',
+        [{ name: 'Unique Count', type: BigQueryFieldType.STRING }],
+        {},
+        'Unique Count',
+      ],
+      [
+        'a joined source name',
+        [],
+        {
+          blendedFields: [
+            {
+              name: 'orders__unique_count',
+              aliasPath: 'orders',
+              originalFieldName: 'unique_count',
+              type: BigQueryFieldType.STRING,
+            },
+          ],
+          availableSources: [{ aliasPath: 'orders' }],
+        },
+        'orders__unique_count',
+      ],
+    ])(
+      'rejects a sort on an unselected real field that owns %s even when the report does not aggregate',
+      async (_case, extraNative, extras, column) => {
+        const capabilitySvc = makeCapabilityService(true);
+        const schemaSvc = makeBlendableSchemaService(
+          [{ name: 'date', type: BigQueryFieldType.DATE }, ...extraNative],
+          extras
+        );
+        const validator = new OutputControlsValidatorService(
+          capabilitySvc as never,
+          schemaSvc as never
+        );
+
+        let caught: BadRequestException | undefined;
+        try {
+          await validator.validateForReport({
+            storageType: supportedStorageType,
+            dataMartId: 'dm-1',
+            projectId: 'proj-1',
+            columnConfig: ['date'],
+            filterConfig: null,
+            sortConfig: [{ column, direction: 'asc' }],
+            limitConfig: null,
+            accessor: { userId: 'user-1', roles: ['admin'] },
+          });
+        } catch (e) {
+          caught = e as BadRequestException;
+        }
+
+        expect(caught).toBeDefined();
+        const response = caught!.getResponse() as { details: { errors: { code: string }[] } };
+        expect(response.details.errors).toEqual([{ code: 'SORT_COLUMN_NOT_SELECTED', column }]);
+      }
+    );
+
+    // An EXPLICIT empty projection is not the implicit "all native columns": the run path takes
+    // every non-null list down the blended builder (a post-join filter on a joined column forces
+    // it), which prints exactly the listed columns and strips an unselected Unique Count name
+    // from its CTEs — so `ORDER BY main.\`Unique Count\`` would name a column the main CTE no
+    // longer projects. With nothing projected no source column resolves at all.
+    it.each([
+      ['a real field named "Unique Count"', 'Unique Count'],
+      ['a plain native column', 'date'],
+    ])(
+      'rejects a sort on %s under an explicit empty projection that forces the blended path',
+      async (_case, column) => {
+        const capabilitySvc = makeCapabilityService(true);
+        const schemaSvc = makeBlendableSchemaService(
+          [
+            { name: 'date', type: BigQueryFieldType.DATE },
+            { name: 'Unique Count', type: BigQueryFieldType.STRING },
+          ],
+          {
+            blendedFields: [
+              {
+                name: 'users__role',
+                aliasPath: 'users',
+                originalFieldName: 'role',
+                type: BigQueryFieldType.STRING,
+              },
+            ],
+            availableSources: [{ aliasPath: 'users' }],
+          }
+        );
+        const validator = new OutputControlsValidatorService(
+          capabilitySvc as never,
+          schemaSvc as never
+        );
+
+        let caught: BadRequestException | undefined;
+        try {
+          await validator.validateForReport({
+            storageType: supportedStorageType,
+            dataMartId: 'dm-1',
+            projectId: 'proj-1',
+            columnConfig: [],
+            filterConfig: [{ column: 'users__role', operator: 'eq', value: 'admin' }],
+            sortConfig: [{ column, direction: 'asc' }],
+            limitConfig: null,
+            accessor: { userId: 'user-1', roles: ['admin'] },
+          });
+        } catch (e) {
+          caught = e as BadRequestException;
+        }
+
+        expect(caught).toBeDefined();
+        const response = caught!.getResponse() as { details: { errors: { code: string }[] } };
+        expect(response.details.errors).toEqual([{ code: 'SORT_COLUMN_NOT_SELECTED', column }]);
+      }
+    );
+
+    it('names the failed rules in the message, not only in details', async () => {
+      const capabilitySvc = makeCapabilityService(true);
+      const schemaSvc = makeBlendableSchemaService([
+        { name: 'date', type: BigQueryFieldType.DATE },
+        { name: 'amount', type: BigQueryFieldType.INTEGER },
+        { name: 'country', type: BigQueryFieldType.STRING },
       ]);
       const validator = new OutputControlsValidatorService(
         capabilitySvc as never,
@@ -955,10 +1277,11 @@ describe('OutputControlsValidatorService', () => {
           storageType: supportedStorageType,
           dataMartId: 'dm-1',
           projectId: 'proj-1',
-          columnConfig: ['date'],
+          columnConfig: ['date', 'amount'],
           filterConfig: null,
-          sortConfig: [{ column: 'amount', direction: 'asc' }],
+          sortConfig: [{ column: 'country', direction: 'asc' }],
           limitConfig: null,
+          aggregationConfig: [{ column: 'amount', function: 'SUM' }],
           accessor: { userId: 'user-1', roles: ['admin'] },
         });
       } catch (e) {
@@ -966,8 +1289,9 @@ describe('OutputControlsValidatorService', () => {
       }
 
       expect(caught).toBeDefined();
-      const response = caught!.getResponse() as { details: { errors: { code: string }[] } };
-      expect(response.details.errors[0].code).toBe('SORT_COLUMN_NOT_SELECTED');
+      expect(caught!.message).toBe(
+        'Output controls validation failed. Sort column not selected: country.'
+      );
     });
 
     it('falls back to NATIVE columns when columnConfig is null for sort validation', async () => {
@@ -3349,9 +3673,78 @@ describe('OutputControlsValidatorService', () => {
       expect(response.details.errors[0].code).toBe('AGGREGATION_FUNCTION_NOT_ALLOWED_FOR_TYPE');
     });
 
-    it('throws BadRequestException with AGGREGATION_COLUMN_NOT_SELECTED when column not in schema', async () => {
+    // A column that left the schema is reported as disconnected whichever rule names it — the
+    // per-rule verdicts (`AGGREGATION_COLUMN_NOT_SELECTED` when the column also left the
+    // projection, `type: 'unknown'` when it did not) would send the caller to add or re-type a
+    // column that no longer exists.
+    it.each([
+      ['not selected', ['amount']],
+      ['still selected', ['amount', 'missing']],
+    ])(
+      'reports an aggregation on a column missing from the schema as disconnected (column %s)',
+      async (_case, columnConfig) => {
+        const capabilitySvc = makeCapabilityService(true);
+        const schemaSvc = makeBlendableSchemaService([{ name: 'amount', type: 'INTEGER' }]);
+        const validator = new OutputControlsValidatorService(
+          capabilitySvc as never,
+          schemaSvc as never
+        );
+
+        let caught: unknown;
+        try {
+          await validator.validateForReport({
+            storageType: supportedStorageType,
+            dataMartId: 'dm-1',
+            projectId: 'proj-1',
+            columnConfig,
+            filterConfig: null,
+            sortConfig: null,
+            limitConfig: null,
+            aggregationConfig: [{ column: 'missing', function: 'SUM' }],
+            accessor: { userId: 'user-1', roles: ['admin'] },
+          });
+        } catch (e) {
+          caught = e;
+        }
+
+        expectDisconnectedColumnsError(caught, ['missing']);
+      }
+    );
+
+    it('reports a date bucket on a column missing from the schema as disconnected', async () => {
       const capabilitySvc = makeCapabilityService(true);
       const schemaSvc = makeBlendableSchemaService([{ name: 'amount', type: 'INTEGER' }]);
+      const validator = new OutputControlsValidatorService(
+        capabilitySvc as never,
+        schemaSvc as never
+      );
+
+      let caught: unknown;
+      try {
+        await validator.validateForReport({
+          storageType: supportedStorageType,
+          dataMartId: 'dm-1',
+          projectId: 'proj-1',
+          columnConfig: ['amount', 'gone_date'],
+          filterConfig: null,
+          sortConfig: null,
+          limitConfig: null,
+          dateTruncConfig: [{ column: 'gone_date', unit: 'MONTH' }],
+          accessor: { userId: 'user-1', roles: ['admin'] },
+        });
+      } catch (e) {
+        caught = e;
+      }
+
+      expectDisconnectedColumnsError(caught, ['gone_date']);
+    });
+
+    it('still reports an aggregation on a known but unselected column as AGGREGATION_COLUMN_NOT_SELECTED', async () => {
+      const capabilitySvc = makeCapabilityService(true);
+      const schemaSvc = makeBlendableSchemaService([
+        { name: 'amount', type: 'INTEGER' },
+        { name: 'country', type: 'STRING' },
+      ]);
       const validator = new OutputControlsValidatorService(
         capabilitySvc as never,
         schemaSvc as never
@@ -3363,11 +3756,11 @@ describe('OutputControlsValidatorService', () => {
           storageType: supportedStorageType,
           dataMartId: 'dm-1',
           projectId: 'proj-1',
-          columnConfig: ['amount'],
+          columnConfig: ['country'],
           filterConfig: null,
           sortConfig: null,
           limitConfig: null,
-          aggregationConfig: [{ column: 'missing', function: 'SUM' }],
+          aggregationConfig: [{ column: 'amount', function: 'SUM' }],
           accessor: { userId: 'user-1', roles: ['admin'] },
         });
       } catch (e) {
@@ -4117,6 +4510,74 @@ describe('OutputControlsValidatorService', () => {
       expect(
         response.details.errors.some(e => e.code === 'UNIQUE_COUNT_REQUIRES_PRIMARY_KEY')
       ).toBe(true);
+    });
+
+    // A main Unique Count with no explicit projection projects NO dimensions — the run composes an
+    // empty column list and the builder renders the bare COUNT(DISTINCT key) — so a sort on a
+    // native column would be an ORDER BY outside the GROUP BY and fail on the warehouse.
+    it('rejects sorting by a native column under a main Unique Count with NO projection → SORT_COLUMN_NOT_SELECTED', async () => {
+      const capabilitySvc = makeCapabilityService(true);
+      const schemaSvc = makeBlendableSchemaService([
+        { name: 'id', type: 'INTEGER', isPrimaryKey: true },
+        { name: 'country', type: 'STRING' },
+      ]);
+      const validator = new OutputControlsValidatorService(
+        capabilitySvc as never,
+        schemaSvc as never
+      );
+
+      let caught: BadRequestException | undefined;
+      try {
+        await validator.validateForReport({
+          storageType: supportedStorageType,
+          dataMartId: 'dm-1',
+          projectId: 'proj-1',
+          columnConfig: null,
+          filterConfig: null,
+          sortConfig: [{ column: 'country', direction: 'asc' }],
+          limitConfig: null,
+          uniqueCountConfig: [MAIN_UNIQUE_COUNT_SOURCE],
+          accessor: { userId: 'user-1', roles: ['admin'] },
+        });
+      } catch (e) {
+        caught = e as BadRequestException;
+      }
+
+      expect(caught).toBeDefined();
+      // The column exists on the schema: a not-selected 400, never the disconnected diagnosis.
+      expect(caught).toBeInstanceOf(BadRequestException);
+      const response = caught!.getResponse() as {
+        details: { errors: { code: string; column?: string }[] };
+      };
+      expect(response.details.errors).toEqual([
+        { code: 'SORT_COLUMN_NOT_SELECTED', column: 'country' },
+      ]);
+    });
+
+    it('accepts sorting by "Unique Count" under a main Unique Count with NO projection', async () => {
+      const capabilitySvc = makeCapabilityService(true);
+      const schemaSvc = makeBlendableSchemaService([
+        { name: 'id', type: 'INTEGER', isPrimaryKey: true },
+        { name: 'country', type: 'STRING' },
+      ]);
+      const validator = new OutputControlsValidatorService(
+        capabilitySvc as never,
+        schemaSvc as never
+      );
+
+      await expect(
+        validator.validateForReport({
+          storageType: supportedStorageType,
+          dataMartId: 'dm-1',
+          projectId: 'proj-1',
+          columnConfig: null,
+          filterConfig: null,
+          sortConfig: [{ column: 'Unique Count', direction: 'desc' }],
+          limitConfig: null,
+          uniqueCountConfig: [MAIN_UNIQUE_COUNT_SOURCE],
+          accessor: { userId: 'user-1', roles: ['admin'] },
+        })
+      ).resolves.toBeUndefined();
     });
   });
 

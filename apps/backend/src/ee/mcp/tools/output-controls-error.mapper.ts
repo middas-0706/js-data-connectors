@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { categorizeFieldType } from '../../../data-marts/dto/schemas/field-type-category';
 import type { CalculatedFieldLevel } from '../../../data-marts/calculated-fields/formula-level';
+import { OUTPUT_CONTROLS_VALIDATION_FAILED } from '../../../data-marts/services/output-controls-validator.service';
 import { mcpOperatorNamesForInternal, mcpOperatorsForCategory } from './field-type-matrix';
 
 const DATE_BUCKET_ERROR_CODES = new Set([
@@ -122,10 +123,23 @@ export function translateOutputControlsError(
   const sections: { code: string; message: string }[] = [];
 
   // Wrong field name — point at the schema.
-  if (errors?.some(e => e.code === 'FILTER_COLUMN_UNKNOWN')) {
+  //
+  // Built on the bare title, never on `err.message`: the exception's message ends with the
+  // rendered summary of `details.errors` (written for the web toast and Run History), and
+  // appending guidance to it would read "…: foo.. Call …". The sections name the problems
+  // themselves.
+  const unknownFilterColumns = [
+    ...new Set(
+      (errors ?? [])
+        .filter(e => e.code === 'FILTER_COLUMN_UNKNOWN')
+        .map(e => e.column)
+        .filter((column): column is string => Boolean(column))
+    ),
+  ];
+  if (unknownFilterColumns.length > 0) {
     sections.push({
       code: 'field_not_found',
-      message: `${err.message}. Call get_data_mart_details_by_id to get this data mart's exact field names (including joined/blended fields) and use them verbatim; never guess or invent field names.`,
+      message: `${OUTPUT_CONTROLS_VALIDATION_FAILED}. Unknown field(s) in this data mart: ${unknownFilterColumns.join(', ')}. Call get_data_mart_details_by_id to get this data mart's exact field names (including joined/blended fields) and use them verbatim; never guess or invent field names.`,
     });
   }
 
@@ -319,7 +333,7 @@ export function translateOutputControlsError(
     const cols = [...new Set(missing.map(e => e.column).filter(Boolean))].join(', ');
     sections.push({
       code: 'field_not_selected',
-      message: `Field(s) referenced by aggregations, date_buckets, or sort but missing from "fields"${cols ? `: ${cols}` : ''}. Every aggregated, bucketed, or sorted field must also be listed in "fields". Add ${cols || 'them'} to "fields" and retry — the field name(s) are correct, so do not re-fetch the schema.`,
+      message: `Field(s) referenced by aggregations, date_buckets, or sort but missing from "fields"${cols ? `: ${cols}` : ''}. Every aggregated or bucketed field must also be listed in "fields", and so must every sorted field once the report aggregates (aggregations, date_buckets, or a calculated field that aggregates); an ungrouped report with an explicit "fields" list may sort by any field of the data mart. Add ${cols || 'them'} to "fields" and retry — the field name(s) are correct, so do not re-fetch the schema.`,
     });
   }
 
@@ -488,7 +502,8 @@ export function translateOutputControlsError(
     if (detail) {
       sections.push({
         code: 'output_controls_invalid',
-        message: `${err.message}: ${detail}. Fix the named output controls and retry; call get_data_mart_details_by_id if you need the field types.`,
+        // The bare title, for the reason given on the field_not_found section.
+        message: `${OUTPUT_CONTROLS_VALIDATION_FAILED}: ${detail}. Fix the named output controls and retry; call get_data_mart_details_by_id if you need the field types.`,
       });
     }
   }

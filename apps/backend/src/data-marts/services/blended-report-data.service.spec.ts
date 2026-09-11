@@ -3469,7 +3469,9 @@ describe('BlendedReportDataService', () => {
         } as unknown as DataMart;
 
         blendableSchemaService.computeBlendableSchema.mockResolvedValue({
-          nativeFields: [],
+          // What `BlendableSchemaService` returns for this mart: its own fields, hidden ones
+          // stripped. The run path reads the sortable names off THIS list.
+          nativeFields: dataMart.schema!.fields,
           availableSources: sources.map((s, i) => ({
             aliasPath: s.aliasPath,
             title: `${s.defaultAlias} DM`,
@@ -3835,6 +3837,70 @@ describe('BlendedReportDataService', () => {
         const mainCte = /main AS \(([\s\S]+?)\n {2}\)/m.exec(sql);
         expect(mainCte).not.toBeNull();
         expect(mainCte![1]).not.toContain('orders__unique_count');
+      });
+
+      // On a degrading run a stored sort on a column the schema no longer offers is dropped BEFORE
+      // the validator sees it: the validator's own answer is the disconnected error, which would
+      // fail a scheduled run over a clause that changes nothing but row order. The rest of the
+      // sort still validates, and the decision carries the pruned list for its readers.
+      it('drops a sort on a column missing from the schema and validates the rest', async () => {
+        const report = makeJoinedReport(
+          {
+            columnConfig: ['customer_email', 'orders__status'],
+            sortConfig: [
+              { column: 'ghost_col', direction: 'desc' },
+              { column: 'customer_email', direction: 'asc' },
+            ],
+          },
+          [ORDERS]
+        );
+
+        const result = await service.resolveBlendingDecision(
+          report,
+          { userId: 'user-1', roles: ['admin'] },
+          undefined,
+          undefined,
+          { degradeStaleSort: true }
+        );
+
+        expect(outputControlsValidator.validateForReport).toHaveBeenCalledWith(
+          expect.objectContaining({
+            sortConfig: [{ column: 'customer_email', direction: 'asc' }],
+          })
+        );
+        expect(result.sort).toEqual([{ column: 'customer_email', direction: 'asc' }]);
+        expect(capturedContext()?.sort).toEqual([{ column: 'customer_email', direction: 'asc' }]);
+      });
+
+      // Every other caller — a save dry run, an ad-hoc query, the Generated SQL preview, the
+      // output-schema describe — has to learn about the drift, so the stored sort reaches the
+      // validator exactly as stored and the decision carries no sort of its own.
+      it('hands the stored sort to the validator untouched when not degrading', async () => {
+        const report = makeJoinedReport(
+          {
+            columnConfig: ['customer_email', 'orders__status'],
+            sortConfig: [
+              { column: 'ghost_col', direction: 'desc' },
+              { column: 'customer_email', direction: 'asc' },
+            ],
+          },
+          [ORDERS]
+        );
+
+        const result = await service.resolveBlendingDecision(report, {
+          userId: 'user-1',
+          roles: ['admin'],
+        });
+
+        expect(outputControlsValidator.validateForReport).toHaveBeenCalledWith(
+          expect.objectContaining({
+            sortConfig: [
+              { column: 'ghost_col', direction: 'desc' },
+              { column: 'customer_email', direction: 'asc' },
+            ],
+          })
+        );
+        expect(result.sort).toBeUndefined();
       });
 
       // A scheduled run never reopens the editor that prunes the stale rule, so the sort has to

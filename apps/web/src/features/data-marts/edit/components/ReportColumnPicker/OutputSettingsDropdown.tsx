@@ -93,10 +93,18 @@ interface OutputSettingsDropdownProps {
   value: OutputConfig;
   onChange: (next: OutputConfig) => void;
   /**
-   * Sort-only column list. May include synthetic metrics (e.g. Unique Count) that are
-   * orderable but NOT filterable/aggregatable — never pass this to the filter surfaces.
+   * Sort-only column list: what a sort may name in the report's current shape (the picker
+   * decides it the way the backend does). May include synthetic metrics (e.g. Unique Count) that
+   * are orderable but NOT filterable/aggregatable — never pass this to the filter surfaces.
    */
   sortColumns: readonly OutputSettingsDropdownColumn[];
+  /**
+   * Whether a stored sort rule resolves in the report's current shape; by default, whether its
+   * column is on `sortColumns`. The picker passes its own verdict because the menu and the verdict
+   * are not one set: a field of a source excluded from reporting is never offered, yet a stored
+   * sort on it still runs — and the struck-through row must agree with the disconnected badge.
+   */
+  isSortResolvable?: (column: string) => boolean;
   allColumns: readonly OutputSettingsDropdownColumn[];
   joinedSources?: readonly JoinedSource[];
 }
@@ -105,6 +113,7 @@ export function OutputSettingsDropdown({
   value,
   onChange,
   sortColumns,
+  isSortResolvable,
   allColumns,
   joinedSources,
 }: OutputSettingsDropdownProps) {
@@ -149,7 +158,8 @@ export function OutputSettingsDropdown({
       )}
       <SortSection
         sort={value.sortConfig}
-        selectedColumns={sortColumns}
+        sortableColumns={sortColumns}
+        isSortResolvable={isSortResolvable}
         onChange={s => {
           onChange({ ...value, sortConfig: s });
         }}
@@ -424,19 +434,23 @@ function AddFilterPicker({
 
 interface SortSectionProps {
   sort: SortRule[];
-  selectedColumns: readonly OutputSettingsDropdownColumn[];
+  /** The columns a sort may name — see `OutputSettingsDropdownProps.sortColumns`. */
+  sortableColumns: readonly OutputSettingsDropdownColumn[];
+  /** See `OutputSettingsDropdownProps.isSortResolvable`. */
+  isSortResolvable?: (column: string) => boolean;
   onChange: (next: SortRule[]) => void;
 }
 
-function SortSection({ sort, selectedColumns, onChange }: SortSectionProps) {
+function SortSection({ sort, sortableColumns, isSortResolvable, onChange }: SortSectionProps) {
   const sortColumns = new Set(sort.map(s => s.column));
-  const selectedColumnSet = new Set(selectedColumns.map(c => c.name));
-  const labelByName = new Map(selectedColumns.map(c => [c.name, c.label]));
-  const dataMartByName = new Map(selectedColumns.map(c => [c.name, c.dataMartName]));
+  const sortableColumnSet = new Set(sortableColumns.map(c => c.name));
+  const resolves = isSortResolvable ?? ((column: string) => sortableColumnSet.has(column));
+  const labelByName = new Map(sortableColumns.map(c => [c.name, c.label]));
+  const dataMartByName = new Map(sortableColumns.map(c => [c.name, c.dataMartName]));
   // The same exclusion FiltersSection makes above: a JOINED Data Mart's calculated field is
   // refused on every report surface, so offering it here only produces a second rule the save
   // will reject. Already-sorted ones stay listed so a legacy report can remove them.
-  const available = selectedColumns.filter(c => !sortColumns.has(c.name) && !c.isJoinedCalculated);
+  const available = sortableColumns.filter(c => !sortColumns.has(c.name) && !c.isJoinedCalculated);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
@@ -496,7 +510,7 @@ function SortSection({ sort, selectedColumns, onChange }: SortSectionProps) {
             <SortRow
               rule={rule}
               index={index}
-              isOrphaned={!selectedColumnSet.has(rule.column)}
+              isOrphaned={!resolves(rule.column)}
               displayLabel={labelByName.get(rule.column)}
               dataMartName={dataMartByName.get(rule.column)}
               onChange={next => {
@@ -514,7 +528,7 @@ function SortSection({ sort, selectedColumns, onChange }: SortSectionProps) {
       <div className='mt-2'>
         {available.length === 0 ? (
           <span className='text-muted-foreground text-xs'>
-            All selected columns are already sorted.
+            All sortable columns are already sorted.
           </span>
         ) : (
           <FieldSearchPicker

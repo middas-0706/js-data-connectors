@@ -392,6 +392,57 @@ describe('GoogleSheetsApiAdapter (pure helpers)', () => {
     });
   });
 
+  describe('createSpreadsheet', () => {
+    it("names the single sheet in the create request instead of leaving Google's default", async () => {
+      const adapter = buildAdapter();
+      const createMock = jest.fn().mockResolvedValue({
+        data: { spreadsheetId: 'ss-1', sheets: [{ properties: { sheetId: 42 } }] },
+      });
+      (adapter as unknown as { service: unknown }).service = {
+        spreadsheets: { create: createMock },
+      };
+
+      await expect(adapter.createSpreadsheet('Monthly funnel', 'Monthly funnel')).resolves.toEqual({
+        spreadsheetId: 'ss-1',
+        sheetId: 42,
+      });
+
+      expect(createMock).toHaveBeenCalledWith({
+        requestBody: {
+          properties: { title: 'Monthly funnel' },
+          sheets: [{ properties: { title: 'Monthly funnel' } }],
+        },
+        fields: 'spreadsheetId,sheets.properties.sheetId',
+      });
+    });
+  });
+
+  describe('renameSheet', () => {
+    it('renames the sheet by its numeric id with a title-only field mask', async () => {
+      const adapter = buildAdapter();
+      const batchUpdate = jest.fn().mockResolvedValue({ data: {} });
+      (adapter as unknown as { service: unknown }).service = {
+        spreadsheets: { batchUpdate },
+      };
+
+      await adapter.renameSheet('ss-1', 7, 'Monthly funnel');
+
+      expect(batchUpdate).toHaveBeenCalledWith({
+        spreadsheetId: 'ss-1',
+        requestBody: {
+          requests: [
+            {
+              updateSheetProperties: {
+                properties: { sheetId: 7, title: 'Monthly funnel' },
+                fields: 'title',
+              },
+            },
+          ],
+        },
+      });
+    });
+  });
+
   describe('driveApiDisabled', () => {
     /** The 403 Google returns when the Drive API is off in the caller's project. */
     const serviceDisabledError = () =>

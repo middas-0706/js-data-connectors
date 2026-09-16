@@ -152,7 +152,10 @@ export class GoogleSheetsApiAdapter {
   }
 
   /**
-   * Creates a new, empty Google Spreadsheet with its single default sheet.
+   * Creates a new, empty Google Spreadsheet whose single sheet carries
+   * `sheetTitle` instead of Google's default ("Sheet1"). The sheet title is set
+   * in the create request itself, so the tab is never observable under the
+   * default name.
    *
    * Used by the "Create document" auto-creation flow. The first sheet's numeric
    * `sheetId` is read from the create response — it is NOT assumed to be `0`,
@@ -162,14 +165,16 @@ export class GoogleSheetsApiAdapter {
    * the authenticated account's Drive root. Folder placement is a later phase.
    *
    * @param title - Title for the new spreadsheet
+   * @param sheetTitle - Title for its single sheet (tab); see `toSheetTitle`
    * @returns The new spreadsheet ID and its first sheet's numeric ID
    */
   public async createSpreadsheet(
-    title: string
+    title: string,
+    sheetTitle: string
   ): Promise<{ spreadsheetId: string; sheetId: number }> {
     const resp = await this.executeWithRetry(() =>
       this.service.spreadsheets.create({
-        requestBody: { properties: { title } },
+        requestBody: { properties: { title }, sheets: [{ properties: { title: sheetTitle } }] },
         fields: 'spreadsheetId,sheets.properties.sheetId',
       })
     );
@@ -189,6 +194,9 @@ export class GoogleSheetsApiAdapter {
    * A file created via the Sheets API (`createSpreadsheet`) is NOT reliably
    * app-authorized for `drive.file`, so sharing it would fail.
    *
+   * Drive cannot name the sheet on create: the file comes with Google's default
+   * sheet, which the caller renames with {@link renameSheet} if it wants to.
+   *
    * @param title - Title for the new spreadsheet
    * @returns The new spreadsheet ID and its first sheet's numeric ID
    */
@@ -202,7 +210,8 @@ export class GoogleSheetsApiAdapter {
    * Creates a new Google Spreadsheet directly inside a Drive folder via the
    * Drive API (so the file lands in a shared Drive folder, not the caller's
    * Drive root). Requires the underlying auth to carry a Drive scope; used by the
-   * Service-Account auto-creation path.
+   * Service-Account auto-creation path. As with {@link createSpreadsheetViaDrive},
+   * the file comes with Google's default sheet.
    *
    * @param title - Title for the new spreadsheet
    * @param folderId - Drive folder ID to create the spreadsheet in
@@ -263,6 +272,17 @@ export class GoogleSheetsApiAdapter {
       }
       throw error;
     }
+  }
+
+  /**
+   * Renames a sheet (tab) by its numeric ID. Google rejects a title already used
+   * by another sheet of the same spreadsheet with a 400; see `toSheetTitle` for
+   * the length and emptiness rules a title must satisfy.
+   */
+  public async renameSheet(spreadsheetId: string, sheetId: number, title: string): Promise<void> {
+    await this.batchUpdate(spreadsheetId, [
+      { updateSheetProperties: { properties: { sheetId, title }, fields: 'title' } },
+    ]);
   }
 
   /**

@@ -116,11 +116,11 @@ var adAccountInsightsFieldsByCountry = {
     'type': DATA_TYPES.STRING
   },
   'conversion_values': {
-    'description': 'conversion_values',
+    'description': 'The total value of the conversions attributed to your ads, counting conversion events only. Unlike action_values, it excludes engagement and clicks.',
     'type': DATA_TYPES.ARRAY
   },
   'conversions': {
-    'description': 'conversions',
+    'description': 'The total number of conversions attributed to your ads. Counts conversion events only, unlike actions, which also counts engagement and clicks.',
     'type': DATA_TYPES.ARRAY
   },
   'converted_product_quantity': {

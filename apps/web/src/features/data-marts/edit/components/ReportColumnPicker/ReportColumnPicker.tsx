@@ -60,14 +60,15 @@ import {
 import { UniqueCountRow } from './UniqueCountRow';
 import { RowFilterIcon } from './RowFilterIcon';
 import { RowAggregationIcon } from './RowAggregationIcon';
-import {
-  effectiveComparisonType,
-  isArrayFieldType,
-  isFilterableType,
-} from './output-controls-operators';
+import { isArrayFieldType, isFilterableType } from './output-controls-operators';
 import { resolveColumnAllowedAggregations } from '../../../shared/utils/aggregation-governance';
 import { describeMissingReferences } from '../../../shared/utils/calculated-field-issues';
 import { isRowLevelCalculatedField } from '../../../shared/utils/calculated-field-level';
+import { flattenNativeFields } from '../../../shared/utils/flatten-native-fields';
+import { resolveAutoCollapse, autoAggregationByColumn } from '../../../shared/utils/auto-collapse';
+
+/** Stable identity, so a picker that predicts nothing does not re-render its rows on every pass. */
+const EMPTY_AUTO_AGGREGATIONS: ReadonlyMap<string, ReportAggregateFunction> = new Map();
 import type { AggregationDraft } from './AggregationEditorPopover';
 import {
   applyAggregationDraft,
@@ -86,40 +87,6 @@ import {
   type SortResolutionBefore,
   type SortResolutionContext,
 } from './output-controls-cleanup';
-
-// Must stay in sync with the backend collectSchemaFieldPaths walker: hidden and
-// DISCONNECTED nodes (with their subtrees) are unavailable for reporting, so they
-// are excluded from the list and surface in the Disconnected columns block instead.
-function flattenNativeFields(fields: NativeField[], prefix = ''): NativeField[] {
-  const result: NativeField[] = [];
-  for (const field of fields) {
-    // A calculated field carries a warehouse-derived status that means nothing for it (mirrors
-    // the backend's own carve-out in `blendable-schema.service.ts`'s `flattenSchemaFields`) — it
-    // is never sourced from the warehouse, so DISCONNECTED must not hide it.
-    // `isHiddenForReporting` still applies to it: that is a real, separate governance
-    // choice, not a warehouse-status artifact.
-    if (field.isHiddenForReporting) continue;
-    if (!field.calculated && field.status === 'DISCONNECTED') continue;
-    const fullName = prefix ? `${prefix}.${field.name}` : field.name;
-    const reportType = field.type ? effectiveComparisonType(field.type, field.mode) : field.type;
-    result.push({
-      name: fullName,
-      // A REPEATED field's element type is not the column type — normalize it to
-      // ARRAY<T> so report controls can exclude it.
-      type: reportType,
-      alias: field.alias,
-      description: field.description,
-      isPrimaryKey: field.isPrimaryKey,
-      aggregationRole: field.aggregationRole,
-      allowedAggregations: field.allowedAggregations,
-      calculated: field.calculated,
-    });
-    if (!isArrayFieldType(reportType) && field.fields && Array.isArray(field.fields)) {
-      result.push(...flattenNativeFields(field.fields, fullName));
-    }
-  }
-  return result;
-}
 
 /**
  * The SQL output name of a source's Unique Count metric — what a sort rule stores and what the
@@ -182,6 +149,16 @@ export interface ReportColumnPickerProps {
    */
   onOutputConfigChange?: (config: OutputConfig, options?: OutputConfigRepairOptions) => void;
   onCountChange?: (count: ReportColumnSelectionCount) => void;
+  /**
+   * Whether a run of this report will actually auto-collapse. False for a pull-based destination
+   * (Looker Studio, Excel): its consumer reads the uncollapsed projection, so the ghost below
+   * would predict something that never happens.
+   *
+   * Defaults to false, and every form that wants the ghost passes it. A form that forgets loses a
+   * prediction, which surprises nobody; the opposite default would have the next pull-based
+   * destination promising a collapse it never performs.
+   */
+  collapsesOnDelivery?: boolean;
 }
 
 /**
@@ -228,7 +205,8 @@ function renderRowAggregationIcon(
   displayLabel: string,
   dataMartName: string | undefined,
   agg: ColumnAggregation | undefined,
-  onApplyAggregation?: ApplyAggregationFn
+  onApplyAggregation?: ApplyAggregationFn,
+  autoFunction?: ReportAggregateFunction
 ) {
   if (!onApplyAggregation || !fieldType || !agg || agg.allowed.length === 0) return null;
   return (
@@ -243,6 +221,7 @@ function renderRowAggregationIcon(
       activeFunctions={agg.functions}
       activeBucket={agg.bucket}
       activeTimeZone={agg.timeZone}
+      autoFunction={autoFunction}
       onApplyDraft={draft => {
         onApplyAggregation(fieldName, draft);
       }}
@@ -261,6 +240,12 @@ interface NativeFieldRowProps {
   onReplaceFilterAt?: ReplaceFilterAtFn;
   aggregation?: ColumnAggregation;
   onApplyAggregation?: ApplyAggregationFn;
+  /**
+   * This row's automatic aggregation, if the product picked one. A scalar rather than the whole
+   * map: the map is rebuilt on every parent render, and handing it to a memo'd row re-renders
+   * every row on every keystroke anywhere in the form.
+   */
+  autoAggregation?: ReportAggregateFunction;
   /**
    * This metric's own broken-reference names — its formula names a field the schema no
    * longer has. `undefined`/empty means fine. Only consulted for a `field.calculated` row.
@@ -291,6 +276,7 @@ const NativeFieldRow = memo(function NativeFieldRow({
   onReplaceFilterAt,
   aggregation,
   onApplyAggregation,
+  autoAggregation,
   brokenReferences,
 }: NativeFieldRowProps) {
   const noteId = useId();
@@ -302,7 +288,8 @@ const NativeFieldRow = memo(function NativeFieldRow({
       fieldDisplayLabel(field.alias, field.name),
       undefined,
       aggregation,
-      onApplyAggregation
+      onApplyAggregation,
+      autoAggregation
     );
   const filterIcon = filterableType && onAddFilter && onRemoveFilterAt && (
     <RowFilterIcon
@@ -434,6 +421,12 @@ interface BlendedFieldRowProps {
   preJoinSlices: ColumnFilters;
   aggregation?: ColumnAggregation;
   onApplyAggregation?: ApplyAggregationFn;
+  /**
+   * This row's automatic aggregation, if the product picked one. A scalar rather than the whole
+   * map: the map is rebuilt on every parent render, and handing it to a memo'd row re-renders
+   * every row on every keystroke anywhere in the form.
+   */
+  autoAggregation?: ReportAggregateFunction;
   hoverClassName?: string;
   /**
    * If true, the row only exposes paths that remove existing references —
@@ -469,6 +462,7 @@ const BlendedFieldRow = memo(function BlendedFieldRow({
   preJoinSlices,
   aggregation,
   onApplyAggregation,
+  autoAggregation,
   hoverClassName = 'hover:bg-muted/50',
   removeOnly = false,
 }: BlendedFieldRowProps) {
@@ -490,7 +484,8 @@ const BlendedFieldRow = memo(function BlendedFieldRow({
       fieldDisplayLabel(field.alias, field.originalFieldName),
       dataMartName,
       aggregation,
-      onApplyAggregation
+      onApplyAggregation,
+      autoAggregation
     );
   const filterIcon =
     filterableType &&
@@ -657,6 +652,12 @@ interface BlendedGroupItemProps {
   preJoinByAliasPathColumn?: Map<string, ColumnFilters>;
   aggregationByColumn?: Map<string, ColumnAggregation>;
   onApplyAggregation?: ApplyAggregationFn;
+  /**
+   * The function the product will auto-apply, keyed by column name. Empty for a joined group
+   * today — the resolver refuses a report that projects a joined column at all — and plumbed so
+   * the follow-up that lifts that refusal has nothing left to wire.
+   */
+  autoAggregationByColumn?: ReadonlyMap<string, ReportAggregateFunction>;
   hasSearchQuery?: boolean;
   uniqueCount?: GroupUniqueCount;
 }
@@ -723,6 +724,7 @@ function BlendedGroupItem({
   preJoinByAliasPathColumn,
   aggregationByColumn,
   onApplyAggregation,
+  autoAggregationByColumn,
   hasSearchQuery = false,
   uniqueCount,
 }: BlendedGroupItemProps) {
@@ -803,6 +805,7 @@ function BlendedGroupItem({
               preJoinSlices={preJoinByAliasPathColumn?.get(field.name) ?? EMPTY_COLUMN_FILTERS}
               aggregation={aggregationByColumn?.get(field.name)}
               onApplyAggregation={onApplyAggregation}
+              autoAggregation={autoAggregationByColumn?.get(field.name)}
               hoverClassName={inaccessible ? 'hover:bg-destructive/20' : undefined}
               removeOnly={inaccessible}
             />
@@ -829,6 +832,7 @@ export function ReportColumnPicker({
   outputConfig,
   onOutputConfigChange,
   onCountChange,
+  collapsesOnDelivery = false,
 }: ReportColumnPickerProps) {
   const outputControlsSupported = storageType ? supportsOutputControls(storageType) : false;
   const outputControlsAvailable: boolean = outputControlsSupported && !!onOutputConfigChange;
@@ -1748,6 +1752,20 @@ export function ReportColumnPicker({
     effectiveOutputConfig.dateTruncConfig,
   ]);
 
+  // Read against the raw `value`/`outputConfig` props, not the `effective*` ones: a null `value`
+  // means no explicit projection, which the resolver must read as "nothing to predict yet".
+  const autoAggregations = useMemo(
+    () =>
+      collapsesOnDelivery && schema
+        ? autoAggregationByColumn(
+            // The RAW schema, not the flattened `nativeFields` above: the resolver walks and
+            // filters it itself, exactly as its extension twin does on the same input.
+            resolveAutoCollapse(schema.nativeFields as NativeField[], value, outputConfig)
+          )
+        : EMPTY_AUTO_AGGREGATIONS,
+    [collapsesOnDelivery, schema, value, outputConfig]
+  );
+
   const hasDisconnectedOutputControls = useMemo(() => {
     for (const rule of effectiveOutputConfig.filterConfig) {
       if (rule.placement === 'pre-join') {
@@ -2060,6 +2078,7 @@ export function ReportColumnPicker({
             <AggregationSettingsButton
               active={hasAnyAggregation}
               count={aggregationCount}
+              autoAppliedColumns={[...autoAggregations.keys()]}
               open={aggSettingsOpen}
               onClick={() => {
                 togglePanel('aggregation');
@@ -2121,6 +2140,7 @@ export function ReportColumnPicker({
             value={effectiveOutputConfig}
             onChange={handleAggregationPanelChange}
             selectedColumns={selectedDropdownColumns}
+            autoAggregations={autoAggregations}
           />
         </div>
       )}
@@ -2252,6 +2272,7 @@ export function ReportColumnPicker({
             onReplaceFilterAt={outputControlsAvailable ? handleReplaceFilterAt : undefined}
             aggregation={aggregationByColumn.get(field.name)}
             onApplyAggregation={outputControlsAvailable ? handleApplyAggregation : undefined}
+            autoAggregation={autoAggregations.get(field.name)}
             brokenReferences={calculatedFieldIssuesByName.get(field.name)}
           />
         ))}
@@ -2286,6 +2307,7 @@ export function ReportColumnPicker({
               preJoinByAliasPathColumn={preJoinByAliasPathColumn}
               aggregationByColumn={aggregationByColumn}
               onApplyAggregation={outputControlsAvailable ? handleApplyAggregation : undefined}
+              autoAggregationByColumn={autoAggregations}
               hasSearchQuery={hasSearchQuery}
               uniqueCount={
                 group.uniqueCount

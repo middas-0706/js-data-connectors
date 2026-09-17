@@ -3,6 +3,7 @@ import { Sigma } from 'lucide-react';
 import { cn } from '@owox/ui/lib/utils';
 import type { DateTruncUnit } from '../../../shared/types/output-config';
 import type { ReportAggregateFunction } from '../../../shared/types/relationship.types';
+import { REPORT_AGGREGATE_FUNCTION_LABELS } from '../../../shared/utils/aggregation-labels';
 import { AggregationEditorPopover, type AggregationDraft } from './AggregationEditorPopover';
 
 interface RowAggregationIconProps {
@@ -34,6 +35,12 @@ interface RowAggregationIconProps {
   autoOpen?: boolean;
   /** Fired whenever the editor closes, so a pending selection can be reset. */
   onClose?: () => void;
+  /**
+   * The aggregation the product will apply because the analyst applied none. Drawn dimmed and
+   * always visible, so the choice shows before the run rather than in the delivered rows. Ignored
+   * once `activeFunctions` is non-empty.
+   */
+  autoFunction?: ReportAggregateFunction;
   onApplyDraft: (draft: AggregationDraft) => void;
 }
 
@@ -51,11 +58,13 @@ export function RowAggregationIcon({
   alwaysVisible = false,
   autoOpen = false,
   onClose,
+  autoFunction,
   onApplyDraft,
 }: RowAggregationIconProps) {
   const [open, setOpen] = useState(autoOpen);
   const count = activeFunctions.length + (activeBucket !== null ? 1 : 0);
   const isActive = count > 0;
+  const showsAuto = !isActive && autoFunction !== undefined;
 
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
@@ -65,14 +74,23 @@ export function RowAggregationIcon({
   const trigger = (
     <button
       type='button'
+      // The name says what the button DOES; the automatic aggregation is a state of the column,
+      // so it rides along as a description instead of replacing the action.
       aria-label={isActive ? 'Manage aggregations' : 'Add aggregation'}
+      title={
+        showsAuto
+          ? `Automatic aggregation: ${REPORT_AGGREGATE_FUNCTION_LABELS[autoFunction]}`
+          : undefined
+      }
       className={cn(
         'flex h-6 w-6 items-center justify-center gap-0.5 rounded transition-opacity',
         isActive
           ? 'text-blue-500 opacity-100'
-          : alwaysVisible
-            ? 'text-muted-foreground hover:text-foreground opacity-100'
-            : 'text-muted-foreground hover:text-foreground opacity-0 group-hover/row:opacity-100 data-[state=open]:opacity-100'
+          : showsAuto
+            ? 'text-blue-500 opacity-60 hover:opacity-100'
+            : alwaysVisible
+              ? 'text-muted-foreground hover:text-foreground opacity-100'
+              : 'text-muted-foreground hover:text-foreground opacity-0 group-hover/row:opacity-100 data-[state=open]:opacity-100'
       )}
     >
       <Sigma className='h-4 w-4' />
@@ -88,6 +106,7 @@ export function RowAggregationIcon({
       fieldType={fieldType}
       displayLabel={displayLabel}
       dataMartName={dataMartName}
+      autoFunctionLabel={showsAuto ? REPORT_AGGREGATE_FUNCTION_LABELS[autoFunction] : undefined}
       allowedAggregations={allowedAggregations}
       allowDateBucket={allowDateBucket}
       allowBucketTimeZone={allowBucketTimeZone}

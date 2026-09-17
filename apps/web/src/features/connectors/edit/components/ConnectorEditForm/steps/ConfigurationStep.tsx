@@ -75,6 +75,43 @@ function migrateNestedConfigValuesToTopLevel(
   return nextConfig;
 }
 
+/**
+ * Builds the form state from a configuration handed in by the parent: nested
+ * values are migrated to the top level, spec defaults and the first option of a
+ * `oneOf` field fill what is unset, and secrets of a saved configuration are
+ * masked. Every (re)seed goes through here, so a rule added to it applies both
+ * to a fresh and to an existing configuration.
+ */
+function seedConfiguration(
+  initialConfiguration: Record<string, unknown> | undefined,
+  specs: ConnectorSpecificationResponseApiDto[],
+  isEditingExisting: boolean
+): Record<string, unknown> {
+  const config = migrateNestedConfigValuesToTopLevel({ ...(initialConfiguration ?? {}) }, specs);
+
+  specs.forEach(spec => {
+    const isSecret = Array.isArray(spec.attributes) ? spec.attributes.includes('SECRET') : false;
+
+    if (config[spec.name] === undefined && spec.default !== undefined) {
+      config[spec.name] = spec.default;
+    }
+
+    // The oneOf renderer seeds its first option in a mount effect too, but that
+    // write lands before the seeding below replaces the state and is lost,
+    // leaving the field unset until the user touches it.
+    const firstOption = spec.oneOf?.[0]?.value;
+    if (config[spec.name] === undefined && firstOption) {
+      config[spec.name] = { [firstOption]: {} };
+    }
+
+    if (isEditingExisting && isSecret) {
+      config[spec.name] = SECRET_MASK;
+    }
+  });
+
+  return config;
+}
+
 export function ConfigurationStep({
   connector,
   connectorSpecification,
@@ -93,7 +130,7 @@ export function ConfigurationStep({
   // own echo and distinguishes it from a genuine outside change.
   const lastEchoedConfigRef = useRef<Record<string, unknown> | null>(null);
   const [secretEditing, setSecretEditing] = useState<Record<string, boolean>>({});
-  const [managedOAuthModes, setManagedOAuthModes] = useState<Record<string, boolean>>({});
+  const [managedOAuthModes, setManagedOAuthModes] = useState<Partial<Record<string, boolean>>>({});
 
   useEffect(() => {
     trackEvent({
@@ -110,27 +147,9 @@ export function ConfigurationStep({
     // as they were typed, which is why input appeared to lag a keystroke behind.
     if (connectorSpecification && initialConfiguration !== lastEchoedConfigRef.current) {
       updatingFromParentRef.current = true;
-
-      const config = migrateNestedConfigValuesToTopLevel(
-        { ...(initialConfiguration ?? {}) },
-        connectorSpecification
+      setConfiguration(
+        seedConfiguration(initialConfiguration, connectorSpecification, isEditingExisting)
       );
-
-      connectorSpecification.forEach(spec => {
-        const isSecret = Array.isArray(spec.attributes)
-          ? spec.attributes.includes('SECRET')
-          : false;
-
-        if (config[spec.name] === undefined && spec.default !== undefined) {
-          config[spec.name] = spec.default;
-        }
-
-        if (isEditingExisting && isSecret) {
-          config[spec.name] = SECRET_MASK;
-        }
-      });
-
-      setConfiguration(config);
       initializedRef.current = true;
       setTimeout(() => {
         updatingFromParentRef.current = false;
@@ -149,14 +168,17 @@ export function ConfigurationStep({
       initialConfiguration !== lastEchoedConfigRef.current
     ) {
       updatingFromParentRef.current = true;
+      // Same seeding as above: this effect runs after it in the same flush and
+      // wins, so re-applying the raw configuration here would drop the defaults,
+      // the oneOf seed and the secret mask again.
       setConfiguration(
-        migrateNestedConfigValuesToTopLevel({ ...initialConfiguration }, connectorSpecification)
+        seedConfiguration(initialConfiguration, connectorSpecification, isEditingExisting)
       );
       setTimeout(() => {
         updatingFromParentRef.current = false;
       }, 0);
     }
-  }, [initialConfiguration, connectorSpecification]);
+  }, [initialConfiguration, connectorSpecification, isEditingExisting]);
 
   useEffect(() => {
     if (
@@ -346,10 +368,16 @@ export function ConfigurationStep({
   const selectedAuthType = isRecord(configuration.AuthType)
     ? Object.keys(configuration.AuthType)[0]
     : undefined;
+  // Under OAuth the spreadsheet is chosen with Google Picker, so the manual
+  // input stays hidden until the OAuth renderer explicitly reports manual mode
+  // (settings still loading or not yet signed in must not flash the input).
+  // The renderer only mounts on the OAuth tab, so an explicit "managed" report
+  // is trusted even before the AuthType value itself is reflected in the state.
+  const managedAuthTypeMode = managedOAuthModes.AuthType;
   const usesManagedGoogleSheetsOAuth =
     connector.name === GOOGLE_SHEETS_CONNECTOR_NAME &&
-    selectedAuthType === 'oauth2' &&
-    managedOAuthModes.AuthType;
+    (managedAuthTypeMode === true ||
+      (selectedAuthType === 'oauth2' && managedAuthTypeMode !== false));
   const visibleSpecifications = usesManagedGoogleSheetsOAuth
     ? sortedSpecifications.filter(spec => spec.name !== 'SpreadsheetId')
     : sortedSpecifications;

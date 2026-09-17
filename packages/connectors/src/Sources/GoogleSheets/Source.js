@@ -163,7 +163,10 @@ var GoogleSheetsSource = class GoogleSheetsSource extends AbstractSource {
           isRequired: true,
           requiredType: 'string',
           label: 'Sheet Name',
-          description: 'Name of the sheet tab to import. One Data Mart imports one sheet tab.',
+          description:
+            'Sheet tab to import. The list is loaded from the selected spreadsheet. One Data Mart imports one sheet tab.',
+          attributes: [CONFIG_ATTRIBUTES.DYNAMIC_OPTIONS],
+          optionsDependsOn: ['AuthType', 'SpreadsheetId'],
         },
         Range: {
           requiredType: 'string',
@@ -171,6 +174,7 @@ var GoogleSheetsSource = class GoogleSheetsSource extends AbstractSource {
           label: 'Range',
           description:
             'Optional A1 range inside the selected sheet, for example A:D. Leave empty to import the used range.',
+          attributes: [CONFIG_ATTRIBUTES.ADVANCED],
         },
         HeaderRow: {
           isRequired: true,
@@ -180,6 +184,7 @@ var GoogleSheetsSource = class GoogleSheetsSource extends AbstractSource {
           label: 'Header Row',
           description:
             'One-based row number containing column names. The rows below it are imported as data.',
+          attributes: [CONFIG_ATTRIBUTES.ADVANCED],
         },
         InferTypes: {
           requiredType: 'boolean',
@@ -336,21 +341,24 @@ var GoogleSheetsSource = class GoogleSheetsSource extends AbstractSource {
 
     const authConfig = this.config.AuthType.items;
     if (authType === 'oauth2') {
+      // Resolve the items first so a missing one is reported before any request.
+      const formData = {
+        grant_type: 'refresh_token',
+        client_id: this._requireAuthItem(authConfig, 'ClientId'),
+        client_secret: this._requireAuthItem(authConfig, 'ClientSecret'),
+        refresh_token: this._requireAuthItem(authConfig, 'RefreshToken'),
+      };
       this.accessToken = await OAuthUtils.getAccessToken({
         config: this.config,
         tokenUrl: 'https://oauth2.googleapis.com/token',
-        formData: {
-          grant_type: 'refresh_token',
-          client_id: authConfig.ClientId.value,
-          client_secret: authConfig.ClientSecret.value,
-          refresh_token: authConfig.RefreshToken.value,
-        },
+        formData,
       });
     } else if (authType === 'service_account') {
+      const serviceAccountKeyJson = this._requireAuthItem(authConfig, 'ServiceAccountKey');
       this.accessToken = await OAuthUtils.getServiceAccountToken({
         config: this.config,
         tokenUrl: 'https://oauth2.googleapis.com/token',
-        serviceAccountKeyJson: authConfig.ServiceAccountKey.value,
+        serviceAccountKeyJson,
         scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
       });
     } else {
@@ -361,6 +369,22 @@ var GoogleSheetsSource = class GoogleSheetsSource extends AbstractSource {
     this.tokenExpiryTime = Date.now() + (3600 - 60) * 1000;
 
     return this.accessToken;
+  }
+
+  /**
+   * Reads one credential item of the selected AuthType. A configuration-time
+   * lookup (field options) runs before the whole configuration is validated, so
+   * a missing item must surface as a configuration error, not as a TypeError
+   * that the request wrapper would report as a provider outage.
+   */
+  _requireAuthItem(authConfig, itemName) {
+    const value = authConfig?.[itemName]?.value;
+    if (value === undefined || value === null || value === '') {
+      throw new ConnectorConfigurationException(
+        `Parameter 'AuthType.${itemName}' is required but was not provided`
+      );
+    }
+    return value;
   }
 
   async fetchData() {
@@ -382,8 +406,47 @@ var GoogleSheetsSource = class GoogleSheetsSource extends AbstractSource {
     return this._buildFieldsSchema(schema);
   }
 
+  /**
+   * Lists the values a configuration field can take, resolved from the selected
+   * spreadsheet. Only `SheetName` is dynamic: it returns the spreadsheet's tabs.
+   *
+   * @param {string} fieldName - Configuration field declared with DYNAMIC_OPTIONS
+   * @param {AbortSignal} [signal] - Cancels the provider request
+   * @returns {Promise<Array<{value: string, label: string}>>}
+   */
+  async fetchFieldOptions(fieldName, signal) {
+    if (fieldName !== 'SheetName') {
+      throw new ConnectorConfigurationException(
+        `Field '${fieldName}' does not provide dynamic options`
+      );
+    }
+
+    return this._fetchSheetTabs(signal);
+  }
+
+  async _fetchSheetTabs(signal) {
+    const spreadsheetId = this._extractSpreadsheetId(this.config.SpreadsheetId?.value);
+    const encodedSpreadsheetId = encodeURIComponent(spreadsheetId);
+    const url =
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodedSpreadsheetId}` +
+      '?fields=sheets.properties(sheetId,title,index)';
+
+    const payload = await this._fetchSheetsApiJson(url, {
+      signal,
+      oversizeMessage:
+        'Google Sheets response exceeds the 50 MB limit while listing the spreadsheet tabs.',
+    });
+    const sheets = Array.isArray(payload.sheets) ? payload.sheets : [];
+
+    return sheets
+      .map(sheet => sheet?.properties)
+      .filter(properties => typeof properties?.title === 'string' && properties.title !== '')
+      .sort((left, right) => (left.index ?? 0) - (right.index ?? 0))
+      .map(properties => ({ value: properties.title, label: properties.title }));
+  }
+
   async _fetchSheetValues({ preview = false, signal } = {}) {
-    const spreadsheetId = this._extractSpreadsheetId(this.config.SpreadsheetId.value);
+    const spreadsheetId = this._extractSpreadsheetId(this.config.SpreadsheetId?.value);
     const encodedSpreadsheetId = encodeURIComponent(spreadsheetId);
     const range = this._buildA1Range({ preview });
     const encodedRange = encodeURIComponent(range);
@@ -391,6 +454,22 @@ var GoogleSheetsSource = class GoogleSheetsSource extends AbstractSource {
       `https://sheets.googleapis.com/v4/spreadsheets/${encodedSpreadsheetId}/values/${encodedRange}` +
       '?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING';
 
+    const payload = await this._fetchSheetsApiJson(url, { signal });
+    return Array.isArray(payload.values) ? payload.values : [];
+  }
+
+  /**
+   * Performs an authorized Google Sheets API request and parses its JSON body.
+   * Refreshes the access token and retries once on HTTP 401, enforces the
+   * response size limit, and wraps provider failures into HttpRequestException.
+   */
+  async _fetchSheetsApiJson(
+    url,
+    {
+      signal,
+      oversizeMessage = 'Google Sheets response exceeds the 50 MB import limit. Narrow the Range and try again.',
+    } = {}
+  ) {
     for (let authorizationAttempt = 0; authorizationAttempt < 2; authorizationAttempt += 1) {
       try {
         signal?.throwIfAborted();
@@ -400,9 +479,7 @@ var GoogleSheetsSource = class GoogleSheetsSource extends AbstractSource {
         const response = await this._fetchSheetResponse(url, accessToken, signal);
         const contentLength = Number(response.getHeaders?.()['content-length']);
         if (Number.isFinite(contentLength) && contentLength > GOOGLE_SHEETS_MAX_RESPONSE_BYTES) {
-          throw new ConnectorConfigurationException(
-            'Google Sheets response exceeds the 50 MB import limit. Narrow the Range and try again.'
-          );
+          throw new ConnectorConfigurationException(oversizeMessage);
         }
         const responseText = await response.getContentText();
         const responseBytes =
@@ -410,12 +487,9 @@ var GoogleSheetsSource = class GoogleSheetsSource extends AbstractSource {
             ? responseText.length
             : Buffer.byteLength(responseText, 'utf8');
         if (responseBytes > GOOGLE_SHEETS_MAX_RESPONSE_BYTES) {
-          throw new ConnectorConfigurationException(
-            'Google Sheets response exceeds the 50 MB import limit. Narrow the Range and try again.'
-          );
+          throw new ConnectorConfigurationException(oversizeMessage);
         }
-        const payload = JSON.parse(responseText);
-        return Array.isArray(payload.values) ? payload.values : [];
+        return JSON.parse(responseText);
       } catch (error) {
         if (signal?.aborted) {
           throw signal.reason || error;
@@ -442,7 +516,13 @@ var GoogleSheetsSource = class GoogleSheetsSource extends AbstractSource {
   }
 
   async _fetchSheetResponse(url, accessToken, signal) {
-    for (let attempt = 1; attempt <= this.config.MaxFetchRetries.value; attempt += 1) {
+    // Defaults are applied by config.validate(), which a configuration-time lookup
+    // deliberately skips; without this fallback the loop would never run.
+    const configuredAttempts = Number(this.config.MaxFetchRetries?.value);
+    const maxAttempts =
+      Number.isInteger(configuredAttempts) && configuredAttempts > 0 ? configuredAttempts : 3;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       let response;
 
       try {
@@ -683,6 +763,9 @@ var GoogleSheetsSource = class GoogleSheetsSource extends AbstractSource {
 
   _extractSpreadsheetId(value) {
     const rawValue = String(value || '').trim();
+    if (rawValue === '') {
+      throw new ConnectorConfigurationException('Spreadsheet ID or URL is required');
+    }
     const match = rawValue.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]+)/);
     const spreadsheetId = match ? match[1] : rawValue;
 

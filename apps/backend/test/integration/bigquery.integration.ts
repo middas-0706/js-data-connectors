@@ -25,6 +25,7 @@ import {
 } from 'src/data-marts/calculated-fields/formula-function-dialect';
 import { DataStorageType } from 'src/data-marts/data-storage-types/enums/data-storage-type.enum';
 import { extractCteBody } from '@owox/test-utils';
+import { BigQueryReportReader } from 'src/data-marts/data-storage-types/bigquery/services/bigquery-report-reader.service';
 
 /**
  * BigQuery Integration Tests
@@ -199,6 +200,41 @@ describeIfCredentials('BigQuery Integration Tests', () => {
       expect(rows).toHaveLength(2);
       expect(rows.map((r: Record<string, unknown>) => String(r.label))).toEqual(['a', 'b']);
       expect(rows.map((r: Record<string, unknown>) => Number(r.n))).toEqual([1, 2]);
+    }, 60000);
+
+    it('serializes whole records without leaking SDK wrappers or collapsing a value field', async () => {
+      const { jobId } = await adapter.executeQuery(`
+        SELECT
+          STRUCT(5 AS value, 'USD' AS currency) AS customer,
+          STRUCT(
+            DATE '2026-09-16' AS date,
+            TIMESTAMP '2026-09-16 12:34:56+00' AS timestamp,
+            NUMERIC '123.45' AS amount,
+            b'abc' AS bytes
+          ) AS wrapped
+      `);
+      const job = await adapter.getJob(jobId);
+      const destinationTable = job.metadata.configuration.query.destinationTable;
+      const table = adapter.createTableReference(
+        destinationTable.projectId,
+        destinationTable.datasetId,
+        destinationTable.tableId
+      );
+      const [rows] = await table.getRows({ maxResults: 1, autoPaginate: false });
+      const reader = new BigQueryReportReader({} as never, {} as never, {} as never, {} as never);
+
+      const [customer, wrapped] = reader.getStructuredReportRowData(rows[0], [
+        'customer',
+        'wrapped',
+      ]);
+
+      expect(JSON.parse(String(customer))).toEqual({ value: 5, currency: 'USD' });
+      expect(JSON.parse(String(wrapped))).toEqual({
+        date: '2026-09-16',
+        timestamp: '2026-09-16T12:34:56.000Z',
+        amount: '123.45',
+        bytes: 'YWJj',
+      });
     }, 60000);
 
     it('supports NAMED query parameters end-to-end', async () => {
@@ -1268,6 +1304,169 @@ describeIfCredentials(
     }, 120000);
   }
 );
+
+describeIfCredentials('Blended array row transport (real BigQuery)', () => {
+  let adapter: BigQueryApiAdapter;
+  let ordersFQN: string;
+  let groupsFQN: string;
+  let itemsViewFQN: string;
+
+  const builder = new BigQueryBlendedQueryBuilder(new BigQueryClauseRenderer());
+
+  function relationship(
+    id: string,
+    targetAlias: string,
+    sourceFieldName: string,
+    targetFieldName: string
+  ): DataMartRelationship {
+    return {
+      id,
+      targetAlias,
+      joinConditions: [{ sourceFieldName, targetFieldName }],
+      blendedFields: [],
+      projectId: 'proj',
+      createdById: 'user-1',
+      createdAt: new Date(),
+      modifiedAt: new Date(),
+    } as unknown as DataMartRelationship;
+  }
+
+  function arrayContext(): BlendedQueryContext {
+    const fieldIndex = buildBlendedFieldIndex({
+      blendedFields: [
+        {
+          name: 'group_rows_items__tags',
+          aliasPath: 'group_rows.items',
+          originalFieldName: 'tags',
+          type: 'STRING',
+          sourceFieldType: 'ARRAY<STRING>',
+          isHidden: false,
+        },
+      ],
+      availableSources: [{ aliasPath: 'group_rows.items', isIncluded: true }],
+    } as never);
+
+    return {
+      mainTableReference: `\`${ordersFQN}\``,
+      mainDataMartTitle: 'Orders',
+      mainDataMartUrl: 'http://x/orders',
+      chains: [
+        {
+          relationship: relationship('rel-groups', 'group_rows', 'group_id', 'group_id'),
+          targetTableReference: `\`${groupsFQN}\``,
+          parentAlias: 'main',
+          cteName: 'group_rows',
+          blendedFields: [],
+          targetDataMartTitle: 'Groups',
+          targetDataMartUrl: 'http://x/groups',
+        },
+        {
+          relationship: relationship('rel-items', 'items', 'item_id', 'item_id'),
+          targetTableReference: `\`${itemsViewFQN}\``,
+          parentAlias: 'group_rows',
+          cteName: 'group_rows_items',
+          blendedFields: [
+            {
+              targetFieldName: 'tags',
+              targetFieldType: 'ARRAY<STRING>',
+              outputAlias: 'group_rows_items__tags',
+              isHidden: false,
+              aggregateFunction: 'STRING_AGG',
+            },
+          ],
+          targetDataMartTitle: 'Items',
+          targetDataMartUrl: 'http://x/items',
+        },
+      ],
+      columns: ['order_id', 'group_rows_items__tags'],
+      fieldIndex,
+    };
+  }
+
+  async function runBlend(): Promise<Record<string, unknown>[]> {
+    const { sql, params } = builder.buildBlendedQuery(arrayContext());
+    const { jobId } = await adapter.executeQuery(sql, params);
+    const job = await adapter.getJob(jobId);
+    const destinationTable = job.metadata.configuration.query.destinationTable;
+    const table = adapter.createTableReference(
+      destinationTable.projectId,
+      destinationTable.datasetId,
+      destinationTable.tableId
+    );
+    const [rows] = await table.getRows({ maxResults: 5000, autoPaginate: false });
+    return rows as Record<string, unknown>[];
+  }
+
+  beforeAll(async () => {
+    const credentials = BigQueryServiceAccountCredentialsSchema.parse(
+      JSON.parse(BQ_SERVICE_ACCOUNT_KEY!)
+    );
+    adapter = new BigQueryApiAdapter(credentials, {
+      projectId: BQ_PROJECT_ID!,
+      location: BIGQUERY_AUTODETECT_LOCATION,
+    });
+
+    const stamp = `${Date.now()}`;
+    ordersFQN = `${BQ_PROJECT_ID}.${BQ_DATASET}.blend_array_orders_${stamp}`;
+    groupsFQN = `${BQ_PROJECT_ID}.${BQ_DATASET}.blend_array_groups_${stamp}`;
+    itemsViewFQN = `${BQ_PROJECT_ID}.${BQ_DATASET}.blend_array_items_${stamp}`;
+
+    await adapter.executeQuery(`CREATE TABLE \`${ordersFQN}\` (order_id INT64, group_id INT64)`);
+    await adapter.executeQuery(
+      `INSERT INTO \`${ordersFQN}\` (order_id, group_id) VALUES
+      (1, 10),
+      (2, 20),
+      (3, 30)`
+    );
+
+    await adapter.executeQuery(`CREATE TABLE \`${groupsFQN}\` (group_id INT64, item_id INT64)`);
+    await adapter.executeQuery(
+      `INSERT INTO \`${groupsFQN}\` (group_id, item_id) VALUES
+      (10, 100),
+      (20, 200),
+      (30, 300)`
+    );
+
+    // BigQuery writes NULL arrays to tables as []; a logical view keeps NULL distinct in the query.
+    await adapter.executeQuery(
+      `CREATE VIEW \`${itemsViewFQN}\` AS
+      SELECT 100 AS item_id, ['a', 'b'] AS tags
+      UNION ALL SELECT 100, ['c']
+      UNION ALL SELECT 200, CAST([] AS ARRAY<STRING>)
+      UNION ALL SELECT 200, CAST(NULL AS ARRAY<STRING>)`
+    );
+  }, 180000);
+
+  afterAll(async () => {
+    try {
+      await adapter.executeQuery(`DROP VIEW IF EXISTS \`${itemsViewFQN}\``);
+    } catch (error) {
+      console.warn(`Failed to drop blended-array view ${itemsViewFQN}:`, error);
+    }
+
+    for (const fqn of [ordersFQN, groupsFQN]) {
+      try {
+        await adapter.executeQuery(`DROP TABLE IF EXISTS \`${fqn}\``);
+      } catch (error) {
+        console.warn(`Failed to drop blended-array table ${fqn}:`, error);
+      }
+    }
+  }, 60000);
+
+  it('preserves array row boundaries and null semantics through a parent CTE', async () => {
+    const rows = await runBlend();
+    expect(rows).toHaveLength(3);
+
+    const tagsByOrder = new Map(
+      rows.map(row => [Number(row.order_id), row.group_rows_items__tags])
+    );
+    // The parent `group_rows` CTE adds one array level around the leaf's per-row rollup.
+    expect(JSON.parse(String(tagsByOrder.get(1)))).toEqual([[['a', 'b'], ['c']]]);
+    expect(JSON.parse(String(tagsByOrder.get(2)))).toEqual([[[], null]]);
+    // Group 30 exists, but item 300 does not: an absent descendant stays SQL NULL.
+    expect(tagsByOrder.get(3)).toBeNull();
+  }, 120000);
+});
 
 // ---------------------------------------------------------------------------
 // Blended POST-JOIN aggregation — the canonical composite-key funnel on REAL

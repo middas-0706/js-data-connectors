@@ -91,10 +91,10 @@ Rename it to anything that reads well in reports — by default it inherits the 
 
 Each row in the fields table lets you override:
 
-| Setting                | What it does                                                                                                                                                                                                                                                            |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Setting                | What it does                                                                                                                                                                                                                                                     |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Alias**              | Per-field rename — replaces the original field name in the report output. The Data Mart-level Output Alias still applies. With Output Alias `orders` and field alias `total`, the column becomes `total (orders)` in Google Sheets and `orders total` elsewhere. |
-| **Aggregate Function** | How the field is collapsed when the relationship is 1-to-many. See the table below.                                                                                                                                                                                     |
+| **Aggregate Function** | How the field is collapsed when the relationship is 1-to-many. See the table below.                                                                                                                                                                              |
 
 To hide a field from reports, open its **⋯** action menu and click **Hide from reports**. Hidden fields stay configurable in this tab but no longer appear in the Report Columns picker on any report. Use it for fields business users don't need.
 
@@ -175,12 +175,21 @@ Two paths to the same target Data Mart are also supported. If both **Campaigns �
 
 If a chain folds back on a Data Mart that already appears earlier in the same branch (e.g., `A → B → A`), OWOX Data Marts stops descending at that point and renders a collapsed **Loop** badge in the relationship list and the canvas. The loop branch contributes no fields to the column picker — this is expected behavior, not an error.
 
+## Joined array columns
+
+An array identified by the source schema uses JSON array rollup, preserving the array from each source row. For example, two matching rows containing `["a", "b"]` and `["c"]` produce `[["a","b"], ["c"]]`. Each ancestor join adds one more array level; descendants are not flattened or unnested.
+
+An empty source array contributes `[]` (one such row produces `[[]]`); a source SQL `NULL` contributes a JSON `null` (one row produces `[null]`). BigQuery writes NULL arrays to tables as empty arrays, so this distinction follows the value returned by the warehouse query. A missing joined descendant stays SQL `NULL` when no descendant contributes a value, rather than becoming an empty array. Missing descendants are omitted from ancestor rollups when other descendants contribute values. The order inside each source array is preserved. Aggregated rows are sorted deterministically by their serialized JSON text, but separate array columns are sorted independently, so sibling-index alignment between them is not guaranteed. Exact collation can differ between storage engines.
+
+These columns cannot use output controls. Opaque JSON, Snowflake VARIANT, and Redshift SUPER values keep their existing behavior.
+
 ## Limitations and Considerations
 
 - **Same storage.** All Data Marts in a chain must live on the same storage type and connection. Cross-storage joins are not supported.
 - **No self-reference.** A Data Mart cannot be joined to itself.
 - **Type-compatible join keys.** Mismatched types on a join condition are rejected at save.
 - **Aggregate function trade-offs.** `STRING_AGG` is the safest default for text but produces long values on high-fanout joins. Switch to `ANY_VALUE` when you know the relationship is effectively 1-to-1.
+- **Athena array serialization.** Joined array rollup requires every element and nested field to support casting to JSON. Athena/Trino does not currently support date, time, timestamp, or binary values in this cast path.
 
 ## Troubleshooting
 

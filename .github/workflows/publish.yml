@@ -2,6 +2,20 @@ name: Snapshot
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      rebuild_latest_image:
+        description: 'Rebuild the "latest" image from this ref HEAD (there are no release tags, so run before anything else merges, or from a branch cut at the release commit)'
+        type: boolean
+        default: false
+
+# Two runs packing the same version from different trees would race to push the
+# same tag. Never cancel: a half-finished publish is worse than a queued one.
+# GitHub still keeps only one run pending, so merging right behind the Version
+# Packages PR can drop that run and publish the release from a later commit.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -10,6 +24,9 @@ permissions:
 
 jobs:
   publish:
+    # workflow_dispatch can be started from any branch; publishing is irreversible
+    # and the pushed image becomes the k8s updater's newest tag.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -64,8 +81,16 @@ jobs:
       #   run: node tools/generate-shrinkwrap.mjs
 
       - name: Publish to "latest"
+        id: publish_latest
         run: |
-          npx changeset publish
+          set -o pipefail
+          npx changeset publish | tee /tmp/changeset-publish.log
+          if grep -q "New tag:" /tmp/changeset-publish.log; then
+            echo "published=true" >> $GITHUB_OUTPUT
+          else
+            echo "published=false" >> $GITHUB_OUTPUT
+          fi
+          cat $GITHUB_OUTPUT
 
       - name: Extract "latest" version
         id: extract_latest_version
@@ -73,101 +98,6 @@ jobs:
           VERSION=$(npm pkg get version -w apps/owox | grep -oE '"[0-9]+\.[0-9]+\.[0-9]+"' | tr -d '"')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           cat $GITHUB_OUTPUT
-
-      - name: Check if npm package with this "latest" version exists
-        run: |
-          for i in {1..30}; do
-            if npm view @owox/web@${{ steps.extract_latest_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/web@${{ steps.extract_latest_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/web@${{ steps.extract_latest_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done  
-
-          for i in {1..30}; do
-            if npm view @owox/backend@${{ steps.extract_latest_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/backend@${{ steps.extract_latest_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/backend@${{ steps.extract_latest_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          for i in {1..30}; do
-            if npm view @owox/internal-helpers@${{ steps.extract_latest_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/internal-helpers@${{ steps.extract_latest_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/internal-helpers@${{ steps.extract_latest_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          for i in {1..30}; do
-            if npm view @owox/idp-protocol@${{ steps.extract_latest_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/idp-protocol@${{ steps.extract_latest_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/idp-protocol@${{ steps.extract_latest_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          for i in {1..30}; do
-            if npm view @owox/idp-better-auth@${{ steps.extract_latest_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/idp-better-auth@${{ steps.extract_latest_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/idp-better-auth@${{ steps.extract_latest_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          for i in {1..30}; do
-            if npm view @owox/idp-owox-better-auth@${{ steps.extract_latest_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/idp-owox-better-auth@${{ steps.extract_latest_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/idp-owox-better-auth@${{ steps.extract_latest_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          for i in {1..30}; do
-            if npm view @owox/api-client@${{ steps.extract_latest_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/api-client@${{ steps.extract_latest_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/api-client@${{ steps.extract_latest_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          for i in {1..30}; do
-            if npm view @owox/plugin-sdk@${{ steps.extract_latest_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/plugin-sdk@${{ steps.extract_latest_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/plugin-sdk@${{ steps.extract_latest_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          for i in {1..30}; do
-            if npm view @owox/ctl@${{ steps.extract_latest_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/ctl@${{ steps.extract_latest_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/ctl@${{ steps.extract_latest_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          #  Check owox app package always last!
-          for i in {1..30}; do
-            if npm view owox@${{ steps.extract_latest_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ owox@${{ steps.extract_latest_version.outputs.version }} exists on npm"
-              exit 0
-            fi
-            echo "Waiting for owox@${{ steps.extract_latest_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          exit 1
 
       - name: Check if container image with this "latest" version exists
         id: latest_image_exists
@@ -179,8 +109,26 @@ jobs:
           fi
           cat $GITHUB_OUTPUT
 
+      - name: Pack workspaces for the "latest" container image
+        if: |
+          steps.latest_image_exists.outputs.exists == 'false'
+          && (steps.publish_latest.outputs.published == 'true'
+              || inputs.rebuild_latest_image)
+        run: node tools/pack-owox-image-packages.mjs
+
+      - name: Warn that the "latest" image is missing and was not rebuilt
+        if: |
+          steps.latest_image_exists.outputs.exists == 'false'
+          && steps.publish_latest.outputs.published != 'true'
+          && !inputs.rebuild_latest_image
+        run: |
+          echo "::warning::${{ steps.extract_latest_version.outputs.version }} has no container image and this run published nothing, so none was built. Re-run this workflow via workflow_dispatch with rebuild_latest_image=true, from a ref whose HEAD is that release."
+
       - name: Build and push "latest" container image
-        if: steps.latest_image_exists.outputs.exists == 'false'
+        if: |
+          steps.latest_image_exists.outputs.exists == 'false'
+          && (steps.publish_latest.outputs.published == 'true'
+              || inputs.rebuild_latest_image)
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -201,10 +149,12 @@ jobs:
           Snapshot release
           EOF
 
-      - name: Publish to "next"
-        run: |
-          npx changeset version --snapshot next
-          npx changeset publish --no-git-tag --tag next
+      # The snapshot is versioned but deliberately not published to npm: the image
+      # is built from the packed tarballs, and publishing every merge is what grew
+      # @owox/backend's packument to the point where npm needs a quarter of an hour
+      # to serve a new version. Releases still go to npm above.
+      - name: Version the "next" snapshot
+        run: npx changeset version --snapshot next
 
       - name: Extract "next" version
         id: extract_next_version
@@ -213,100 +163,8 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           cat $GITHUB_OUTPUT
 
-      - name: Check if npm package with this "next" version exists
-        run: |
-          for i in {1..30}; do
-            if npm view @owox/web@${{ steps.extract_next_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/web@${{ steps.extract_next_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/web@${{ steps.extract_next_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done  
-
-          for i in {1..30}; do
-            if npm view @owox/backend@${{ steps.extract_next_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/backend@${{ steps.extract_next_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/backend@${{ steps.extract_next_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          for i in {1..30}; do
-            if npm view @owox/internal-helpers@${{ steps.extract_next_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/internal-helpers@${{ steps.extract_next_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/internal-helpers@${{ steps.extract_next_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          for i in {1..30}; do
-            if npm view @owox/idp-protocol@${{ steps.extract_next_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/idp-protocol@${{ steps.extract_next_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/idp-protocol@${{ steps.extract_next_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          for i in {1..30}; do
-            if npm view @owox/idp-better-auth@${{ steps.extract_next_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/idp-better-auth@${{ steps.extract_next_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/idp-better-auth@${{ steps.extract_next_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          for i in {1..30}; do
-            if npm view @owox/idp-owox-better-auth@${{ steps.extract_next_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/idp-owox-better-auth@${{ steps.extract_next_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/idp-owox-better-auth@${{ steps.extract_next_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          for i in {1..30}; do
-            if npm view @owox/api-client@${{ steps.extract_next_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/api-client@${{ steps.extract_next_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/api-client@${{ steps.extract_next_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          for i in {1..30}; do
-            if npm view @owox/plugin-sdk@${{ steps.extract_next_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/plugin-sdk@${{ steps.extract_next_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/plugin-sdk@${{ steps.extract_next_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          for i in {1..30}; do
-            if npm view @owox/ctl@${{ steps.extract_next_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ @owox/ctl@${{ steps.extract_next_version.outputs.version }} exists on npm"
-              break
-            fi
-            echo "Waiting for @owox/ctl@${{ steps.extract_next_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          #  Check owox app package always last!
-          for i in {1..30}; do
-            if npm view owox@${{ steps.extract_next_version.outputs.version }} > /dev/null 2>&1; then
-              echo "✅ owox@${{ steps.extract_next_version.outputs.version }} exists on npm"
-              exit 0
-            fi
-            echo "Waiting for owox@${{ steps.extract_next_version.outputs.version }} to appear on npm ($i/30)..."
-            sleep 10
-          done
-
-          exit 1
+      - name: Pack workspaces for the "next" container image
+        run: node tools/pack-owox-image-packages.mjs
 
       - name: Build and push "next" container image
         uses: docker/build-push-action@v7

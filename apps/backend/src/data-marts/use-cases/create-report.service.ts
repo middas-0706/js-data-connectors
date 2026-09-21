@@ -25,6 +25,7 @@ import { ReportAccessService } from '../services/report-access.service';
 import { foldEmptyUniqueCountConfig } from '../dto/schemas/unique-count-sources';
 import { AdvancedSearchIndexSyncService } from '../services/advanced-search-index-sync.service';
 import { SearchableEntityType } from '../../common/search/search.facade';
+import { LookerStudioReportService } from '../services/looker-studio-report.service';
 
 @Injectable()
 export class CreateReportService {
@@ -43,6 +44,7 @@ export class CreateReportService {
     private readonly eventDispatcher: OwoxEventDispatcher,
     private readonly outputControlsValidator: OutputControlsValidatorService,
     private readonly reportAccessService: ReportAccessService,
+    private readonly lookerStudioReportService: LookerStudioReportService,
     private readonly advancedSearchIndexSync?: AdvancedSearchIndexSyncService
   ) {}
 
@@ -117,7 +119,6 @@ export class CreateReportService {
       rejectUnavailableUniqueCountSources: true,
     });
 
-    // Create and save the report
     const report = this.reportRepository.create({
       title: command.title,
       dataMart,
@@ -132,8 +133,8 @@ export class CreateReportService {
       dateTruncConfig: command.dateTruncConfig ?? null,
       uniqueCountConfig: foldEmptyUniqueCountConfig(command.uniqueCountConfig),
     });
-
-    const newReport = await this.reportRepository.save(report);
+    const restoredReport = await this.lookerStudioReportService.restoreIfDeleted(report);
+    const newReport = restoredReport ?? (await this.reportRepository.save(report));
 
     const ownerIdsToSave = command.ownerIds ?? [command.userId];
     await syncOwners(
@@ -158,25 +159,27 @@ export class CreateReportService {
       return o;
     });
 
-    const reportCreatedEvent = new ReportCreatedEvent(
-      newReport.id,
-      dataMart.id,
-      command.projectId,
-      dataDestination.type,
-      command.userId
-    );
+    if (!restoredReport) {
+      const reportCreatedEvent = new ReportCreatedEvent(
+        newReport.id,
+        dataMart.id,
+        command.projectId,
+        dataDestination.type,
+        command.userId
+      );
+      await this.eventDispatcher.publishOnCommit(reportCreatedEvent);
+    }
 
-    await this.eventDispatcher.publishOnCommit(reportCreatedEvent);
     await this.advancedSearchIndexSync?.scheduleReindex(
       SearchableEntityType.REPORT,
       newReport.id,
       command.projectId
     );
 
-    const allUserIds = [command.userId, ...ownerIdsToSave];
+    const allUserIds = [newReport.createdById, ...newReport.ownerIds];
     const userProjections =
       await this.userProjectionsFetcherService.fetchUserProjectionsList(allUserIds);
-    const createdByUser = userProjections.getByUserId(command.userId) ?? null;
+    const createdByUser = userProjections.getByUserId(newReport.createdById) ?? null;
 
     const capabilities = await this.reportAccessService.computeCapabilitiesForReport(
       command.userId,
@@ -188,7 +191,7 @@ export class CreateReportService {
     return this.mapper.toDomainDto(
       newReport,
       createdByUser,
-      resolveOwnerUsers(ownerIdsToSave, userProjections),
+      resolveOwnerUsers(newReport.ownerIds, userProjections),
       capabilities
     );
   }

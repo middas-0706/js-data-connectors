@@ -11,7 +11,12 @@ import {
 } from '../../shared/canvas/constants';
 import { ErdDefinitionBadge, ErdStatusBadge } from '../../shared/canvas/erd-card';
 import { type CanvasViewMode, nodeWidth } from '../model/erd-node';
-import { NOTHING_HIDDEN, type ObjectLabelsHidden } from '../../shared/canvas/object-labels';
+import {
+  isTitleOnly,
+  NOTHING_HIDDEN,
+  toFieldRowLabels,
+  type ObjectLabelsHidden,
+} from '../../shared/canvas/object-labels';
 import { ErdCardFieldsSection } from '../../shared/canvas/erd-fields-section';
 import type { CanvasNodeField } from '../model/types';
 import type { CanvasDirection } from '../../shared/canvas/canvas-direction';
@@ -85,7 +90,7 @@ export default function ModelCanvasFlowNode({
   const metaBadgesJoined = withStatus && withDefinitionBadge;
   // "Uncheck all — title only" strips the card down to its name: the quality
   // indicators (Data Quality shield + Data Last Updated clock) go too.
-  const titleOnly = labels.source && labels.fields && labels.status;
+  const titleOnly = isTitleOnly(labels);
   // The stripe now runs full-height along the left edge (absolutely
   // positioned) instead of sitting inline in the header, so every row needs
   // extra left padding to clear it — but only while the stripe is shown.
@@ -216,6 +221,7 @@ export default function ModelCanvasFlowNode({
       {showBody && (
         <ErdCardFieldsSection
           fields={fields}
+          labels={toFieldRowLabels(labels)}
           expanded={expanded}
           onToggleExpanded={() => {
             setExpanded(v => !v);

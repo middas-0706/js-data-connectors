@@ -47,7 +47,13 @@ import type { CanvasRenderEdge } from '../model/graph/merge-bidirectional-edges'
 import { computeParallelEdgeOffsets } from '../model/graph/parallel-edge-offsets';
 import type { PathPoint } from '../../shared/canvas/path-point';
 import type { ModelCanvasNode } from '../model/types';
-import { type CanvasViewMode, computeNodeHeight, nodeWidth } from '../model/erd-node';
+import {
+  type CanvasViewMode,
+  computeNodeHeight,
+  nodeLayoutOptions,
+  type NodeLayoutOptions,
+  nodeWidth,
+} from '../model/erd-node';
 import {
   parseObjectLabelsHidden,
   serializeObjectLabelsHidden,
@@ -145,6 +151,8 @@ interface FlowNodeParams {
   direction: CanvasDirection;
   viewMode: CanvasViewMode;
   objectLabels: ObjectLabelsHidden;
+  /** Derived from `objectLabels` once per layout pass and shared by every node. */
+  layout: NodeLayoutOptions;
   isCheckingDataLastUpdated: boolean;
   onOpenExternal: () => void;
   onOpenQuality: () => void;
@@ -153,16 +161,12 @@ interface FlowNodeParams {
 
 function buildFlowNode(params: FlowNodeParams): ModelCanvasFlowNodeType {
   const { node, highlight, viewMode, objectLabels } = params;
-  // The field count lives in the status icons row, so the meta row only holds
-  // the status pill and the source badge — hiding both drops the whole row.
-  const metaRowHidden = objectLabels.source && objectLabels.status;
-  const statusRowHidden = objectLabels.source && objectLabels.fields && objectLabels.status;
   return {
     id: node.id,
     type: 'modelCanvasNode',
     position: params.position,
     width: nodeWidth(viewMode),
-    height: computeNodeHeight(node, viewMode, metaRowHidden, statusRowHidden),
+    height: computeNodeHeight(node, viewMode, params.layout),
     draggable: true,
     selectable: false,
     focusable: false,
@@ -334,11 +338,11 @@ function ModelCanvasInner({
       n => n.title
     );
 
-    const metaRowHidden = objectLabels.source && objectLabels.status;
+    const layout = nodeLayoutOptions(objectLabels);
     const dagreNodes: DagreLayoutNode[] = topologyNodes.map(n => ({
       id: n.id,
       width: nodeWidth(viewMode),
-      height: computeNodeHeight(n, viewMode, metaRowHidden),
+      height: computeNodeHeight(n, viewMode, layout),
     }));
     const joinLabels = showJoinLabels
       ? new Map(topologyEdges.map(e => [e.id, buildJoinLabel(e)]))
@@ -392,6 +396,7 @@ function ModelCanvasInner({
           direction,
           viewMode,
           objectLabels,
+          layout,
           onOpenExternal: () => {
             onOpenDataMartRef.current(topologyNode.id);
           },

@@ -51,6 +51,10 @@ var criterionFields = {
     'apiName': 'ad_group_criterion.final_urls',
     'type': DATA_TYPES.ARRAY
   },
+  'final_urls_parsed': {
+    'description': 'final_urls with each short link resolved to its landing page; other URLs stay unchanged. Requires final_urls and Process Short Links.',
+    'type': DATA_TYPES.ARRAY
+  },
   'negative': {
     'description': 'Whether to target (false) or exclude (true) the criterion',
     'apiName': 'ad_group_criterion.negative',

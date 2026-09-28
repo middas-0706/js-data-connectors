@@ -43,6 +43,20 @@ Before you begin, please ensure that:
 
 ![Reddit Ads Publish Data Mart](res/reddit_publish.png)
 
+### Resolve Short Links
+
+Ads often point to short links. OWOX can follow each short link and store the landing page next to it:
+
+- **Ads**: `click_url` resolves into `click_url_parsed`.
+
+Keep the source field and its parsed field selected and enable **Process Short Links** under **Advanced** settings. OWOX selects `click_url` and `click_url_parsed` by default. A parsed field holds the landing page for short links and the original value for other links.
+
+OWOX resolves standard short links, such as `https://bit.ly/abc123`, on any domain. Links with several path parts resolve only on domains listed in the `CONNECTOR_SHORT_LINK_DOMAINS` environment variable. Your administrator sets this variable for the whole deployment. In OWOX Cloud, contact support to add your domain. See [Environment Variables](https://docs.owox.com/docs/getting-started/deployment-guide/environment-variables/#connectors).
+
+OWOX sends one request per distinct link and remembers the answer for 30 days, including links that do not redirect. Later runs skip remembered links. If a Data Mart has more distinct links than the memory holds, OWOX requests the extra ones on each run.
+
+OWOX re-imports **Ads** on every run, so existing rows get the parsed field on the next run.
+
 ## Run the Data Mart
 
 You now have two options for importing data from Reddit Ads:  

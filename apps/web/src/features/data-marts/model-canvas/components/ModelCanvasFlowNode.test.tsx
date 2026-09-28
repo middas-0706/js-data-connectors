@@ -10,6 +10,11 @@ import {
 import type { CanvasNodeField } from '../model/types';
 import ModelCanvasFlowNode, { type ModelCanvasFlowNodeType } from './ModelCanvasFlowNode';
 
+// A fixed 6 px per character pins the line breaks (canvas text metrics vary by environment).
+vi.mock('../../shared/canvas/measure-badge-text', () => ({
+  measureBadgeText: (text: string) => text.length * 6,
+}));
+
 vi.mock('@xyflow/react', () => ({
   useUpdateNodeInternals: () => () => undefined,
   Handle: () => null,
@@ -60,6 +65,15 @@ function renderNode(
       triggersCount: 2,
       reportsCount: 3,
       relationshipCount: 1,
+      relationships: [
+        {
+          id: 'edge-1',
+          direction: 'outgoing',
+          otherDataMartId: 'customers',
+          otherTitle: 'Customers',
+          joinFields: [{ field: 'customer_id', otherField: 'id' }],
+        },
+      ],
       availableForReporting: true,
       availableForMaintenance: false,
       description: 'Customer order facts',
@@ -105,11 +119,22 @@ function renderNode(
     positionAbsoluteY: 0,
   } as NodeProps<ModelCanvasFlowNodeType>;
 
-  return render(
+  const view = render(
     <div onClick={onParentClick}>
       <ModelCanvasFlowNode {...props} />
     </div>
   );
+  return {
+    ...view,
+    /** Re-renders the same card with some data changed, keeping its local state. */
+    rerenderData: (changes: Partial<ModelCanvasFlowNodeType['data']>) => {
+      view.rerender(
+        <div onClick={onParentClick}>
+          <ModelCanvasFlowNode {...props} data={{ ...props.data, ...changes }} />
+        </div>
+      );
+    },
+  };
 }
 
 describe('ModelCanvasFlowNode', () => {
@@ -312,8 +337,10 @@ describe('ModelCanvasFlowNode', () => {
 
     expect(screen.getByText('2 triggers')).toBeInTheDocument();
     expect(screen.getByText('1 relationship')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Shared for reporting' })).toBeInTheDocument();
-    expect(screen.queryByRole('img', { name: 'Shared for maintenance' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Shared for reporting' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Shared for maintenance' })
+    ).not.toBeInTheDocument();
   });
 
   it('hides the badges whose count is zero and drops the emptied row', () => {
@@ -329,26 +356,119 @@ describe('ModelCanvasFlowNode', () => {
     expect(screen.queryByText(/relationship/)).not.toBeInTheDocument();
     // The source badge still shows, and the footer keeps the indicators.
     expect(screen.getByText('View')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Shared for reporting' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Shared for reporting' })).toBeInTheDocument();
   });
 
-  it('fills a line with counts while they fit and wraps the one that does not', () => {
+  it('packs the badges onto as few lines as fit the card', () => {
     renderNode();
 
-    const triggers = screen.getByText('2 triggers').parentElement;
-    expect(screen.getByText('3 reports').parentElement).toBe(triggers);
-    expect(screen.getByText('1 relationship').parentElement).not.toBe(triggers);
+    // Detailed line: 256 − 26 = 230 px; each badge is its text (6 px/char) + 30 px.
+    // View (54) + 3 fields (78) + 2 triggers (90) = 230 fits; 3 reports + 1 relationship wrap.
+    const firstLine = screen.getByText('View').parentElement;
+    expect(screen.getByText('2 triggers').parentElement).toBe(firstLine);
+    const secondLine = screen.getByText('3 reports').parentElement;
+    expect(secondLine).not.toBe(firstLine);
+    expect(screen.getByRole('button', { name: 'Show relationships of Orders' }).parentElement).toBe(
+      secondLine
+    );
   });
 
-  it('keeps reports and relationships on one line when there are no triggers', () => {
-    renderNode(vi.fn(), DEFAULT_FIELDS, undefined, undefined, undefined, undefined, {
-      triggersCount: 0,
-      reportsCount: 2,
-      relationshipCount: 2,
+  it('opens the relationships list from its badge without selecting the card', () => {
+    const parentClick = vi.fn();
+    const onRaisedChange = vi.fn();
+    renderNode(vi.fn(), DEFAULT_FIELDS, undefined, undefined, parentClick, undefined, {
+      onRaisedChange,
     });
 
-    expect(screen.getByText('2 relationships').parentElement).toBe(
-      screen.getByText('2 reports').parentElement
+    const badge = screen.getByRole('button', { name: 'Show relationships of Orders' });
+    expect(badge).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(badge);
+
+    const list = screen.getByRole('list', { name: 'Relationships of Orders' });
+    expect(list).toHaveTextContent('Customers');
+    expect(list).toHaveTextContent('customer_id = id');
+    expect(screen.getByRole('button', { name: 'Hide relationships of Orders' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
+    expect(parentClick).not.toHaveBeenCalled();
+
+    // The open list may run over the card below, so the card asks to be lifted meanwhile.
+    expect(onRaisedChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide relationships of Orders' }));
+    expect(screen.queryByRole('list', { name: 'Relationships of Orders' })).not.toBeInTheDocument();
+    expect(onRaisedChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('hides an open list, and drops the lift, once its badge is hidden', () => {
+    const onRaisedChange = vi.fn();
+    const { rerenderData } = renderNode(
+      vi.fn(),
+      DEFAULT_FIELDS,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { viewMode: 'compact', onRaisedChange }
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Show relationships of Orders' }));
+    expect(screen.getByRole('list', { name: 'Relationships of Orders' })).toBeInTheDocument();
+
+    // "Uncheck all — title only" removes the badge, so the list goes with it.
+    rerenderData({ objectLabels: ALL_HIDDEN });
+    expect(screen.queryByRole('list', { name: 'Relationships of Orders' })).not.toBeInTheDocument();
+    expect(onRaisedChange).toHaveBeenLastCalledWith(false);
+
+    // The same holds for the field list when the field count label is unticked.
+    rerenderData({ objectLabels: NOTHING_HIDDEN });
+    fireEvent.click(screen.getByRole('button', { name: 'Show fields of Orders' }));
+    expect(screen.getByText('Order ID')).toBeInTheDocument();
+    rerenderData({ objectLabels: { ...NOTHING_HIDDEN, fields: true } });
+    expect(screen.queryByText('Order ID')).not.toBeInTheDocument();
+  });
+
+  it('opens the field list from the field count in the Compact view only', () => {
+    const { unmount } = renderNode(
+      vi.fn(),
+      DEFAULT_FIELDS,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        viewMode: 'compact',
+      }
+    );
+
+    expect(screen.queryByText('Order ID')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show fields of Orders' }));
+    expect(screen.getByText('Order ID')).toBeInTheDocument();
+    // Opening one section closes the other.
+    fireEvent.click(screen.getByRole('button', { name: 'Show relationships of Orders' }));
+    expect(screen.queryByText('Order ID')).not.toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Relationships of Orders' })).toBeInTheDocument();
+    unmount();
+
+    // The Detailed view already lists the fields, so there the count is a plain badge.
+    renderNode();
+    expect(screen.queryByRole('button', { name: 'Show fields of Orders' })).not.toBeInTheDocument();
+    expect(screen.getByText('3 fields')).toBeInTheDocument();
+  });
+
+  it('explains a sharing flag in a tooltip with the Share Data Mart wording', async () => {
+    renderNode();
+
+    const flag = screen.getByRole('button', { name: 'Shared for reporting' });
+    act(() => {
+      flag.focus();
+    });
+
+    await waitFor(() => {
+      expect(flag).toHaveAttribute('aria-describedby');
+    });
+    expect(document.querySelector('[data-slot="tooltip-content"]')).toHaveTextContent(
+      'All project members can see this Data Mart and build reports on it'
     );
   });
 
@@ -408,7 +528,9 @@ describe('ModelCanvasFlowNode', () => {
 
     expect(screen.getByText('View').closest('div')).not.toBe(qualityRow);
     expect(screen.getByText('3 fields').closest('div')).not.toBe(qualityRow);
-    expect(qualityRow).toContainElement(screen.getByRole('img', { name: 'Shared for reporting' }));
+    expect(qualityRow).toContainElement(
+      screen.getByRole('button', { name: 'Shared for reporting' })
+    );
   });
 
   it('provides the non-bubbling run action inside the quality details', async () => {

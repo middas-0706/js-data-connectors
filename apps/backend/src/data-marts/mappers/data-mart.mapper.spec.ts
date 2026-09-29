@@ -401,10 +401,11 @@ describe('DataMartMapper', () => {
       } as never;
 
       const [dataMartList, projectList] = await Promise.all([
-        mapper.toRunsResponse([run]),
-        mapper.toProjectRunsResponse([
-          { run, dataMart: { id: 'dm-1', title: 'Data Mart' } } as never,
-        ]),
+        mapper.toRunsResponse([run], 'proj-1'),
+        mapper.toProjectRunsResponse(
+          [{ run, dataMart: { id: 'dm-1', title: 'Data Mart' } } as never],
+          'proj-1'
+        ),
       ]);
 
       expect(dataMartList.runs[0]).toMatchObject({
@@ -644,6 +645,131 @@ describe('DataMartMapper', () => {
       ]);
 
       expect(response.runs[0].definitionRun).toBeNull();
+    });
+  });
+
+  describe('run history masking of a custom connector definition', () => {
+    // A custom connector's specification lives in the project, not in the bundle, so it
+    // only resolves when the caller's project id is supplied. Without it the lookup falls
+    // to the bundled-only path, throws NotFound, and ConnectorSecretService fails closed by
+    // masking EVERY configuration value — which in run history means dates, account ids and
+    // node params all come back as `**********`, plus a logger warning per run per page.
+    // What masking keeps is ConnectorSecretService's own spec; here, that the mapper asks it
+    // with the project and hands out its answer, never the stored definition.
+    const MASKED = { connector: { source: { name: 'MyCustomConnector', masked: true } } };
+
+    const createMapper = async () => {
+      const mask = jest.fn().mockResolvedValue(MASKED);
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          DataMartMapper,
+          {
+            provide: DataStorageMapper,
+            useValue: {
+              toDomainDto: jest.fn().mockReturnValue({}),
+              toApiResponse: jest.fn().mockResolvedValue({}),
+            },
+          },
+          { provide: ConnectorSecretService, useValue: { mask } },
+        ],
+      }).compile();
+
+      return { mapper: module.get<DataMartMapper>(DataMartMapper), mask };
+    };
+
+    const definitionRun = {
+      connector: {
+        source: {
+          name: 'MyCustomConnector',
+          version: 3,
+          node: 'campaigns',
+          fields: ['id'],
+          configuration: [{ _id: 'cfg-1', AccountId: '12345', StartDate: '2026-01-01' }],
+        },
+        storage: { fullyQualifiedName: 'dataset.table' },
+      },
+    };
+
+    const runEntity = () =>
+      ({
+        id: 'run-1',
+        status: 'SUCCESS',
+        type: DataMartRunType.CONNECTOR,
+        runType: 'manual',
+        dataMartId: 'dm-1',
+        definitionRun,
+        createdAt: new Date('2026-08-01T00:00:00Z'),
+      }) as unknown as DataMartRunEntity;
+
+    it('resolves the run definition specification within the requesting project', async () => {
+      const { mapper: scopedMapper, mask } = await createMapper();
+
+      const list = await scopedMapper.toRunsResponse(
+        [scopedMapper.toDataMartRunDto(runEntity())],
+        'proj-1'
+      );
+      const detail = await scopedMapper.toRunDetailResponse(
+        scopedMapper.toDataMartRunDto(runEntity()),
+        'proj-1'
+      );
+
+      expect(mask).toHaveBeenCalledWith('proj-1', definitionRun, expect.any(Map));
+      expect(mask).not.toHaveBeenCalledWith(undefined, expect.anything(), expect.anything());
+      expect(list.runs[0].definitionRun).toEqual(MASKED);
+      expect(detail.definitionRun).toEqual(MASKED);
+    });
+
+    it('shares one specification cache across the runs of a list', async () => {
+      const { mapper: scopedMapper, mask } = await createMapper();
+
+      await scopedMapper.toRunsResponse(
+        [scopedMapper.toDataMartRunDto(runEntity()), scopedMapper.toDataMartRunDto(runEntity())],
+        'proj-1'
+      );
+
+      expect(mask).toHaveBeenCalledTimes(2);
+      expect(mask.mock.calls[0][2]).toBeInstanceOf(Map);
+      expect(mask.mock.calls[1][2]).toBe(mask.mock.calls[0][2]);
+    });
+
+    // The Data Marts list asks for every mart's last runs; without the project a custom
+    // connector's specification could not be found and masking fell back to guessing.
+    it('resolves the specification for the Data Marts list health status too', async () => {
+      const { mapper: scopedMapper, mask } = await createMapper();
+
+      await scopedMapper.toBatchHealthStatusResponse(
+        {
+          items: [
+            {
+              dataMartId: 'dm-1',
+              connector: scopedMapper.toDataMartRunDto(runEntity()),
+              report: null,
+              insight: null,
+            },
+          ],
+        },
+        'proj-1'
+      );
+
+      expect(mask).toHaveBeenCalledWith('proj-1', definitionRun, expect.any(Map));
+      expect(mask).not.toHaveBeenCalledWith(undefined, expect.anything(), expect.anything());
+    });
+
+    it('resolves the specification for the project-wide run list too', async () => {
+      const { mapper: scopedMapper, mask } = await createMapper();
+
+      const response = await scopedMapper.toProjectRunsResponse(
+        [
+          {
+            run: scopedMapper.toDataMartRunDto(runEntity()),
+            dataMart: { id: 'dm-1', title: 'Data Mart' },
+          },
+        ],
+        'proj-1'
+      );
+
+      expect(mask).toHaveBeenCalledWith('proj-1', definitionRun, expect.any(Map));
+      expect(response.runs[0].definitionRun).toEqual(MASKED);
     });
   });
 });

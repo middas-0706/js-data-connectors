@@ -16,6 +16,7 @@ import type {
   ConnectorDefinitionDto,
 } from '../../../shared/types/api';
 import { getConnectorInfoByName } from '../../../../connectors/shared/utils';
+import type { ConnectorListItem } from '../../../../connectors/shared/model/types/connector';
 
 /**
  * Maps a SQL definition from the model to the API DTO format
@@ -106,6 +107,7 @@ export function mapConnectorDefinitionToDto(
         configuration: definition.connector.source.configuration,
         node: definition.connector.source.node,
         fields: definition.connector.source.fields,
+        version: definition.connector.source.version,
       },
       storage: {
         fullyQualifiedName: definition.connector.storage.fullyQualifiedName,
@@ -128,6 +130,7 @@ export function mapConnectorDefinitionFromDto(
         configuration: connectorDto.source.configuration,
         node: connectorDto.source.node,
         fields: connectorDto.source.fields,
+        version: connectorDto.source.version,
       },
       storage: {
         fullyQualifiedName: connectorDto.storage.fullyQualifiedName,
@@ -138,10 +141,13 @@ export function mapConnectorDefinitionFromDto(
 
 /**
  * Maps a definition from API DTO to the model format based on definition type
+ * @param knownConnector - connector info the caller already holds, used when it names the same
+ *   connector: looking a custom connector up fetches every custom connector, logos included
  */
 export async function mapDefinitionFromDto(
   definitionType: DataMartDefinitionType | null,
-  definition: DataMartDefinitionDto | null
+  definition: DataMartDefinitionDto | null,
+  knownConnector: ConnectorListItem | null = null
 ): Promise<DataMartDefinitionConfig | null> {
   if (!definitionType || !definition) {
     return null;
@@ -164,9 +170,9 @@ export async function mapDefinitionFromDto(
       const connectorDefinition = mapConnectorDefinitionFromDto(
         definition as ConnectorDefinitionDto
       );
-      connectorDefinition.connector.info = await getConnectorInfoByName(
-        connectorDefinition.connector.source.name
-      );
+      const { name } = connectorDefinition.connector.source;
+      connectorDefinition.connector.info =
+        knownConnector?.name === name ? knownConnector : await getConnectorInfoByName(name);
       return connectorDefinition;
     }
     default:

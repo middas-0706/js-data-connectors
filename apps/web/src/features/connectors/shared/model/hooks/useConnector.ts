@@ -2,20 +2,31 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ConnectorActionType, useConnectorContext } from '../context';
 import { ConnectorApiService } from '../../api';
 import { mapConnectorListFromDto } from '../mappers/connector-list.mapper';
+import type { ConnectorListItem } from '../types/connector';
 import { trackEvent } from '../../../../../utils/data-layer';
 
 export function useConnector() {
   const { state, dispatch } = useConnectorContext();
+  const specificationRequestIdRef = useRef(0);
   const fieldsRequestIdRef = useRef(0);
   const previewAbortControllerRef = useRef<AbortController | null>(null);
+  // Whether the newest request of each kind is still out. The context outlives this consumer,
+  // and the response the unmount below orphans is what would have cleared its loading flag.
+  const specificationPendingRef = useRef(false);
+  const fieldsPendingRef = useRef(false);
 
   useEffect(() => {
     return () => {
+      specificationRequestIdRef.current += 1;
       fieldsRequestIdRef.current += 1;
-      const activePreview = previewAbortControllerRef.current;
+      previewAbortControllerRef.current?.abort();
       previewAbortControllerRef.current = null;
-      if (activePreview) {
-        activePreview.abort();
+      if (specificationPendingRef.current) {
+        specificationPendingRef.current = false;
+        dispatch({ type: ConnectorActionType.FETCH_CONNECTOR_SPECIFICATION_RESET });
+      }
+      if (fieldsPendingRef.current) {
+        fieldsPendingRef.current = false;
         dispatch({ type: ConnectorActionType.FETCH_CONNECTOR_FIELDS_RESET });
       }
     };
@@ -47,16 +58,35 @@ export function useConnector() {
   }, [dispatch]);
 
   const fetchConnectorSpecification = useCallback(
-    async (connectorName: string) => {
+    async (connector: ConnectorListItem) => {
+      // Same stale-response guard as fetchConnectorFields below: overlapping requests
+      // resolve in arbitrary order, so only the newest one may write to the shared
+      // context. Without it the specification is last-response-wins, and a superseded
+      // version's parameters can end up rendered against a different pinned version.
+      // The cleanup effect above bumps the id too, so a response that lands after the
+      // consumer unmounted no longer writes into the still-mounted provider.
+      const requestId = specificationRequestIdRef.current + 1;
+      specificationRequestIdRef.current = requestId;
+      specificationPendingRef.current = true;
       dispatch({ type: ConnectorActionType.FETCH_CONNECTOR_SPECIFICATION_START });
       try {
         const connectorApiService = new ConnectorApiService();
-        const response = await connectorApiService.getConnectorSpecification(connectorName);
+        const response =
+          connector.isCustom && connector.id
+            ? await connectorApiService.getCustomConnectorSpecification(
+                connector.id,
+                connector.version
+              )
+            : await connectorApiService.getConnectorSpecification(connector.name);
+        if (requestId !== specificationRequestIdRef.current) return;
+        specificationPendingRef.current = false;
         dispatch({
           type: ConnectorActionType.FETCH_CONNECTOR_SPECIFICATION_SUCCESS,
           payload: response,
         });
       } catch (error) {
+        if (requestId !== specificationRequestIdRef.current) return;
+        specificationPendingRef.current = false;
         const message = error instanceof Error ? error.message : 'Unknown error';
         dispatch({
           type: ConnectorActionType.FETCH_CONNECTOR_SPECIFICATION_ERROR,
@@ -66,7 +96,7 @@ export function useConnector() {
           event: 'connector_error',
           category: 'Connector',
           action: 'SpecificationError',
-          label: connectorName,
+          label: connector.name,
         });
       }
     },
@@ -74,19 +104,25 @@ export function useConnector() {
   );
 
   const fetchConnectorFields = useCallback(
-    async (connectorName: string) => {
+    async (connector: ConnectorListItem) => {
       const requestId = fieldsRequestIdRef.current + 1;
       fieldsRequestIdRef.current = requestId;
       previewAbortControllerRef.current?.abort();
       previewAbortControllerRef.current = null;
+      fieldsPendingRef.current = true;
       dispatch({ type: ConnectorActionType.FETCH_CONNECTOR_FIELDS_START });
       try {
         const connectorApiService = new ConnectorApiService();
-        const response = await connectorApiService.getConnectorFields(connectorName);
+        const response =
+          connector.isCustom && connector.id
+            ? await connectorApiService.getCustomConnectorFields(connector.id, connector.version)
+            : await connectorApiService.getConnectorFields(connector.name);
         if (requestId !== fieldsRequestIdRef.current) return;
+        fieldsPendingRef.current = false;
         dispatch({ type: ConnectorActionType.FETCH_CONNECTOR_FIELDS_SUCCESS, payload: response });
       } catch (error) {
         if (requestId !== fieldsRequestIdRef.current) return;
+        fieldsPendingRef.current = false;
         const message = error instanceof Error ? error.message : 'Unknown error';
         dispatch({
           type: ConnectorActionType.FETCH_CONNECTOR_FIELDS_ERROR,
@@ -96,7 +132,7 @@ export function useConnector() {
           event: 'connector_error',
           category: 'Connector',
           action: 'FieldsError',
-          label: connectorName,
+          label: connector.name,
         });
       }
     },
@@ -110,6 +146,7 @@ export function useConnector() {
       previewAbortControllerRef.current?.abort();
       const abortController = new AbortController();
       previewAbortControllerRef.current = abortController;
+      fieldsPendingRef.current = true;
 
       dispatch({ type: ConnectorActionType.FETCH_CONNECTOR_FIELDS_START });
       try {
@@ -123,6 +160,7 @@ export function useConnector() {
         );
 
         if (requestId !== fieldsRequestIdRef.current) return null;
+        fieldsPendingRef.current = false;
 
         dispatch({ type: ConnectorActionType.FETCH_CONNECTOR_FIELDS_SUCCESS, payload: response });
         return response;
@@ -130,6 +168,7 @@ export function useConnector() {
         if (requestId !== fieldsRequestIdRef.current || abortController.signal.aborted) {
           return null;
         }
+        fieldsPendingRef.current = false;
 
         const message = error instanceof Error ? error.message : 'Unknown error';
         dispatch({

@@ -1,12 +1,14 @@
-import { Search, Download } from 'lucide-react';
+import { Search, Download, ArrowDownWideNarrow, ArrowUpNarrowWide } from 'lucide-react';
 import { Button } from '@owox/ui/components/button';
 import { Input } from '@owox/ui/components/input';
-import { LogViewType } from './types';
+import { LogViewType, type SortDir } from './types';
+import type { LogCategory } from './log-category';
 import type { DataMartDefinitionConfig } from '../../model/types/data-mart-definition-config';
 import { DataMartRunStatus, DataMartRunType } from '../../../shared';
 import { downloadLogs } from './utils';
 import { canCancelDataMartRun } from './cancellable-runs';
 import { CancelRunButton } from './CancelRunButton';
+import { CategoryChips, type CategoryFilter } from './CategoryChips';
 
 interface LogControlsProps {
   logViewType: LogViewType;
@@ -23,6 +25,11 @@ interface LogControlsProps {
   };
   cancelDataMartRun: (id: string, runId: string) => Promise<void>;
   dataMartId?: string;
+  categoryFilters?: CategoryFilter[];
+  activeCategories?: Set<LogCategory>;
+  onToggleCategory?: (category: LogCategory) => void;
+  sortDir?: SortDir;
+  onToggleSort?: () => void;
 }
 
 export function LogControls({
@@ -33,6 +40,11 @@ export function LogControls({
   run,
   cancelDataMartRun,
   dataMartId,
+  categoryFilters,
+  activeCategories,
+  onToggleCategory,
+  sortDir,
+  onToggleSort,
 }: LogControlsProps) {
   const handleStopPropagation = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -46,10 +58,16 @@ export function LogControls({
     }`;
   };
 
+  const showChips =
+    logViewType === LogViewType.STRUCTURED &&
+    categoryFilters !== undefined &&
+    categoryFilters.length > 0 &&
+    onToggleCategory !== undefined;
+
   return (
-    <div className='bg-background border-border flex items-center justify-between rounded-lg border p-3'>
-      <div className='flex items-center gap-4'>
-        <div className='bg-background border-border flex items-center rounded-lg border'>
+    <div className='bg-background border-border flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border p-3'>
+      <div className='flex shrink-0 items-center gap-4'>
+        <div className='bg-background border-border flex shrink-0 items-center rounded-lg border'>
           <button
             onClick={e => {
               e.stopPropagation();
@@ -80,7 +98,7 @@ export function LogControls({
         </div>
 
         {logViewType !== LogViewType.CONFIGURATION && (
-          <div className='relative'>
+          <div className='relative shrink-0'>
             <Search className='text-muted-foreground absolute top-2.5 left-2 h-4 w-4' />
             <Input
               type='text'
@@ -95,7 +113,16 @@ export function LogControls({
           </div>
         )}
       </div>
-      <div className='flex items-center gap-2'>
+
+      {showChips && (
+        <CategoryChips
+          filters={categoryFilters}
+          activeCategories={activeCategories}
+          onToggle={onToggleCategory}
+        />
+      )}
+
+      <div className='ml-auto flex shrink-0 items-center gap-2'>
         {dataMartId && canCancelDataMartRun(run.type, run.status) && (
           <CancelRunButton
             runId={run.id}
@@ -106,6 +133,24 @@ export function LogControls({
             iconClassName='h-4 w-4'
             labelClassName='inline'
           />
+        )}
+        {logViewType === LogViewType.STRUCTURED && onToggleSort && (
+          <Button
+            variant='outline'
+            size='sm'
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation();
+              onToggleSort();
+            }}
+            aria-label={sortDir === 'desc' ? 'Sort: newest first' : 'Sort: oldest first'}
+            className='flex items-center gap-2'
+          >
+            {sortDir === 'desc' ? (
+              <ArrowDownWideNarrow className='h-4 w-4' />
+            ) : (
+              <ArrowUpNarrowWide className='h-4 w-4' />
+            )}
+          </Button>
         )}
         <Button
           variant='outline'

@@ -1,0 +1,32 @@
+{
+  "title": "Example rates",
+  "version": "1.0",
+  "name": "ExampleRates",
+  "baseUrl": "https://api.example.com",
+  "parameters": {
+    "Base": {
+      "requiredType": "string",
+      "isRequired": true,
+      "default": "EUR",
+      "label": "Base Currency"
+    }
+  },
+  "nodes": {
+    "latest": {
+      "destinationName": "example_latest",
+      "isTimeSeries": false,
+      "uniqueKeys": ["date", "base"],
+      "defaultFields": ["date", "base"],
+      "fields": {
+        "date": { "type": "date" },
+        "base": { "type": "string" }
+      },
+      "request": {
+        "method": "GET",
+        "path": "/latest",
+        "queryParameters": { "base": "{{ parameters.Base }}" }
+      },
+      "recordSelector": { "recordPath": [] }
+    }
+  }
+}

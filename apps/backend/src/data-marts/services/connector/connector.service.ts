@@ -1,6 +1,10 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 
-// @ts-expect-error - Package lacks TypeScript declarations
 import { AvailableConnectors, Connectors, Core } from '@owox/connectors';
 
 import { ConnectorDefinition } from '../../connector-types/connector-definition';
@@ -10,6 +14,7 @@ import {
 } from '../../connector-types/connector-specification';
 import { ConnectorFieldsSchema } from '../../connector-types/connector-fields-schema';
 import { ConnectorSourceCredentialsService } from './connector-source-credentials.service';
+import { ConnectorDefinitionService } from './connector-definition.service';
 import { ConnectorOauthCredentials } from '../../connector-types/interfaces/connector-oauth-credentials';
 import { OAuthVar, OAuthAttribute } from '../../connector-types/connector-oauth-schema';
 import {
@@ -17,40 +22,29 @@ import {
   type SourceFieldsSchema,
 } from './connector-fields-schema.mapper';
 import type { ConnectorCapabilities } from '../../connector-types/connector-capabilities';
+import { mapConnectorSpecification } from './connector-specification.mapper';
+import {
+  fieldsSchemaFromManifest,
+  specificationFromManifest,
+} from './declarative-manifest-schemas';
+import { ConnectorCredentialBoundaryError } from '../../errors/connector-credential-boundary.error';
 
-interface ConnectorSpecificationOneOf {
-  label: string;
-  value: string;
-  requiredType: string;
-  attributes?: Core.CONFIG_ATTRIBUTES[];
-  oauthParams?: Record<string, unknown>;
-  items: Record<string, ConnectorConfigField>;
-}
-
-interface ConnectorConfigField {
-  description: string;
-  label: string;
-  default: unknown;
-  requiredType: string;
-  isRequired: boolean;
-  options?: unknown[];
-  placeholder?: string;
-  minimum?: number;
-  attributes?: Core.CONFIG_ATTRIBUTES[];
-  optionsDependsOn?: string[];
-  oneOf?: ConnectorSpecificationOneOf[];
-}
-
-interface ConnectorConfig {
-  [key: string]: ConnectorConfigField;
-}
+/**
+ * The capabilities of a connector that declares none. Frozen because it is handed
+ * out as-is rather than copied per call. See resolveConnectorCapabilities.
+ */
+const NO_CAPABILITIES: ConnectorCapabilities = Object.freeze({
+  singleConfiguration: false,
+  copySecretsByValue: false,
+});
 
 @Injectable()
 export class ConnectorService {
   private readonly logger = new Logger(ConnectorService.name);
 
   constructor(
-    private readonly connectorSourceCredentialsService: ConnectorSourceCredentialsService
+    private readonly connectorSourceCredentialsService: ConnectorSourceCredentialsService,
+    private readonly connectorDefinitionService: ConnectorDefinitionService
   ) {}
   /**
    * Get all available connectors
@@ -58,16 +52,28 @@ export class ConnectorService {
   async getAvailableConnectors(): Promise<ConnectorDefinition[]> {
     return AvailableConnectors.map(connector => {
       const manifest = this.getConnectorManifest(connector);
+      // description/logo/docUrl are nullable in the DTO; coalesce to null so the
+      // keys are always present (a minimal manifest may omit them, and JSON drops
+      // `undefined` over the wire, breaking the "key always present" contract).
       return {
         name: connector,
         title: manifest.title,
-        description: manifest.description,
-        logo: manifest.logo,
-        docUrl: manifest.docUrl,
+        description: manifest.description ?? null,
+        logo: manifest.logo ?? null,
+        docUrl: manifest.docUrl ?? null,
       };
     });
   }
 
+  /**
+   * Reads the capabilities a bundled connector declares in its manifest.
+   *
+   * Bundled-only by contract: it 404s on any name outside the build-time bundle,
+   * and a custom connector's name can never be in that bundle (creation rejects
+   * names colliding with bundled ones). Callers that may see a custom connector —
+   * anything driven by a Data Mart definition or an API request — must use
+   * resolveConnectorCapabilities instead.
+   */
   getConnectorCapabilities(connectorName: string): ConnectorCapabilities {
     this.validateConnectorExists(connectorName);
     const capabilities = this.getConnectorManifest(connectorName)?.capabilities;
@@ -79,15 +85,96 @@ export class ConnectorService {
   }
 
   /**
+   * Resolves the capabilities of either a bundled connector or a custom (DB-stored)
+   * one, over the shared resolveBundledOrCustom cascade.
+   *
+   * A custom connector resolves to NO_CAPABILITIES — its stored manifest's own
+   * `capabilities` block is deliberately NOT read. That manifest is unvalidated user
+   * JSON (nothing in the connectors Core or ManifestParser reads or validates
+   * `capabilities`), so honouring it would let an author flip flags that relax input
+   * validation and steer credential copying.
+   */
+  async resolveConnectorCapabilities(
+    projectId: string,
+    connectorName: string,
+    version?: number
+  ): Promise<ConnectorCapabilities> {
+    return this.resolveBundledOrCustom(
+      projectId,
+      connectorName,
+      version,
+      name => this.getConnectorCapabilities(name),
+      () => NO_CAPABILITIES
+    );
+  }
+
+  /**
+   * The bundled-then-custom-then-404 cascade the three `resolveConnector*` methods share.
+   *
+   * Centralised because the ORDER is a security property, not a convenience: the bundled
+   * check runs first so a custom connector can never shadow a bundled name (creation
+   * reserves bundled names, and this keeps that guarantee even if the reservation is ever
+   * relaxed), and the final call re-enters the bundled path so an unknown name raises the
+   * SAME NotFoundException it always did rather than a "no manifest" message that would
+   * tell a caller whether the project owns a connector by that name. Three copies of that
+   * ordering is three chances for one of them to drift.
+   *
+   * `fromBundled` is passed the name rather than closed over so each caller's bundled
+   * method stays the single place its own 404 is raised.
+   */
+  private async resolveBundledOrCustom<T>(
+    projectId: string,
+    connectorName: string,
+    version: number | undefined,
+    fromBundled: (connectorName: string) => T | Promise<T>,
+    fromManifest: (manifest: Record<string, unknown>) => T
+  ): Promise<T> {
+    if (Object.keys(Connectors).includes(connectorName)) {
+      return fromBundled(connectorName);
+    }
+    const manifest = await this.connectorDefinitionService.tryResolveManifest(
+      projectId,
+      connectorName,
+      version
+    );
+    if (manifest) {
+      return fromManifest(manifest);
+    }
+    return fromBundled(connectorName);
+  }
+
+  /**
    * Get connector specification for a given connector
    */
   async getConnectorSpecification(connectorName: string): Promise<ConnectorSpecification> {
     this.validateConnectorExists(connectorName);
 
     const source = this.createConnectorSource(connectorName);
-    const configSchema = this.mapConfigToSchema(source.config);
+    const configSchema = mapConnectorSpecification(source.parameters);
 
     return ConnectorSpecification.parse(configSchema);
+  }
+
+  /**
+   * Resolves a connector specification for either a bundled connector or a custom
+   * (DB-stored) one, over the shared resolveBundledOrCustom cascade. Bundled names are
+   * canonical and cannot collide with custom names (reserved-name guard at creation),
+   * so the bundle is checked first and no DB lookup happens for one. For a custom
+   * connector the published manifest is resolved and the spec built from it; for an
+   * unknown name the existing 404 is preserved.
+   */
+  async resolveConnectorSpecification(
+    projectId: string,
+    connectorName: string,
+    version?: number
+  ): Promise<ConnectorSpecification> {
+    return this.resolveBundledOrCustom(
+      projectId,
+      connectorName,
+      version,
+      name => this.getConnectorSpecification(name),
+      manifest => this.getSpecificationFromManifest(manifest)
+    );
   }
 
   /**
@@ -109,6 +196,19 @@ export class ConnectorService {
     const fieldsSchema = mapConnectorFieldsSchema(sourceFieldsSchema);
 
     return ConnectorFieldsSchema.parse(fieldsSchema);
+  }
+
+  /**
+   * Build the specification DTO from a raw declarative manifest (used by custom
+   * connectors that are not in the bundle). Reuses the same mapper as bundled
+   * connectors so the output shape is identical.
+   */
+  getSpecificationFromManifest(manifest: Record<string, unknown>): ConnectorSpecification {
+    return specificationFromManifest(manifest);
+  }
+
+  getFieldsSchemaFromManifest(manifest: Record<string, unknown>): ConnectorFieldsSchema {
+    return fieldsSchemaFromManifest(manifest);
   }
 
   async getOAuthUiVariables(
@@ -236,15 +336,17 @@ export class ConnectorService {
 
     // Tenant boundary: never read or copy a credential that belongs to another
     // project, even if its id is referenced from this project's configuration.
+    // The message stays deliberately indistinguishable from "not found" so that the
+    // caller learns nothing about credentials outside its project.
     if (credential.projectId !== projectId) {
-      throw new Error(`Credential with ID ${credentialId} not found`);
+      throw new ConnectorCredentialBoundaryError(`Credential with ID ${credentialId} not found`);
     }
 
     // Connector boundary: a credential must only be refreshed under the connector
     // it was issued for. Otherwise one connector's stored tokens could be rotated
     // and re-stored under a different connector name.
     if (credential.connectorName !== connectorName) {
-      throw new Error(
+      throw new ConnectorCredentialBoundaryError(
         `Credential belongs to connector ${credential.connectorName}, not ${connectorName}`
       );
     }
@@ -444,60 +546,46 @@ export class ConnectorService {
   }
 
   private createConnectorSource(connectorName: string) {
-    const source = Connectors[connectorName][`${connectorName}Source`];
-    return new source(new Core.AbstractConfig({}));
+    const context = new Core.AbstractContext({
+      source: { name: connectorName, config: {} },
+      storage: { name: 'unused', config: {} },
+      runConfig: {},
+      env: { datamartId: null, runId: null },
+    });
+
+    const SourceClass = Connectors[connectorName][`${connectorName}Source`];
+    if (SourceClass) {
+      return new SourceClass(context);
+    }
+
+    // Manifest-only declarative connector: no Source class is bundled, but the
+    // manifest carries the node definitions. DeclarativeSource exposes the same
+    // `parameters` and `getFieldsSchema()` contract, so spec/fields work unchanged.
+    // Detection mirrors connector-runner.js (truthiness of manifest.nodes).
+    const manifest = Connectors[connectorName].manifest;
+    if (manifest && manifest.nodes) {
+      let model;
+      try {
+        model = new Core.ManifestParser().parse(JSON.stringify(manifest));
+      } catch (e) {
+        this.logger.error(
+          `Failed to parse declarative manifest for '${connectorName}': ${(e as Error).message}`
+        );
+        throw new InternalServerErrorException(
+          `Connector '${connectorName}' has an invalid declarative manifest`
+        );
+      }
+      return new Core.DeclarativeSource(context, model);
+    }
+
+    this.logger.error(
+      `Connector '${connectorName}' has neither a '${connectorName}Source' class nor a declarative manifest`
+    );
+    throw new InternalServerErrorException(`Connector '${connectorName}' is misconfigured`);
   }
 
   private getConnectorManifest(connectorName: string) {
     const manifest = Connectors[connectorName].manifest;
     return manifest;
-  }
-
-  private mapConfigToSchema(config: ConnectorConfig) {
-    const result = Object.keys(config).map(key => {
-      const item = {
-        name: key,
-        title: config[key].label,
-        description: config[key].description,
-        default: config[key].default,
-        requiredType: config[key].requiredType,
-        required: config[key].isRequired,
-        options: config[key].options,
-        placeholder: config[key].placeholder,
-        minimum: config[key].minimum,
-        attributes: config[key].attributes,
-        optionsDependsOn: config[key].optionsDependsOn,
-        oneOf: config[key].oneOf?.map(oneOf => {
-          return {
-            label: oneOf.label,
-            value: oneOf.value,
-            requiredType: oneOf.requiredType,
-            attributes: oneOf.attributes,
-            oauthParams: oneOf.oauthParams,
-            items: Object.entries(oneOf.items).reduce(
-              (acc, [itemKey, itemValue]) => {
-                acc[itemKey] = {
-                  name: itemKey,
-                  title: itemValue.label,
-                  description: itemValue.description,
-                  default: itemValue.default,
-                  requiredType: itemValue.requiredType,
-                  required: itemValue.isRequired,
-                  options: itemValue.options,
-                  placeholder: itemValue.placeholder,
-                  minimum: itemValue.minimum,
-                  attributes: itemValue.attributes,
-                  optionsDependsOn: itemValue.optionsDependsOn,
-                };
-                return acc;
-              },
-              {} as Record<string, unknown>
-            ),
-          };
-        }),
-      };
-      return item;
-    });
-    return result;
   }
 }

@@ -553,7 +553,7 @@ describe('RelationshipCanvas view settings', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Canvas settings' }));
 
-    fireEvent.click(await screen.findByRole('radio', { name: 'Detailed' }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'ERD' }));
     expect(props.onViewModeChange).toHaveBeenCalledWith('erd');
 
     fireEvent.click(screen.getByRole('radio', { name: 'Vertical' }));
@@ -569,7 +569,7 @@ describe('RelationshipCanvas view settings', () => {
     });
   });
 
-  it('sizes Detailed cards to their collapsed field rows', async () => {
+  it('sizes ERD cards to their collapsed field rows', async () => {
     render(
       <RelationshipCanvas
         {...buildCanvasProps([buildRelationship('rel-1', 'target-1')])}
@@ -596,7 +596,7 @@ describe('RelationshipCanvas view settings', () => {
     ]);
   });
 
-  it('reserves an extra line per shown field description in Detailed view', async () => {
+  it('reserves an extra line per shown field description in the ERD view', async () => {
     const fields = buildFields(2).map((field, index) =>
       index === 0 ? { ...field, description: 'Explained' } : field
     );

@@ -16,6 +16,11 @@ import { ConnectorBuilderApiService } from '../../shared/api/connector-builder-a
 import { apiErrorMessage } from '../../../../app/api/extract-api-error.util';
 import { TestSettingsPanel } from './TestSettingsPanel';
 import { credentialParameterNames } from '../../shared/model/credentialParameters';
+import {
+  describeApiFailure,
+  describeFailure,
+  trackCustomConnectorEvent,
+} from '../../shared/model/analytics';
 import type { ConnectorTestResultDto } from '../../shared/api/types';
 
 /** Which representation of the test run the dock body shows. */
@@ -99,6 +104,7 @@ export function ResultsDock({
   const [settings, setSettings] = useState(false);
   const [view, setView] = useState<ResultView>('table');
   const [dockHeight, setDockHeight] = useState(300);
+  const testsRun = useRef(0);
 
   // Which parameters hold a credential: those marked SECRET and those the authentication
   // uses. Their test values are what the author typed to reach a live API, so they are kept
@@ -234,23 +240,44 @@ export function ResultsDock({
     setRunning(true);
     setResult(null);
     // Code mode may still hold a rename the effect above has not seen.
-    const sent = flushCodeEdits() ?? manifest;
-    const target = followNode(nodeNames, node, Object.keys(sent.nodes));
+    const tested = flushCodeEdits() ?? manifest;
+    const target = followNode(nodeNames, node, Object.keys(tested.nodes));
     if (target !== node) setNode(target);
+    const startedAt = Date.now();
+    const connector = { id: state.id, manifest: tested, version: state.loadedVersion };
+    let outcome: ConnectorTestResultDto;
     try {
-      const res = await new ConnectorBuilderApiService().test({
-        manifest: sent,
+      outcome = await new ConnectorBuilderApiService().test({
+        manifest: tested,
         node: target,
         configuration: values,
         maxRows,
       });
-      setResult(res);
-      setSample(target, res.sample ?? []);
+      setResult(outcome);
+      setSample(target, outcome.sample ?? []);
     } catch (e) {
       setResult({ rows: [], logs: [], error: testFailureMessage(e) });
+      // OWOX refused to start the test (the concurrency limit, a blank manifest): no test ran.
+      trackCustomConnectorEvent('custom_connector_error', connector, {
+        action: 'TestError',
+        ...describeApiFailure(e),
+      });
+      return;
     } finally {
       setRunning(false);
     }
+    // A node without declared fields is tested sample-only: the records the dock shows are
+    // the raw sample, at most a few of them, so the count is a lower bound there.
+    const shown = displayRecords(outcome).length;
+    testsRun.current += 1;
+    trackCustomConnectorEvent('custom_connector_test_run', connector, {
+      result: outcome.error ? 'error' : shown ? 'success' : 'empty',
+      recordsCount: shown,
+      sampleOnly: outcome.rows.length === 0 && shown > 0,
+      durationMs: Date.now() - startedAt,
+      testsInSession: testsRun.current,
+      ...(outcome.error ? describeFailure(outcome.error) : { errorKind: null, httpStatus: null }),
+    });
   };
 
   const hasNodes = nodeNames.length > 0;

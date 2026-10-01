@@ -155,8 +155,34 @@ describe('ConnectorEditForm — custom connector', () => {
     expect(screen.getByRole('img', { name: 'Custom connector' })).toBeInTheDocument();
   });
 
+  it('marks the setup events of a custom connector as custom, with its id and version', async () => {
+    window.dataLayer = [] as unknown as typeof window.dataLayer;
+    renderForm(vi.fn());
+    fireEvent.click(await screen.findByText(CUSTOM_NAME));
+    await waitFor(() => {
+      expect(getCustomConnectorSpecification).toHaveBeenCalled();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    await screen.findByLabelText(/API Token/i);
+
+    const setup = (window.dataLayer as unknown as Record<string, unknown>[]).filter(
+      e => e.event === 'connector_setup' && e.category === CUSTOM_NAME
+    );
+    expect(setup.map(e => e.action)).toEqual(
+      expect.arrayContaining(['step', 'connector_selected'])
+    );
+    for (const event of setup) {
+      expect(event).toMatchObject({
+        isCustom: true,
+        connectorId: CUSTOM_ID,
+        connectorVersion: CUSTOM_ACTIVE_VERSION,
+      });
+    }
+  });
+
   it('routes spec/fields to the CUSTOM endpoints and follows active by default', async () => {
     const onSubmit = vi.fn();
+    window.dataLayer = [] as unknown as typeof window.dataLayer;
     renderForm(onSubmit);
 
     // The custom connector card appears once builderList() resolves.
@@ -221,6 +247,17 @@ describe('ConnectorEditForm — custom connector', () => {
     expect(payload.source.name).toBe(CUSTOM_NAME);
     expect(payload.source.version).toBeUndefined();
     expect(payload.source.node).toBe('items');
+    expect(window.dataLayer as unknown as Record<string, unknown>[]).toContainEqual(
+      expect.objectContaining({
+        event: 'connector_setup',
+        action: 'created',
+        label: 'full',
+        isCustom: true,
+        connectorId: CUSTOM_ID,
+        connectorVersion: 2,
+        versionPinned: false,
+      })
+    );
   });
 
   it('pins a specific published version via the version control and carries it on save', async () => {
@@ -285,6 +322,14 @@ describe('ConnectorEditForm — custom connector', () => {
     });
     const payload = onSubmit.mock.calls[0][0] as ConnectorConfig;
     expect(payload.source.version).toBe(1);
+    expect(window.dataLayer as unknown as Record<string, unknown>[]).toContainEqual(
+      expect.objectContaining({
+        event: 'connector_setup',
+        action: 'created',
+        connectorVersion: 1,
+        versionPinned: true,
+      })
+    );
   });
 
   it('shows the connector picked last after another one was picked in between', async () => {

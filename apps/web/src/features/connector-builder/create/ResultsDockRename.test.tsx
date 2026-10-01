@@ -18,6 +18,7 @@ vi.mock('react-hot-toast', () => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
 vi.mock('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'light' }) }));
+vi.mock('../../../utils/data-layer', () => ({ trackEvent: vi.fn() }));
 // Dynamic import inside the factory: `vi.mock` is hoisted above every import.
 vi.mock('@owox/ui/components/select', async () =>
   (await import('./select-test-mock')).selectAsNativeElement()

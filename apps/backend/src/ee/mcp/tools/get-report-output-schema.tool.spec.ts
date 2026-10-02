@@ -118,7 +118,7 @@ describe('GetReportOutputSchemaTool', () => {
     expect(new GetReportOutputSchemaTool({} as McpReportsFacade)).toMatchObject({
       name: 'get_report_output_schema',
       requiredScopes: ['mcp:read'],
-      annotations: { readOnlyHint: false, destructiveHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     });
     expect(MCP_TOOL_PROVIDER_CLASSES.map(tool => tool.name)).toContain('GetReportOutputSchemaTool');
     expect(registry.getTool('get_report_output_schema')).toBeDefined();

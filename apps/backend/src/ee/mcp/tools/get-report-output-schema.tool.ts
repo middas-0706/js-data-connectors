@@ -55,7 +55,7 @@ export class GetReportOutputSchemaTool implements McpToolDefinition<GetReportOut
     title: 'Get Report Output Schema',
     readOnlyHint: false,
     destructiveHint: false,
-    openWorldHint: false,
+    openWorldHint: true,
   };
   readonly requiredScopes: McpScope[] = ['mcp:read'];
 

@@ -11,6 +11,7 @@ import {
   GoogleSheetNotFound,
   sheetNotFoundMessage,
 } from '../../../errors/google-sheet-not-found.error';
+import { GoogleSheetsApiCallError } from '../../../errors/google-sheets-api-call.error';
 
 /**
  * Targeted unit spec for {@link GoogleSheetsReportWriter}'s pre-clear
@@ -1420,5 +1421,99 @@ describe('GoogleSheetsReportWriter — record JSON reaches the adapter (real for
     expect(adapter.updateValues).toHaveBeenCalledWith(SPREADSHEET_ID, `'${SHEET_TITLE}'!A2:D2`, [
       ['Kyiv', '[["a","b"],["c"]]', '{"country":"UA","city":"Kyiv"}', 1],
     ]);
+  });
+});
+
+describe('GoogleSheetsReportWriter — explains Google API failures in Run History', () => {
+  const googleError = (status: number, message: string) =>
+    Object.assign(new Error(message), { status, code: status, response: { status } });
+
+  const prepare = async (opts: BuildOpts = { availableRowsCount: 11 }) => {
+    const built = buildWriter(opts);
+    await built.writer.prepareToWriteReport(
+      built.report as never,
+      new ReportDataDescription(makeHeaders(...built.finalImportedNames), 1)
+    );
+    return built;
+  };
+
+  const writeFirstBatch = (writer: GoogleSheetsReportWriter) =>
+    writer.writeReportDataBatch(new ReportDataBatch([['A', '10', '2']])).catch((e: unknown) => e);
+
+  it('explains an unfinished update in plain words and says how to fix it', async () => {
+    const { writer, adapter } = await prepare();
+    const cause = googleError(503, 'The service is currently unavailable.');
+    // The header-format batch is the first batchUpdate of the deferred mutations.
+    adapter.batchUpdate.mockRejectedValueOnce(cause);
+
+    const error = await writeFirstBatch(writer);
+
+    expect(error).toBeInstanceOf(GoogleSheetsApiCallError);
+    expect(error).toMatchObject({ status: 503, cause });
+    const message = (error as Error).message;
+    expect(message).toMatch(
+      /^Google Sheets couldn't finish updating the spreadsheet this report writes to\. /
+    );
+    // Safe remedies first: rerun, then lighter formulas or a separate spreadsheet.
+    const rerun = message.indexOf('run the report again');
+    const lighten = message.indexOf(
+      'limit them to the rows they need or send the report to a separate spreadsheet'
+    );
+    const iterative = message.indexOf('turn on Iterative calculation');
+    expect(rerun).toBeGreaterThan(-1);
+    expect(lighten).toBeGreaterThan(rerun);
+    expect(iterative).toBeGreaterThan(lighten);
+    // Iterative calculation hides circular-dependency errors, so it is never advised
+    // unconditionally — only for a circular reference made on purpose.
+    expect(message).toContain(
+      'fix the formulas that show a circular dependency error, and turn on Iterative calculation ' +
+        '(File → Settings → Calculation) only if a circular reference is intentional.'
+    );
+    // The user needs the cause and the fix, not the transport details.
+    expect(message).not.toMatch(/HTTP|503/);
+    expect(message).toMatch(/ Details: The service is currently unavailable\.$/);
+  });
+
+  it.each([
+    [500, 'Internal error encountered.'],
+    [404, 'Requested entity was not found.'],
+  ])(
+    'gives the same explanation for HTTP %i, which the same spreadsheet returns on other days',
+    async (status, googleMessage) => {
+      const { writer, adapter } = await prepare();
+      adapter.clearValuesInRange.mockRejectedValueOnce(googleError(status, googleMessage));
+
+      const message = ((await writeFirstBatch(writer)) as Error).message;
+
+      expect(message).toMatch(/^Google Sheets couldn't finish updating the spreadsheet/);
+      expect(message).toContain('only if a circular reference is intentional');
+      expect(message.endsWith(`Details: ${googleMessage}`)).toBe(true);
+    }
+  );
+
+  it("reports a rejected update with the step that failed and Google's reason", async () => {
+    const { writer, adapter } = await prepare();
+    adapter.batchUpdate.mockRejectedValueOnce(
+      googleError(403, 'The caller does not have permission')
+    );
+
+    const error = await writeFirstBatch(writer);
+
+    expect(error).toBeInstanceOf(GoogleSheetsApiCallError);
+    // The innermost step wins — the outer "Writing data batch" step must not re-wrap it.
+    expect((error as Error).message).toBe(
+      'Google Sheets rejected an update while writing and formatting column headers. ' +
+        'Details: The caller does not have permission'
+    );
+  });
+
+  it('passes errors without an HTTP status through unchanged', async () => {
+    const { writer, adapter } = await prepare();
+    const original = new Error('socket hang up');
+    adapter.clearValuesInRange.mockRejectedValueOnce(original);
+
+    await expect(writer.writeReportDataBatch(new ReportDataBatch([['A', '10', '2']]))).rejects.toBe(
+      original
+    );
   });
 });

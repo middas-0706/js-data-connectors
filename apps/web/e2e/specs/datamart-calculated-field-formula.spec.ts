@@ -111,6 +111,11 @@ test.describe('Data Setup - Calculated field formula autocomplete', () => {
       formulaPopover(page).locator('div.native-edit-context, textarea.inputarea')
     ).toBeFocused({ timeout: 15000 });
     await page.keyboard.type('users');
+    // The whole word has to land before the list is asked for. A re-render arriving mid-typing
+    // used to write older text over the editor and wipe the keystrokes after it (`users` typed,
+    // `urs` kept), and no list opens for a word that is not there. FormulaEditor no longer
+    // writes its own text back; this pins it from the analyst's side.
+    await expect(formulaEditor.locator('.view-lines')).toContainText('users', { timeout: 15000 });
 
     const suggestWidget = page.locator(SUGGEST_WIDGET);
     await expect(suggestWidget).toBeVisible({ timeout: 15000 });

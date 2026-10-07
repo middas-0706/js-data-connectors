@@ -8,6 +8,7 @@ import {
   BigQueryConfigSchema,
 } from '../data-storage-types/bigquery/schemas/bigquery-config.schema';
 import { DataStorageCredentials } from '../data-storage-types/data-storage-credentials.type';
+import { ValidationResult } from '../data-storage-types/interfaces/data-storage-access-validator.interface';
 import { DataStorageType } from '../data-storage-types/enums/data-storage-type.enum';
 import { DataStorageDto } from '../dto/domain/data-storage.dto';
 import { UpdateDataStorageCommand } from '../dto/domain/update-data-storage.command';
@@ -246,13 +247,16 @@ export class UpdateDataStorageService {
     ) {
       const parsed = BigQueryConfigSchema.safeParse(command.config);
       if (!parsed.success) {
-        const details = parsed.error.errors
-          .map(issue => {
-            const path = issue.path.join('.') || 'config';
-            return `${path}: ${issue.message}`;
-          })
-          .join('; ');
-        throw new BadRequestException(`Invalid config — ${details}`);
+        // Same `errorDetails` as a validator's schema failure, so the storage form highlights the
+        // field either way. A BadRequestException keeps the handled-400 log line and requestId;
+        // GlobalExceptionFilter adds statusCode, timestamp and path to this object, and `error`
+        // keeps the key the plain-string form of this exception used to send.
+        const invalid = ValidationResult.invalidInput('config', parsed.error);
+        throw new BadRequestException({
+          message: invalid.errorMessage,
+          error: 'Bad Request',
+          errorDetails: invalid.reason,
+        });
       }
     }
 

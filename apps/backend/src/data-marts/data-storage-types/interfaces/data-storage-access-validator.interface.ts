@@ -1,4 +1,11 @@
+import { ZodError } from 'zod';
 import { TypedComponent } from '../../../common/resolver/typed-component.resolver';
+import {
+  describeInvalidInput,
+  FieldErrorScope,
+  sanitizeIssues,
+  toFieldErrors,
+} from '../../utils/field-errors.utils';
 import { DataStorageType } from '../enums/data-storage-type.enum';
 import { DataStorageConfig } from '../data-storage-config.type';
 import { DataStorageCredentials } from '../data-storage-credentials.type';
@@ -29,6 +36,18 @@ export class ValidationResult {
 
   static failure(errorMessage?: string, reason?: Record<string, unknown>): ValidationResult {
     return new ValidationResult(false, errorMessage, reason);
+  }
+
+  /**
+   * The config or credentials failed their schema. `reason.fieldErrors` names each rejected
+   * value by its request path so the storage form can highlight the input to fix;
+   * `reason.errors` keeps the raw issues for existing API consumers, without the submitted values.
+   */
+  static invalidInput(scope: FieldErrorScope, error: ZodError): ValidationResult {
+    return new ValidationResult(false, describeInvalidInput(scope, error), {
+      errors: sanitizeIssues(error.errors),
+      fieldErrors: toFieldErrors(scope, error),
+    });
   }
 
   static unconfigured(errorMessage: string): ValidationResult {

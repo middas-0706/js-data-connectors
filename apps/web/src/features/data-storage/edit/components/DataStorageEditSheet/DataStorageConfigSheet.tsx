@@ -54,11 +54,16 @@ export function DataStorageConfigSheet({
     source?: { id: string; title: string } | null
   ) => {
     if (dataStorage) {
+      // Throws on a rejected save; the form catches it to highlight the fields to fix.
       const updatedStorage = await updateDataStorage(dataStorage.id, data, source);
-      if (updatedStorage) {
+      // Saved. A fault in what the caller does with the result is not a failed save: let it
+      // reach the form and the form reports "Failed to save" and keeps the sheet open.
+      try {
         onSaveSuccess(updatedStorage);
-        handleFormSubmitSuccess();
+      } catch (error) {
+        console.error('Storage saved, but handling the result failed', error);
       }
+      handleFormSubmitSuccess();
     }
   };
 

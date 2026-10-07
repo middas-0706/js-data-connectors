@@ -43,7 +43,14 @@ import type { UserProjection } from '../../../../../shared/types';
 import { UserReference } from '../../../../../shared/components/UserReference/UserReference';
 import { CopyCredentialContext } from '../../model/context/copy-credential-context';
 import { createDataStorageFormResolver } from '../../model/data-storage-form-resolver';
-import { createFormPayload, focusFirstInvalidField } from '../../../../../utils/form-utils';
+import {
+  applyServerFieldErrors,
+  createFormPayload,
+  focusFirstInvalidField,
+} from '../../../../../utils/form-utils';
+import { apiErrorMessage, extractApiFieldErrors, wasErrorToastShown } from '../../../../../app/api';
+import toast from 'react-hot-toast';
+import { toDataStorageFormField } from '../../model/data-storage-server-errors';
 import {
   type DataStorageFormData,
   type GoogleBigQueryFormData,
@@ -115,8 +122,13 @@ export function DataStorageForm({
           },
         ]
       : []);
-  const { ownerUsers, ownersDirty, handleOwnersChange, consumePendingOwnerIds } =
-    useOwnerState(initialOwnerUsers);
+  const {
+    ownerUsers,
+    ownersDirty,
+    handleOwnersChange,
+    pendingOwnerIdsRef,
+    consumePendingOwnerIds,
+  } = useOwnerState(initialOwnerUsers);
 
   const sharingInitial = initialData as
     | { availableForUse?: boolean; availableForMaintenance?: boolean }
@@ -189,7 +201,7 @@ export function DataStorageForm({
     [storageId, selectedSource, handleSourceSelect, handleSourceClear]
   );
 
-  const handleSubmit = async (data: DataStorageFormData) => {
+  const handleSubmit = async (data: DataStorageFormData, event?: { target?: unknown }) => {
     const { dirtyFields } = form.formState;
     const payload = createFormPayload(data);
 
@@ -199,7 +211,8 @@ export function DataStorageForm({
       delete (payload as Partial<DataStorageFormData>).credentials;
     }
 
-    const ownerIds = consumePendingOwnerIds();
+    // Read, not consumed: a rejected save keeps the owner change for the retry.
+    const ownerIds = pendingOwnerIdsRef.current;
     if (ownerIds !== null) {
       (payload as Record<string, unknown>).ownerIds = ownerIds;
     }
@@ -214,7 +227,29 @@ export function DataStorageForm({
       (payload as Record<string, unknown>).contextIds = contextIds;
     }
 
-    await onSubmit(payload, selectedSource);
+    try {
+      await onSubmit(payload, selectedSource);
+      consumePendingOwnerIds();
+    } catch (error) {
+      // When the rejection names the values it refused, mark those inputs the same way
+      // client-side validation does, so the user sees which field to fix instead of decoding
+      // the toast.
+      const highlighted = applyServerFieldErrors(
+        form.setError,
+        extractApiFieldErrors(error),
+        field => toDataStorageFormField(data.type, field)
+      );
+      if (highlighted) {
+        focusFirstInvalidField(undefined, event);
+      }
+      // Reported once whatever was marked: the marked input may not be on screen (another auth
+      // tab, a collapsed choice). The API interceptor toasts 400/403/404/5xx; a network failure,
+      // any other status or a throw after the save is reported here.
+      if (!wasErrorToastShown(error)) {
+        console.error(error);
+        toast.error(apiErrorMessage(error, 'Failed to save the Storage'));
+      }
+    }
   };
 
   const isLegacyGoogleBigQuery = selectedType === DataStorageType.LEGACY_GOOGLE_BIGQUERY;

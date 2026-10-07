@@ -1,3 +1,5 @@
+import type { FieldPath, FieldValues, UseFormSetError } from 'react-hook-form';
+
 /**
  * Creates a mutable copy of form data for safe manipulation.
  * This is commonly used when you need to conditionally modify
@@ -33,4 +35,48 @@ export function focusFirstInvalidField(_errors?: unknown, event?: { target?: unk
     }
   };
   requestAnimationFrame(tryFocus);
+}
+
+/**
+ * Puts the errors a rejected save names onto the inputs that hold those values, so the form
+ * highlights what to fix exactly as it does for its own validation — red field, message under
+ * it, section opened. `toFormField` maps a request path (`config.projectId`) to the form field
+ * that shows it, or `null` when no input does. Several request values can land on one input
+ * (every key of a pasted JSON file), so their messages are joined, each naming its key.
+ *
+ * Returns whether any field got an error, i.e. whether there is something to focus.
+ */
+export function applyServerFieldErrors<T extends FieldValues>(
+  setError: UseFormSetError<T>,
+  fieldErrors: readonly { field: string; message: string }[],
+  toFormField: (field: string) => FieldPath<T> | null
+): boolean {
+  const messagesByField = new Map<FieldPath<T>, string[]>();
+  for (const { field, message } of fieldErrors) {
+    const name = toFormField(field);
+    if (!name) continue;
+    // On an input named for another key (one holding a whole file), a bare reason does not say
+    // which of the file's keys is wrong. A list index is not a key: `credentials.to.0` is the
+    // `to` list's input, whichever entry was refused.
+    const key = lastKeyOf(field);
+    const holdsOtherKey = key !== '' && lastKeyOf(name) !== key;
+    const text = holdsOtherKey && !message.includes(key) ? `${key}: ${message}` : message;
+    const messages = messagesByField.get(name) ?? [];
+    if (!messages.includes(text)) messages.push(text);
+    messagesByField.set(name, messages);
+  }
+  for (const [name, messages] of messagesByField) {
+    setError(name, { type: 'server', message: messages.join('; ') });
+  }
+  return messagesByField.size > 0;
+}
+
+/** The last named segment of a dot path, skipping list indexes. */
+function lastKeyOf(path: string): string {
+  return (
+    path
+      .split('.')
+      .filter(segment => !/^\d+$/.test(segment))
+      .at(-1) ?? ''
+  );
 }

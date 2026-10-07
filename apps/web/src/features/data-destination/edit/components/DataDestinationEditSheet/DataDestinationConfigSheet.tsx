@@ -54,6 +54,18 @@ export function DataDestinationConfigSheet({
       ? `${window.location.origin}${scope(`/data-destinations?id=${dataDestination.id}`)}`
       : null;
 
+  // Saved. A fault in what the caller does with the result is not a failed save: let it reach
+  // the form and the form reports "Failed to save" for a Destination that was saved.
+  const reportSaved = (saved: DataDestination) => {
+    try {
+      onSaveSuccess(saved);
+    } catch (error) {
+      console.error('Destination saved, but handling the result failed', error);
+    }
+  };
+
+  // A rejected save throws out of here and the sheet stays open: the form catches it to mark the
+  // inputs the server refused, instead of the sheet closing on the user's unsaved values.
   const onSave = async (
     data: DataDestinationFormData,
     source?: { id: string; title: string } | null
@@ -73,9 +85,7 @@ export function DataDestinationConfigSheet({
         };
         const newDestination = await createDataDestination(createData);
         handleFormSubmitSuccess();
-        if (newDestination) {
-          onSaveSuccess(newDestination);
-        }
+        reportSaved(newDestination);
       } else {
         const createData = {
           ...mapper.mapToCreateRequest(formFields),
@@ -83,9 +93,7 @@ export function DataDestinationConfigSheet({
         };
         const newDestination = await createDataDestination(createData);
         handleFormSubmitSuccess();
-        if (newDestination) {
-          onSaveSuccess(newDestination);
-        }
+        reportSaved(newDestination);
       }
     } else {
       const { ownerIds, availableForUse, availableForMaintenance, contextIds, ...formFields } =
@@ -105,9 +113,7 @@ export function DataDestinationConfigSheet({
       };
       const updatedDestination = await updateDataDestination(dataDestination.id, requestWithExtras);
       handleFormSubmitSuccess();
-      if (updatedDestination) {
-        onSaveSuccess(updatedDestination);
-      }
+      reportSaved(updatedDestination);
     }
   };
 

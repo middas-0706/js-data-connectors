@@ -427,6 +427,23 @@ describe('ModelCanvasFlowNode', () => {
     expect(onRaisedChange).toHaveBeenLastCalledWith(false);
   });
 
+  it('opens a relationship picked in the list without selecting the card', () => {
+    const parentClick = vi.fn();
+    const onOpenRelationship = vi.fn();
+    renderNode(vi.fn(), DEFAULT_FIELDS, undefined, undefined, parentClick, undefined, {
+      onOpenRelationship,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show relationships of Orders' }));
+    const row = screen.getByRole('button', { name: 'Open the relationship with Customers' });
+    // A pointer click carries a click count; Enter or Space on the button does not.
+    fireEvent.click(row, { detail: 1 });
+    expect(onOpenRelationship).toHaveBeenLastCalledWith('edge-1', { viaKeyboard: false });
+    fireEvent.click(row, { detail: 0 });
+    expect(onOpenRelationship).toHaveBeenLastCalledWith('edge-1', { viaKeyboard: true });
+    expect(parentClick).not.toHaveBeenCalled();
+  });
+
   it('hides an open list, and drops the lift, once its badge is hidden', () => {
     const onRaisedChange = vi.fn();
     const { rerenderData } = renderNode(

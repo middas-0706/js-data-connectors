@@ -48,6 +48,8 @@ const viewState = vi.hoisted(() => ({
   // When set, the mocked ModelCanvas registers it as the export handle —
   // mirroring the real lazy canvas having mounted.
   exportHandle: null as { exportCanvas: (format: string) => Promise<boolean> } | null,
+  // A relationship a card's relationships list offers, drawn as an arrow or not.
+  cardRelationshipId: null as string | null,
   qualitySummariesHook: {
     data: {} as Record<string, ReturnType<typeof buildQualitySummary>>,
     isLoading: false,
@@ -142,13 +144,22 @@ vi.mock('./ModelCanvas', () => ({
     onOpenDataMart,
     onOpenQuality,
     onRunQuality,
+    selectedRelationshipId,
+    onSelectRelationship,
     exportApiRef,
+    className,
   }: {
+    className?: string;
     nodes: { id: string }[];
-    edges: { id: string }[];
+    edges: { id: string; relationshipIds: string[] }[];
     onOpenDataMart: (dataMartId: string) => void;
     onOpenQuality?: (dataMartId: string) => void;
     onRunQuality?: (dataMartId: string) => Promise<void>;
+    selectedRelationshipId?: string | null;
+    onSelectRelationship?: (
+      relationshipId: string | null,
+      options?: { viaKeyboard?: boolean }
+    ) => void;
     exportApiRef?: { current: unknown };
   }) => (
     (() => {
@@ -157,6 +168,7 @@ vi.mock('./ModelCanvas', () => ({
     })(),
     (
       <>
+        <span data-testid='canvas-class'>{className ?? ''}</span>
         <span data-testid='canvas-node-ids'>{nodes.map(node => node.id).join(',')}</span>
         <span data-testid='canvas-edge-ids'>{edges.map(edge => edge.id).join(',')}</span>
         <button
@@ -173,8 +185,70 @@ vi.mock('./ModelCanvas', () => ({
         <button type='button' onClick={() => void onRunQuality?.('mart-1')}>
           Run Quality Orders
         </button>
+        <span data-testid='canvas-selected-relationship'>{selectedRelationshipId ?? ''}</span>
+        {viewState.cardRelationshipId && (
+          <button
+            type='button'
+            onClick={() => {
+              onSelectRelationship?.(viewState.cardRelationshipId);
+            }}
+          >
+            Open card relationship
+          </button>
+        )}
+        {viewState.cardRelationshipId && (
+          <button
+            type='button'
+            onClick={() => {
+              onSelectRelationship?.(viewState.cardRelationshipId, { viaKeyboard: true });
+            }}
+          >
+            Open card relationship with the keyboard
+          </button>
+        )}
+        {edges.map(edge => (
+          <button
+            key={edge.id}
+            type='button'
+            onClick={() => {
+              onSelectRelationship?.(edge.relationshipIds[0] ?? null);
+            }}
+          >
+            {`Click arrow ${edge.id}`}
+          </button>
+        ))}
       </>
     )
+  ),
+}));
+
+vi.mock('./RelationshipDetailsSheet', () => ({
+  default: ({
+    options,
+    relationshipId,
+    focusRequest,
+    top,
+    onClose,
+  }: {
+    options: { id: string; source: { title: string }; target: { title: string } }[];
+    relationshipId: string;
+    focusRequest?: number;
+    top?: number;
+    onClose: () => void;
+  }) => (
+    <div role='dialog' aria-label='Relationship'>
+      <span data-testid='sheet-relationship'>{relationshipId}</span>
+      <span data-testid='sheet-focus-request'>{focusRequest ?? 0}</span>
+      <span data-testid='sheet-top'>{top ?? 0}</span>
+      <span data-testid='sheet-options'>
+        {options
+          .map(option => `${option.id}:${option.source.title}->${option.target.title}`)
+          .join(',')}
+      </span>
+      <button type='button' onClick={onClose}>
+        Close sheet
+      </button>
+    </div>
   ),
 }));
 
@@ -214,6 +288,7 @@ describe('ModelCanvasView', () => {
     viewState.canvasHook.refetch.mockResolvedValue(undefined);
     viewState.canvasHook.isEnriching = false;
     viewState.exportHandle = null;
+    viewState.cardRelationshipId = null;
     viewState.qualitySummariesHook.data = {};
     viewState.qualitySummariesHook.isLoading = false;
     viewState.qualitySummariesHook.error = null;
@@ -290,6 +365,120 @@ describe('ModelCanvasView', () => {
       '_blank',
       'noopener,noreferrer'
     );
+  });
+
+  it('opens the relationship sheet for a clicked arrow and closes it once the arrow is gone', async () => {
+    const mirrored = (id: string, sourceDataMartId: string, targetDataMartId: string) => ({
+      id,
+      sourceDataMartId,
+      targetDataMartId,
+      joinConditions: [
+        sourceDataMartId === 'mart-1'
+          ? { sourceFieldName: 'customer_id', targetFieldName: 'id' }
+          : { sourceFieldName: 'id', targetFieldName: 'customer_id' },
+      ],
+    });
+    viewState.canvasHook.data = {
+      ...buildCanvasData(),
+      edges: [mirrored('rel-1', 'mart-1', 'mart-2'), mirrored('rel-2', 'mart-2', 'mart-1')],
+    };
+
+    const { rerender } = render(<ModelCanvasView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Click arrow rel-1+rel-2' }));
+
+    // A two-headed arrow offers both of its relationships.
+    expect(await screen.findByTestId('sheet-options')).toHaveTextContent(
+      'rel-1:Orders->Customers,rel-2:Customers->Orders'
+    );
+    expect(screen.getByTestId('sheet-relationship')).toHaveTextContent('rel-1');
+    expect(screen.getByTestId('canvas-selected-relationship')).toHaveTextContent('rel-1');
+
+    // The relationships were deleted: the next model has another arrow, none for them.
+    viewState.canvasHook.data = buildCanvasData();
+    rerender(<ModelCanvasView />);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Relationship' })).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId('canvas-selected-relationship')).toBeEmptyDOMElement();
+  });
+
+  it("opens a card list's relationship whose other end the filters hide", async () => {
+    viewState.canvasHook.data = {
+      ...buildCanvasData(),
+      nodes: [
+        ...buildCanvasData().nodes,
+        {
+          id: 'mart-3',
+          title: 'Refunds draft',
+          status: DataMartStatus.DRAFT,
+          description: null,
+          fieldCount: 1,
+          dataLastUpdated: null,
+        },
+      ],
+      edges: [
+        ...buildCanvasData().edges,
+        {
+          id: 'rel-draft',
+          sourceDataMartId: 'mart-1',
+          targetDataMartId: 'mart-3',
+          joinConditions: [{ sourceFieldName: 'id', targetFieldName: 'order_id' }],
+        },
+      ],
+    };
+    // The status filter shows published Data Marts only, so no arrow leads to the draft.
+    viewState.cardRelationshipId = 'rel-draft';
+
+    render(<ModelCanvasView />);
+    expect(await screen.findByTestId('canvas-edge-ids')).toHaveTextContent('edge-1');
+    expect(screen.getByTestId('canvas-edge-ids')).not.toHaveTextContent('rel-draft');
+    fireEvent.click(screen.getByRole('button', { name: 'Open card relationship' }));
+
+    expect(await screen.findByTestId('sheet-options')).toHaveTextContent(
+      'rel-draft:Orders->Refunds draft'
+    );
+  });
+
+  it('docks the open sheet below the toolbar and keeps the canvas clear of it', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      bottom: 120,
+    } as DOMRect);
+    viewState.canvasHook.data = buildCanvasData();
+    const { container } = render(<ModelCanvasView />);
+
+    expect(await screen.findByTestId('canvas-class')).toHaveTextContent('');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Click arrow edge-1' }));
+    await screen.findByRole('dialog', { name: 'Relationship' });
+
+    // Only the canvas leaves room for the sheet; the toolbar keeps its full width on one row.
+    expect(screen.getByTestId('canvas-class')).toHaveTextContent('sm:mr-[640px]');
+    expect(container.querySelector('.dm-card')).not.toHaveClass('sm:mr-[640px]');
+    expect(screen.getByTestId('sheet-top')).toHaveTextContent('120');
+  });
+
+  it('moves focus into the sheet on a keyboard pick and back when it closes', async () => {
+    viewState.canvasHook.data = buildCanvasData();
+    viewState.cardRelationshipId = 'edge-1';
+    render(<ModelCanvasView />);
+
+    // A pointer pick leaves focus alone.
+    fireEvent.click(await screen.findByRole('button', { name: 'Click arrow edge-1' }));
+    expect(await screen.findByTestId('sheet-focus-request')).toHaveTextContent('0');
+    fireEvent.click(screen.getByRole('button', { name: 'Close sheet' }));
+
+    const row = screen.getByRole('button', { name: 'Open card relationship with the keyboard' });
+    row.focus();
+    fireEvent.click(row);
+    expect(await screen.findByTestId('sheet-focus-request')).toHaveTextContent('1');
+
+    (document.activeElement as HTMLElement | null)?.blur();
+    fireEvent.click(screen.getByRole('button', { name: 'Close sheet' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Relationship' })).not.toBeInTheDocument();
+    });
+    expect(document.activeElement).toBe(row);
   });
 
   it('opens the Data Mart Quality tab in the current project route', async () => {

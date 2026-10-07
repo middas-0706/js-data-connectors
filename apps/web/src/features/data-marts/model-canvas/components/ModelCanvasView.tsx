@@ -1,4 +1,13 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import toast from 'react-hot-toast';
 import { SkeletonList } from '@owox/ui/components/common/skeleton-list';
 import { extractApiError } from '../../../../app/api';
@@ -19,9 +28,13 @@ import type { ModelCanvasExportHandle } from '../export';
 import { trackEvent } from '../../../../utils/data-layer';
 import { isDataQualityActivityState } from '../../shared/components/RunActivityIndicator';
 import { useDataQualitySummaries } from '../../data-quality/model/use-data-quality-workspace';
+import { RELATIONSHIP_SHEET_RESERVE_CLASS } from '../model/relationship-sheet-layout';
 import type { ModelCanvasData } from '../model/types';
+import type { RelationshipSelectOptions } from './ModelCanvas';
+import type { RelationshipSheetOption } from './RelationshipDetailsSheet';
 
 const ModelCanvas = lazy(() => import('./ModelCanvas'));
+const RelationshipDetailsSheet = lazy(() => import('./RelationshipDetailsSheet'));
 
 function CanvasMessage({
   children,
@@ -147,6 +160,86 @@ export function ModelCanvasView({ onActiveQualityRunChange }: ModelCanvasViewPro
     () => (filtered ? mergeBidirectionalEdges(filtered.edges) : []),
     [filtered]
   );
+
+  // The relationship open in the details sheet, picked by a click on its arrow or on a row of a
+  // card's relationships list. That list covers the storage's whole model, filters aside, so the
+  // sheet looks the relationship up there: one hidden by a filter opens too, with no arrow lit.
+  const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | null>(null);
+  // Picked with the keyboard: focus goes into the sheet, and back to where it came from when the
+  // sheet closes.
+  const [sheetFocusRequest, setSheetFocusRequest] = useState(0);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const selectRelationship = useCallback(
+    (relationshipId: string | null, options?: RelationshipSelectOptions) => {
+      if (relationshipId === null) {
+        const returnTo = returnFocusRef.current;
+        returnFocusRef.current = null;
+        setSheetFocusRequest(0);
+        setSelectedRelationshipId(null);
+        if (returnTo?.isConnected) returnTo.focus();
+        return;
+      }
+      if (options?.viaKeyboard) {
+        returnFocusRef.current =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        setSheetFocusRequest(request => request + 1);
+      }
+      setSelectedRelationshipId(relationshipId);
+    },
+    []
+  );
+  const modelEdges = useMemo(
+    () => (topology ? mergeBidirectionalEdges(topology.edges) : []),
+    [topology]
+  );
+  const selectedModelEdge = useMemo(
+    () =>
+      selectedRelationshipId
+        ? (modelEdges.find(edge => edge.relationshipIds.includes(selectedRelationshipId)) ?? null)
+        : null,
+    [modelEdges, selectedRelationshipId]
+  );
+  // A relationship that leaves the model — deleted, or another storage picked — closes its sheet
+  // for good, instead of reopening it should the relationship come back.
+  useEffect(() => {
+    if (selectedRelationshipId && topology && !selectedModelEdge) selectRelationship(null);
+  }, [selectedRelationshipId, topology, selectedModelEdge, selectRelationship]);
+  const relationshipOptions = useMemo((): RelationshipSheetOption[] => {
+    if (!selectedModelEdge || !topology) return [];
+    const edgesById = new Map(topology.edges.map(edge => [edge.id, edge]));
+    const nodesById = new Map(topology.nodes.map(node => [node.id, node]));
+    return selectedModelEdge.relationshipIds.flatMap(id => {
+      const edge = edgesById.get(id);
+      const source = edge && nodesById.get(edge.sourceDataMartId);
+      const target = edge && nodesById.get(edge.targetDataMartId);
+      if (!source || !target) return [];
+      return [
+        {
+          id,
+          source: { id: source.id, title: source.title, icon: source.icon },
+          target: { id: target.id, title: target.title, icon: target.icon },
+        },
+      ];
+    });
+  }, [selectedModelEdge, topology]);
+  const isRelationshipSheetOpen = selectedRelationshipId !== null && relationshipOptions.length > 0;
+  // The sheet docks below the toolbar, so the toolbar stays whole and usable; only the canvas
+  // makes room for it.
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [sheetTop, setSheetTop] = useState(0);
+  useLayoutEffect(() => {
+    if (!isRelationshipSheetOpen) return;
+    const measure = () => {
+      setSheetTop(Math.max(0, Math.round(toolbarRef.current?.getBoundingClientRect().bottom ?? 0)));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+    };
+  }, [isRelationshipSheetOpen]);
   const selectedStorageType = dataStorages.find(storage => storage.id === filters.storageId)?.type;
   const bulkActionDataMarts = useMemo(
     () =>
@@ -278,31 +371,33 @@ export function ModelCanvasView({ onActiveQualityRunChange }: ModelCanvasViewPro
   return (
     <div className='dm-card !p-0'>
       {storageKnown && (
-        <ModelCanvasToolbar
-          status={filters.status}
-          onStatusChange={filters.setStatus}
-          rel={filters.rel}
-          onRelChange={filters.setRel}
-          searchQuery={filters.searchQuery}
-          onSearchChange={filters.setSearchQuery}
-          onExport={handleExport}
-          actions={
-            <DataMartBulkActions
-              onCheckDataLastUpdated={() => {
-                // Meeting decision: the check covers what the user actually sees — the same
-                // filtered set the other bulk actions target.
-                void refreshDataLastUpdated(bulkActionDataMarts.map(dataMart => dataMart.id));
-              }}
-              isCheckingDataLastUpdated={isRefreshingDataLastUpdated}
-              dataMarts={bulkActionDataMarts}
-              projectId={projectId ?? ''}
-              deleteDataMart={deleteDataMart}
-              publishDataMart={publishDataMart}
-              onCompleted={refreshCanvas}
-              targetScope='canvas'
-            />
-          }
-        />
+        <div ref={toolbarRef}>
+          <ModelCanvasToolbar
+            status={filters.status}
+            onStatusChange={filters.setStatus}
+            rel={filters.rel}
+            onRelChange={filters.setRel}
+            searchQuery={filters.searchQuery}
+            onSearchChange={filters.setSearchQuery}
+            onExport={handleExport}
+            actions={
+              <DataMartBulkActions
+                onCheckDataLastUpdated={() => {
+                  // Meeting decision: the check covers what the user actually sees — the same
+                  // filtered set the other bulk actions target.
+                  void refreshDataLastUpdated(bulkActionDataMarts.map(dataMart => dataMart.id));
+                }}
+                isCheckingDataLastUpdated={isRefreshingDataLastUpdated}
+                dataMarts={bulkActionDataMarts}
+                projectId={projectId ?? ''}
+                deleteDataMart={deleteDataMart}
+                publishDataMart={publishDataMart}
+                onCompleted={refreshCanvas}
+                targetScope='canvas'
+              />
+            }
+          />
+        </div>
       )}
       {storageLoadError ? (
         <div className='p-4'>
@@ -371,10 +466,28 @@ export function ModelCanvasView({ onActiveQualityRunChange }: ModelCanvasViewPro
               navigate(`/data-marts/${dataMartId}/quality`);
             }}
             onRunQuality={runQuality}
+            selectedRelationshipId={selectedRelationshipId}
+            onSelectRelationship={selectRelationship}
             isCheckingDataLastUpdated={isRefreshingDataLastUpdated}
             storageTitle={dataStorages.find(storage => storage.id === filters.storageId)?.title}
             exportApiRef={canvasExportRef}
+            className={isRelationshipSheetOpen ? RELATIONSHIP_SHEET_RESERVE_CLASS : undefined}
             style={canvasStyle}
+          />
+        </Suspense>
+      )}
+      {isRelationshipSheetOpen && filters.storageId && (
+        <Suspense fallback={null}>
+          <RelationshipDetailsSheet
+            options={relationshipOptions}
+            relationshipId={selectedRelationshipId}
+            storageId={filters.storageId}
+            focusRequest={sheetFocusRequest}
+            top={sheetTop}
+            onRelationshipChange={setSelectedRelationshipId}
+            onClose={() => {
+              selectRelationship(null);
+            }}
           />
         </Suspense>
       )}

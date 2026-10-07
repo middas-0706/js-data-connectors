@@ -28,30 +28,45 @@ interface ReactFlowStubProps {
       icon?: string | null;
       isCheckingDataLastUpdated?: boolean;
       onRaisedChange?: (raised: boolean) => void;
+      onOpenRelationship?: (relationshipId: string, options?: { viaKeyboard?: boolean }) => void;
+      relationships?: { joinFields: { otherField: string }[] }[];
     };
   }[];
-  edges?: {
-    id: string;
-    source: string;
-    target: string;
-    selected?: boolean;
-    deletable?: boolean;
-  }[];
+  edges?: EdgeStub[];
   deleteKeyCode?: string | null;
   onMove?: (event: unknown, viewport: ViewportStub) => void;
   onNodeClick?: (event: unknown, node: { id: string }) => void;
-  onEdgeClick?: () => void;
+  onEdgeClick?: (event: unknown, edge: EdgeStub) => void;
   onPaneClick?: () => void;
+  onMoveStart?: (event: unknown) => void;
 }
 
-const reactFlow = vi.hoisted(() => ({
-  fitView: vi.fn().mockResolvedValue(undefined),
-  zoomIn: vi.fn().mockResolvedValue(undefined),
-  zoomOut: vi.fn().mockResolvedValue(undefined),
-  setViewport: vi.fn().mockResolvedValue(undefined),
-  latestProps: null as ReactFlowStubProps | null,
-  store: { width: 800, height: 600 },
-}));
+interface EdgeStub {
+  id: string;
+  source: string;
+  target: string;
+  selected?: boolean;
+  deletable?: boolean;
+  data: { relationshipIds: string[] };
+}
+
+const reactFlow = vi.hoisted(() => {
+  const stub = {
+    fitView: vi.fn().mockResolvedValue(undefined),
+    zoomIn: vi.fn().mockResolvedValue(undefined),
+    zoomOut: vi.fn().mockResolvedValue(undefined),
+    setViewport: vi.fn().mockResolvedValue(undefined),
+    setCenter: vi.fn().mockResolvedValue(undefined),
+    getViewport: vi.fn(() => ({ x: 0, y: 0, zoom: 1 })),
+    getNodesBounds: vi.fn<
+      (nodes: string[]) => { x: number; y: number; width: number; height: number }
+    >(() => ({ x: 0, y: 0, width: 100, height: 50 })),
+    getEdges: () => stub.latestProps?.edges ?? [],
+    latestProps: null as ReactFlowStubProps | null,
+    store: { width: 800, height: 600 },
+  };
+  return stub;
+});
 
 const layout = vi.hoisted(() => ({
   runDagreLayout: vi.fn(
@@ -96,6 +111,8 @@ describe('ModelCanvas', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
+    reactFlow.getViewport.mockReturnValue({ x: 0, y: 0, zoom: 1 });
+    reactFlow.getNodesBounds.mockReturnValue({ x: 0, y: 0, width: 100, height: 50 });
     reactFlow.latestProps = null;
     reactFlow.store.width = 800;
     reactFlow.store.height = 600;
@@ -243,6 +260,7 @@ describe('ModelCanvas', () => {
   it('highlights every edge of the clicked data mart and clears on pane click', async () => {
     const edge = (id: string, sourceId: string, targetId: string) => ({
       id,
+      relationshipIds: [id],
       sourceId,
       targetId,
       bidirectional: false,
@@ -295,7 +313,8 @@ describe('ModelCanvas', () => {
       reactFlow.latestProps?.onNodeClick?.(null, { id: 'customers' });
     });
     act(() => {
-      reactFlow.latestProps?.onEdgeClick?.();
+      const clicked = reactFlow.latestProps?.edges?.[0];
+      if (clicked) reactFlow.latestProps?.onEdgeClick?.(null, clicked);
     });
     expect(
       reactFlow.latestProps?.nodes?.find(node => node.id === 'customers')?.selected ?? false
@@ -305,6 +324,390 @@ describe('ModelCanvas', () => {
     expect(reactFlow.latestProps?.deleteKeyCode).toBeNull();
     expect(reactFlow.latestProps?.nodes?.every(node => node.deletable === false)).toBe(true);
     expect(reactFlow.latestProps?.edges?.every(e => e.deletable === false)).toBe(true);
+  });
+
+  it('opens the relationship of a clicked arrow and keeps that arrow highlighted', async () => {
+    const onSelectRelationship = vi.fn();
+    const nodes = ['orders', 'customers', 'sessions'].map(id => ({
+      id,
+      title: id,
+      status: DataMartStatus.PUBLISHED,
+      description: null,
+      fieldCount: 1,
+      qualitySummary: buildQualitySummary(),
+      dataLastUpdated: null,
+    }));
+    const edges = [
+      {
+        id: 'r1+r2',
+        relationshipIds: ['r1', 'r2'],
+        sourceId: 'orders',
+        targetId: 'customers',
+        bidirectional: true,
+        joinNotConfigured: false,
+        joinConditions: [{ sourceFieldName: 'customer_id', targetFieldName: 'id' }],
+      },
+      {
+        id: 'r3',
+        relationshipIds: ['r3'],
+        sourceId: 'sessions',
+        targetId: 'customers',
+        bidirectional: false,
+        joinNotConfigured: false,
+        joinConditions: [{ sourceFieldName: 'customer_id', targetFieldName: 'id' }],
+      },
+    ];
+    const renderCanvas = (selectedRelationshipId: string | null) => (
+      <ModelCanvas
+        nodes={nodes}
+        edges={edges}
+        searchQuery=''
+        onOpenDataMart={vi.fn()}
+        onOpenQuality={vi.fn()}
+        onRunQuality={vi.fn().mockResolvedValue(undefined)}
+        selectedRelationshipId={selectedRelationshipId}
+        onSelectRelationship={onSelectRelationship}
+      />
+    );
+    const { rerender } = render(renderCanvas(null));
+    await waitFor(() => {
+      expect(reactFlow.latestProps?.edges).toHaveLength(2);
+    });
+    const edgeById = (id: string) => {
+      const found = reactFlow.latestProps?.edges?.find(edge => edge.id === id);
+      if (!found) throw new Error(`edge ${id} is not rendered`);
+      return found;
+    };
+
+    // A two-headed arrow opens the relationship drawn from its source.
+    act(() => {
+      reactFlow.latestProps?.onEdgeClick?.(null, edgeById('r1+r2'));
+    });
+    expect(onSelectRelationship).toHaveBeenLastCalledWith('r1');
+
+    rerender(renderCanvas('r2'));
+    expect(reactFlow.latestProps?.edges?.map(edge => edge.selected ?? false)).toEqual([
+      true,
+      false,
+    ]);
+
+    // Clicking it again keeps the direction the user switched to.
+    act(() => {
+      reactFlow.latestProps?.onEdgeClick?.(null, edgeById('r1+r2'));
+    });
+    expect(onSelectRelationship).toHaveBeenLastCalledWith('r2');
+
+    act(() => {
+      reactFlow.latestProps?.onEdgeClick?.(null, edgeById('r3'));
+    });
+    expect(onSelectRelationship).toHaveBeenLastCalledWith('r3');
+
+    act(() => {
+      reactFlow.latestProps?.onPaneClick?.();
+    });
+    expect(onSelectRelationship).toHaveBeenLastCalledWith(null);
+
+    onSelectRelationship.mockClear();
+    act(() => {
+      reactFlow.latestProps?.onNodeClick?.(null, { id: 'sessions' });
+    });
+    expect(onSelectRelationship).toHaveBeenCalledWith(null);
+  });
+
+  describe('panning a picked arrow into view', () => {
+    interface Rect {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }
+    const placeCards = (cards: Record<string, Rect>) => {
+      reactFlow.getNodesBounds.mockImplementation((ids: string[]) => {
+        const rects = ids.map(id => cards[id]);
+        const left = Math.min(...rects.map(rect => rect.x));
+        const top = Math.min(...rects.map(rect => rect.y));
+        const right = Math.max(...rects.map(rect => rect.x + rect.width));
+        const bottom = Math.max(...rects.map(rect => rect.y + rect.height));
+        return { x: left, y: top, width: right - left, height: bottom - top };
+      });
+    };
+    const card = (x: number): Rect => ({ x, y: 100, width: 200, height: 100 });
+    const renderCanvas = (selectedRelationshipId: string | null) => (
+      <ModelCanvas
+        nodes={['orders', 'customers'].map(id => ({
+          id,
+          title: id,
+          status: DataMartStatus.PUBLISHED,
+          description: null,
+          fieldCount: 1,
+          qualitySummary: buildQualitySummary(),
+          dataLastUpdated: null,
+        }))}
+        edges={[
+          {
+            id: 'r1',
+            relationshipIds: ['r1'],
+            sourceId: 'orders',
+            targetId: 'customers',
+            bidirectional: false,
+            joinNotConfigured: false,
+            joinConditions: [{ sourceFieldName: 'customer_id', targetFieldName: 'id' }],
+          },
+        ]}
+        searchQuery=''
+        onOpenDataMart={vi.fn()}
+        onOpenQuality={vi.fn()}
+        onRunQuality={vi.fn().mockResolvedValue(undefined)}
+        selectedRelationshipId={selectedRelationshipId}
+        onSelectRelationship={vi.fn()}
+      />
+    );
+    const renderReady = async () => {
+      const view = render(renderCanvas(null));
+      await waitFor(() => {
+        expect(reactFlow.latestProps?.edges).toHaveLength(1);
+      });
+      return view;
+    };
+
+    it('leaves the canvas alone while either card is at least half in view', async () => {
+      // The 800 px pane shows the left half of Customers and nothing of Orders.
+      placeCards({ orders: card(-900), customers: card(700) });
+      const { rerender } = await renderReady();
+
+      rerender(renderCanvas('r1'));
+
+      expect(reactFlow.setCenter).not.toHaveBeenCalled();
+    });
+
+    it('does not count a sliver of a card at the edge as in view', async () => {
+      // Only the left 20 px of Customers show, so it pans to it: the nearer card.
+      placeCards({ orders: card(-3000), customers: card(780) });
+      const { rerender } = await renderReady();
+
+      rerender(renderCanvas('r1'));
+
+      expect(reactFlow.setCenter).toHaveBeenCalledWith(880, 150, { zoom: 1, duration: 300 });
+    });
+
+    it('pans to both cards, at the same zoom, when they fit together', async () => {
+      placeCards({ orders: card(1000), customers: card(1300) });
+      reactFlow.getViewport.mockReturnValue({ x: 0, y: 0, zoom: 1 });
+      const { rerender } = await renderReady();
+
+      rerender(renderCanvas('r1'));
+
+      expect(reactFlow.setCenter).toHaveBeenCalledWith(1250, 150, { zoom: 1, duration: 300 });
+    });
+
+    it('pans to the card nearer the view when the two do not fit together', async () => {
+      placeCards({ orders: card(-3000), customers: card(1000) });
+      const { rerender } = await renderReady();
+
+      rerender(renderCanvas('r1'));
+
+      expect(reactFlow.setCenter).toHaveBeenCalledWith(1100, 150, { zoom: 1, duration: 300 });
+    });
+
+    it('checks again on a resize, unless the user has moved the canvas since the pick', async () => {
+      placeCards({ orders: card(1000), customers: card(1300) });
+      const { rerender } = await renderReady();
+      rerender(renderCanvas('r1'));
+      expect(reactFlow.setCenter).toHaveBeenCalledTimes(1);
+
+      // The sheet slides in and the pane narrows: checked again.
+      reactFlow.store.width = 700;
+      rerender(renderCanvas('r1'));
+      expect(reactFlow.setCenter).toHaveBeenCalledTimes(2);
+
+      // The user pans; a later resize leaves their view alone.
+      act(() => {
+        reactFlow.latestProps?.onMoveStart?.(new MouseEvent('mousedown'));
+      });
+      reactFlow.store.width = 650;
+      rerender(renderCanvas('r1'));
+      expect(reactFlow.setCenter).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("opens a relationship picked in a card's list and drops the card selection", async () => {
+    const onSelectRelationship = vi.fn();
+    render(
+      <ModelCanvas
+        nodes={['orders', 'customers'].map(id => ({
+          id,
+          title: id,
+          status: DataMartStatus.PUBLISHED,
+          description: null,
+          fieldCount: 1,
+          qualitySummary: buildQualitySummary(),
+          dataLastUpdated: null,
+        }))}
+        edges={[
+          {
+            id: 'r1',
+            relationshipIds: ['r1'],
+            sourceId: 'orders',
+            targetId: 'customers',
+            bidirectional: false,
+            joinNotConfigured: false,
+            joinConditions: [{ sourceFieldName: 'customer_id', targetFieldName: 'id' }],
+          },
+        ]}
+        searchQuery=''
+        onOpenDataMart={vi.fn()}
+        onOpenQuality={vi.fn()}
+        onRunQuality={vi.fn().mockResolvedValue(undefined)}
+        onSelectRelationship={onSelectRelationship}
+      />
+    );
+    await waitFor(() => {
+      expect(reactFlow.latestProps?.nodes).toHaveLength(2);
+    });
+    act(() => {
+      reactFlow.latestProps?.onNodeClick?.(null, { id: 'orders' });
+    });
+
+    act(() => {
+      reactFlow.latestProps?.nodes?.[0].data?.onOpenRelationship?.('r1', { viaKeyboard: true });
+    });
+
+    // A keyboard pick says so, so focus can follow into the sheet.
+    expect(onSelectRelationship).toHaveBeenLastCalledWith('r1', { viaKeyboard: true });
+    expect(reactFlow.latestProps?.nodes?.some(node => node.selected)).toBe(false);
+  });
+
+  it('keeps the viewport when only the join fields of a relationship change', async () => {
+    const nodes = ['orders', 'customers'].map(id => ({
+      id,
+      title: id,
+      status: DataMartStatus.PUBLISHED,
+      description: null,
+      fieldCount: 1,
+      qualitySummary: buildQualitySummary(),
+      dataLastUpdated: null,
+      relationshipCount: 1,
+      relationships: [
+        {
+          id: 'r1',
+          direction: 'outgoing' as const,
+          otherDataMartId: 'customers',
+          otherTitle: 'customers',
+          joinFields: [{ field: 'customer_id', otherField: 'id' }],
+        },
+      ],
+    }));
+    const edge = (targetFieldName: string) => ({
+      id: 'r1',
+      relationshipIds: ['r1'],
+      sourceId: 'orders',
+      targetId: 'customers',
+      bidirectional: false,
+      joinNotConfigured: false,
+      joinConditions: [{ sourceFieldName: 'customer_id', targetFieldName }],
+    });
+    const renderCanvas = (targetFieldName: string) => (
+      <ModelCanvas
+        nodes={nodes.map(node => ({
+          ...node,
+          relationships: node.relationships.map(relationship => ({
+            ...relationship,
+            joinFields: [{ field: 'customer_id', otherField: targetFieldName }],
+          })),
+        }))}
+        edges={[edge(targetFieldName)]}
+        searchQuery=''
+        onOpenDataMart={vi.fn()}
+        onOpenQuality={vi.fn()}
+        onRunQuality={vi.fn().mockResolvedValue(undefined)}
+      />
+    );
+    const { rerender } = render(renderCanvas('id'));
+    await waitFor(() => {
+      expect(reactFlow.fitView).toHaveBeenCalledTimes(1);
+    });
+
+    // A save in the relationship sheet refetches the model with the new join fields.
+    const positionsBefore = reactFlow.latestProps?.nodes?.map(node => node.position);
+    rerender(renderCanvas('customer_key'));
+    await waitFor(() => {
+      expect(
+        reactFlow.latestProps?.nodes?.[0].data?.relationships?.[0].joinFields[0].otherField
+      ).toBe('customer_key');
+    });
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    expect(reactFlow.fitView).toHaveBeenCalledTimes(1);
+    // The cards stay put too: no new layout that could move the arrow being edited.
+    expect(layout.runDagreLayout).toHaveBeenCalledTimes(1);
+    expect(reactFlow.latestProps?.nodes?.map(node => node.position)).toEqual(positionsBefore);
+  });
+
+  it('keeps the viewport when a two-headed arrow splits, and refits once other cards connect', async () => {
+    const nodes = ['orders', 'customers', 'sessions'].map(id => ({
+      id,
+      title: id,
+      status: DataMartStatus.PUBLISHED,
+      description: null,
+      fieldCount: 1,
+      qualitySummary: buildQualitySummary(),
+      dataLastUpdated: null,
+    }));
+    const arrow = (
+      id: string,
+      relationshipIds: string[],
+      sourceId: string,
+      targetId: string,
+      bidirectional = false
+    ) => ({
+      id,
+      relationshipIds,
+      sourceId,
+      targetId,
+      bidirectional,
+      joinNotConfigured: false,
+      joinConditions: [{ sourceFieldName: 'customer_id', targetFieldName: 'id' }],
+    });
+    const renderCanvas = (edges: ReturnType<typeof arrow>[]) => (
+      <ModelCanvas
+        nodes={nodes}
+        edges={edges}
+        searchQuery=''
+        onOpenDataMart={vi.fn()}
+        onOpenQuality={vi.fn()}
+        onRunQuality={vi.fn().mockResolvedValue(undefined)}
+      />
+    );
+    const { rerender } = render(
+      renderCanvas([arrow('r1+r2', ['r1', 'r2'], 'orders', 'customers', true)])
+    );
+    await waitFor(() => {
+      expect(reactFlow.fitView).toHaveBeenCalledTimes(1);
+    });
+
+    // A join fields edit broke the mirror: the same two cards, now joined by two arrows.
+    rerender(
+      renderCanvas([
+        arrow('r1', ['r1'], 'orders', 'customers'),
+        arrow('r2', ['r2'], 'customers', 'orders'),
+      ])
+    );
+    await waitFor(() => {
+      expect(reactFlow.latestProps?.edges).toHaveLength(2);
+    });
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    expect(reactFlow.fitView).toHaveBeenCalledTimes(1);
+    expect(layout.runDagreLayout).toHaveBeenCalledTimes(1);
+
+    rerender(
+      renderCanvas([
+        arrow('r1', ['r1'], 'orders', 'customers'),
+        arrow('r2', ['r2'], 'customers', 'orders'),
+        arrow('r3', ['r3'], 'sessions', 'customers'),
+      ])
+    );
+    await waitFor(() => {
+      expect(reactFlow.fitView).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('re-flows the layout when the active algorithm is picked again, dropping saved positions', async () => {

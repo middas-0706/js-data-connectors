@@ -9,7 +9,7 @@ import type {
   DataMartRelationship,
   RelationshipGraph,
 } from '../../../shared/types/relationship.types';
-import type { SourceEntry } from './RelationshipAccordionItem';
+import type { SourceEntry } from './source-entries';
 import { DataMartRelationshipsContent } from './DataMartRelationshipsContent';
 import { dataMartRelationshipService } from '../../../shared/services/data-mart-relationship.service';
 import { BLENDABLE_SCHEMA_QUERY_KEY } from '../../../shared/hooks/blendable-schema-query-key';
@@ -26,7 +26,10 @@ interface CanvasStubProps {
 
 interface AccordionStubProps {
   row: { relationship: DataMartRelationship; rowKey: string };
-  onRelationshipUpdated: (updated: DataMartRelationship) => void;
+  onRelationshipUpdated: (
+    updated: DataMartRelationship,
+    context: { afterUnmount: boolean }
+  ) => void;
   onRelationshipDescriptionSaved: (updated: DataMartRelationship) => void;
   onDescriptionOverrideChange: (source: SourceEntry, description: string) => void;
 }
@@ -383,10 +386,12 @@ describe('DataMartRelationshipsContent config saves', () => {
     });
 
     saveDescription('first');
-    expect(service.updateBlendedFieldsConfig).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(service.updateBlendedFieldsConfig).toHaveBeenCalledTimes(1);
+    });
 
     // Two more edits land while the first PUT is still open — each one carries the whole
-    // config, so the middle one is dropped rather than queued behind the newest.
+    // config, so the middle one is dropped rather than sent before the newest.
     saveDescription('second');
     saveDescription('third');
     expect(service.updateBlendedFieldsConfig).toHaveBeenCalledTimes(1);
@@ -399,8 +404,11 @@ describe('DataMartRelationshipsContent config saves', () => {
       expect(service.updateBlendedFieldsConfig).toHaveBeenCalledTimes(2);
     });
     expect(savedDescriptions()).toEqual(['first', 'third']);
-    // The superseded response must not be applied as the saved state.
-    expect(harness.syncDataMartFromResponse).toHaveBeenCalledTimes(1);
+    // Each answered save is applied as the saved state, so a failure of a later one falls back to
+    // it rather than to the config before both.
+    await waitFor(() => {
+      expect(harness.syncDataMartFromResponse).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('warns and stops showing the edit as saved when the request fails', async () => {
@@ -606,7 +614,7 @@ describe('DataMartRelationshipsContent relationship saves', () => {
     const reload = deferred<RelationshipGraph>();
     service.getRelationshipGraph.mockReturnValueOnce(reload.promise);
     act(() => {
-      alpha.onRelationshipUpdated({ ...alpha.row.relationship });
+      alpha.onRelationshipUpdated({ ...alpha.row.relationship }, { afterUnmount: false });
     });
     expect(service.getRelationshipGraph).toHaveBeenCalledTimes(2);
 
@@ -629,12 +637,36 @@ describe('DataMartRelationshipsContent relationship saves', () => {
     const alpha = harness.accordionPropsByRowKey.get('alpha')!;
 
     act(() => {
-      alpha.onRelationshipUpdated({ ...alpha.row.relationship, targetAlias: 'alpha' });
+      alpha.onRelationshipUpdated(
+        { ...alpha.row.relationship, targetAlias: 'alpha' },
+        { afterUnmount: false }
+      );
     });
 
     await waitFor(() => {
       expect(service.getRelationshipGraph).toHaveBeenCalledTimes(2);
     });
     expect(harness.toast.success).toHaveBeenCalledWith('Relationship updated');
+  });
+
+  it('reloads behind the rows after a Join Settings save sent as its row closed', async () => {
+    await renderRows();
+    const alpha = harness.accordionPropsByRowKey.get('alpha')!;
+    const reload = deferred<RelationshipGraph>();
+    service.getRelationshipGraph.mockReturnValueOnce(reload.promise);
+
+    // The row collapsed, or its tab changed, inside the typing pause; the save went out after.
+    act(() => {
+      alpha.onRelationshipUpdated({ ...alpha.row.relationship }, { afterUnmount: true });
+    });
+
+    expect(service.getRelationshipGraph).toHaveBeenCalledTimes(2);
+    // No skeleton in the meantime: the rows stay mounted, with whatever is expanded.
+    expect(screen.getAllByTestId('relationship-row')).toHaveLength(2);
+    await act(async () => {
+      reload.resolve(harness.graph);
+      await Promise.resolve();
+    });
+    expect(screen.getAllByTestId('relationship-row')).toHaveLength(2);
   });
 });

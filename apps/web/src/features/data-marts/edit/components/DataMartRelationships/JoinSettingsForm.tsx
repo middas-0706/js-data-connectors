@@ -50,6 +50,17 @@ function buildJoinSettingsFormSchema(siblingAliasesRef: { current: Set<string> }
 
 type JoinSettingsFormValues = z.infer<ReturnType<typeof buildJoinSettingsFormSchema>>;
 
+/** How a Join Settings save reached the server. */
+export interface JoinSettingsSaveContext {
+  /** Sent as the form unmounted — the panel closed or the row collapsed mid-pause. */
+  afterUnmount: boolean;
+}
+
+interface JoinSettingsSavePayload {
+  targetAlias?: string;
+  joinConditions?: JoinSettingsFormValues['joinConditions'];
+}
+
 interface FlatField {
   name: string;
   type: string;
@@ -115,7 +126,7 @@ interface JoinSettingsFormProps {
    * Renders an informational banner with a link to the parent.
    */
   inheritedFrom?: { id: string; title: string } | null;
-  onSaved: (updated: DataMartRelationship) => void;
+  onSaved: (updated: DataMartRelationship, context: JoinSettingsSaveContext) => void;
 }
 
 export function JoinSettingsForm({
@@ -172,13 +183,22 @@ export function JoinSettingsForm({
   const relationshipRef = useRef(relationship);
   relationshipRef.current = relationship;
   const savedJoinConditionsKey = JSON.stringify(relationship.joinConditions);
+  const resetRelationshipIdRef = useRef<string | null>(null);
   useEffect(() => {
     const current = relationshipRef.current;
-    form.reset(getInitialDefaults(current));
     const snapshot = {
       targetAlias: current.targetAlias,
       joinConditionsKey: JSON.stringify(current.joinConditions),
     };
+    // The parent passing back what this form just saved: the form holds those values already,
+    // or newer ones typed while the save was on the wire, which a reset would wipe.
+    const isOwnSave =
+      resetRelationshipIdRef.current === current.id &&
+      snapshot.targetAlias === lastSavedRef.current.targetAlias &&
+      snapshot.joinConditionsKey === lastSavedRef.current.joinConditionsKey;
+    resetRelationshipIdRef.current = current.id;
+    if (isOwnSave) return;
+    form.reset(getInitialDefaults(current));
     lastSavedRef.current = snapshot;
     lastAttemptedRef.current = snapshot;
   }, [relationship.id, relationship.targetAlias, savedJoinConditionsKey, form]);
@@ -228,9 +248,9 @@ export function JoinSettingsForm({
   const debouncedAlias = useDebounce(watchedAlias, 800);
   const debouncedJoinKey = useDebounce(watchedJoinKey, 800);
 
-  useEffect(() => {
-    if (readOnly || isSaving) return;
-
+  // What a save of these values sends: only what changed since the last save or attempt, and
+  // only what is valid. Null when there is nothing to send.
+  const buildSavePayload = (alias: string, joinKey: string): JoinSettingsSavePayload | null => {
     const joinConditions = form.getValues('joinConditions');
     const hasAliasError = !!form.formState.errors.targetAlias;
     const joinsAreComplete =
@@ -238,33 +258,34 @@ export function JoinSettingsForm({
       joinConditions.every(jc => jc.sourceFieldName && jc.targetFieldName);
 
     const aliasIsNew =
-      debouncedAlias !== lastSavedRef.current.targetAlias &&
-      debouncedAlias !== lastAttemptedRef.current.targetAlias;
+      alias !== lastSavedRef.current.targetAlias && alias !== lastAttemptedRef.current.targetAlias;
     const joinsAreNew =
-      debouncedJoinKey !== lastSavedRef.current.joinConditionsKey &&
-      debouncedJoinKey !== lastAttemptedRef.current.joinConditionsKey;
+      joinKey !== lastSavedRef.current.joinConditionsKey &&
+      joinKey !== lastAttemptedRef.current.joinConditionsKey;
 
-    const payload: {
-      targetAlias?: string;
-      joinConditions?: JoinSettingsFormValues['joinConditions'];
-    } = {};
+    const payload: JoinSettingsSavePayload = {};
     if (aliasIsNew && !hasAliasError) {
-      payload.targetAlias = debouncedAlias;
+      payload.targetAlias = alias;
     }
     if (joinsAreNew && joinsAreComplete && !hasTypeMismatch) {
       payload.joinConditions = joinConditions;
     }
-    if (Object.keys(payload).length === 0) return;
+    return Object.keys(payload).length > 0 ? payload : null;
+  };
 
+  const inFlightSaveRef = useRef<Promise<void> | null>(null);
+  const sendSave = (
+    payload: JoinSettingsSavePayload,
+    joinKey: string,
+    context: JoinSettingsSaveContext = { afterUnmount: false }
+  ): Promise<void> => {
     lastAttemptedRef.current = {
       targetAlias: payload.targetAlias ?? lastAttemptedRef.current.targetAlias,
       joinConditionsKey: payload.joinConditions
-        ? debouncedJoinKey
+        ? joinKey
         : lastAttemptedRef.current.joinConditionsKey,
     };
-    setIsSaving(true);
-
-    dataMartRelationshipService
+    const request = dataMartRelationshipService
       .updateRelationship(dataMartId, relationship.id, payload, {
         skipErrorToast: true,
         skipLoadingIndicator: true,
@@ -274,16 +295,28 @@ export function JoinSettingsForm({
           targetAlias: updated.targetAlias,
           joinConditionsKey: JSON.stringify(updated.joinConditions),
         };
-        onSaved(updated);
+        onSaved(updated, context);
       })
       .catch(() => {
         toast.error('Failed to save join settings', {
           id: `join-save-error-${relationship.id}`,
         });
-      })
-      .finally(() => {
-        setIsSaving(false);
       });
+    inFlightSaveRef.current = request;
+    return request;
+  };
+
+  useEffect(() => {
+    if (readOnly || isSaving) return;
+    const payload = buildSavePayload(debouncedAlias, debouncedJoinKey);
+    if (!payload) return;
+    setIsSaving(true);
+    void sendSave(payload, debouncedJoinKey).finally(() => {
+      setIsSaving(false);
+    });
+    // The payload helpers read the latest form values and refs; as dependencies they would
+    // re-run this on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     debouncedAlias,
     debouncedJoinKey,
@@ -295,6 +328,27 @@ export function JoinSettingsForm({
     onSaved,
     form,
   ]);
+
+  // Closing the panel, or collapsing the row, inside the typing pause would otherwise drop the
+  // change. It waits for a save still on the wire, so the two cannot land out of order.
+  const saveOnUnmountRef = useRef<() => void>(() => undefined);
+  saveOnUnmountRef.current = () => {
+    if (readOnly) return;
+    const joinKey = JSON.stringify(form.getValues('joinConditions'));
+    const payload = buildSavePayload(form.getValues('targetAlias'), joinKey);
+    if (!payload) return;
+    const send = () => {
+      void sendSave(payload, joinKey, { afterUnmount: true });
+    };
+    if (inFlightSaveRef.current) void inFlightSaveRef.current.then(send);
+    else send();
+  };
+  useEffect(
+    () => () => {
+      saveOnUnmountRef.current();
+    },
+    []
+  );
 
   return (
     <div className='flex flex-col gap-4 p-4'>

@@ -680,6 +680,12 @@ Once the OWOX server is connected, just ask your assistant in plain language. Yo
 
 ## Troubleshooting
 
+### A tool reports `Structured content does not match the tool's output schema`
+
+Your client may be validating a response against a tool schema cached before a server update.
+Refresh the server's tool list or reconnect the MCP server (in Claude Code, use `/mcp`).
+Then retry the tool call.
+
 ### Requests return 401 Unauthorized
 
 The MCP server rejects a request with `401` in these cases. Your AI client may surface these as a generic "couldn't connect" or "authorization expired" message rather than the exact text below:

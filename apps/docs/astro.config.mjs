@@ -29,21 +29,36 @@ export default defineConfig({
       ],
       customCss: ['./src/styles/custom.css'],
       components: {
+        Footer: './src/components/starlight/Footer.astro',
         PageFrame: './src/components/starlight/PageFrame.astro',
         PageSidebar: './src/components/starlight/PageSidebar.astro',
+        PageTitle: './src/components/starlight/PageTitle.astro',
       },
-      head: gtmId
-        ? [
-            {
-              tag: 'script',
-              content: `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+      head: [
+        // Hides the OWOX Cloud CTA for existing customers: links from the app and its
+        // notification emails carry one of these utm_source values. Runs before paint,
+        // so the CTA never flashes.
+        {
+          tag: 'script',
+          content: `(function(){try{var q=new URLSearchParams(location.search),r='';
+var s=['owox_data_marts','owox-data-marts','app_owox_com','community_edition','notifications'];
+try{r=new URL(document.referrer).hostname}catch(e){}
+if(s.includes(q.get('utm_source'))||r==='app.owox.com'||r==='platform.owox.com'){localStorage.setItem('owox-app-user','1')}
+if(localStorage.getItem('owox-app-user')==='1'){document.documentElement.classList.add('owox-app-user')}}catch(e){}})();`,
+        },
+        ...(gtmId
+          ? [
+              {
+                tag: 'script',
+                content: `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
 new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
 j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
 })(window,document,'script','dataLayer','${gtmId}');`,
-            },
-          ]
-        : [],
+              },
+            ]
+          : []),
+      ],
       sidebar: [
         { label: 'Intro', link: '/' },
         {

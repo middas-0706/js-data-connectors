@@ -94,9 +94,9 @@ var ordersFields = {
     'graphqlPath': 'discountCodes'
   },
   'discountApplications': {
-    'description': 'All discount applications (codes, automatic, manual) as JSON array.',
+    'description': 'All discount applications (codes, automatic, manual, script) as JSON array, ordered by index. Shipping discounts allocate to shipping lines, not to lineItems discountAllocations.',
     'type': DATA_TYPES.STRING,
-    'graphqlPath': 'discountApplications(first: 20) { nodes { allocationMethod targetSelection targetType value { ... on MoneyV2 { amount currencyCode } ... on PricingPercentageValue { percentage } } ... on DiscountCodeApplication { code } ... on AutomaticDiscountApplication { title } ... on ManualDiscountApplication { title description } } }'
+    'graphqlPath': 'discountApplications(first: 20) { nodes { index __typename allocationMethod targetSelection targetType value { ... on MoneyV2 { amount currencyCode } ... on PricingPercentageValue { percentage } } ... on DiscountCodeApplication { code } ... on AutomaticDiscountApplication { title } ... on ManualDiscountApplication { title description } ... on ScriptDiscountApplication { title } } }'
   },
   'totalRefunded': {
     'description': 'The total amount refunded.',
@@ -238,10 +238,245 @@ var ordersFields = {
     'type': DATA_TYPES.NUMBER,
     'graphqlPath': 'currentTotalTaxSet { shopMoney { amount } }'
   },
-  'lineItems': {
-    'description': 'The line items in the order as JSON array.',
+  'number': {
+    'description': "The order number used to generate the order name (with the shop's order number prefix/suffix). Not guaranteed to be unique.",
+    'type': DATA_TYPES.INTEGER,
+    'graphqlPath': 'number'
+  },
+  'confirmationNumber': {
+    'description': 'A customer-facing order identifier, shown in some surfaces instead of the sequential order name. Not guaranteed to be unique.',
     'type': DATA_TYPES.STRING,
-    'graphqlPath': 'lineItems(first: 250) { nodes { id name title sku vendor quantity originalUnitPriceSet { shopMoney { amount } } discountedUnitPriceSet { shopMoney { amount } } } }'
+    'graphqlPath': 'confirmationNumber'
+  },
+  'legacyResourceId': {
+    'description': 'The ID of the corresponding resource in the REST Admin API.',
+    'type': DATA_TYPES.STRING,
+    'graphqlPath': 'legacyResourceId'
+  },
+  'test': {
+    'description': 'Whether the order was placed in test mode.',
+    'type': DATA_TYPES.BOOLEAN,
+    'graphqlPath': 'test'
+  },
+  'edited': {
+    'description': 'Whether the order has had any edits applied after creation.',
+    'type': DATA_TYPES.BOOLEAN,
+    'graphqlPath': 'edited'
+  },
+  'originalTotalPrice': {
+    'description': 'The total price of the order at the time it was created.',
+    'type': DATA_TYPES.NUMBER,
+    'graphqlPath': 'originalTotalPriceSet { shopMoney { amount } }'
+  },
+  'currentTotalPrice': {
+    'description': 'The total price of the order, after returns.',
+    'type': DATA_TYPES.NUMBER,
+    'graphqlPath': 'currentTotalPriceSet { shopMoney { amount } }'
+  },
+  'netPayment': {
+    'description': 'The net payment for the order (total received minus total refunded).',
+    'type': DATA_TYPES.NUMBER,
+    'graphqlPath': 'netPaymentSet { shopMoney { amount } }'
+  },
+  'totalReceived': {
+    'description': 'The total amount received from the customer before returns.',
+    'type': DATA_TYPES.NUMBER,
+    'graphqlPath': 'totalReceivedSet { shopMoney { amount } }'
+  },
+  'totalCapturable': {
+    'description': "The authorized amount that hasn't been captured yet.",
+    'type': DATA_TYPES.NUMBER,
+    'graphqlPath': 'totalCapturableSet { shopMoney { amount } }'
+  },
+  'totalTipReceived': {
+    'description': 'The sum of all tip amounts for the order.',
+    'type': DATA_TYPES.NUMBER,
+    'graphqlPath': 'totalTipReceivedSet { shopMoney { amount } }'
+  },
+  'currentSubtotalPrice': {
+    'description': 'The subtotal price of the order, after returns and refunds.',
+    'type': DATA_TYPES.NUMBER,
+    'graphqlPath': 'currentSubtotalPriceSet { shopMoney { amount } }'
+  },
+  'cartDiscountAmount': {
+    'description': 'The total order-level (cart) discount amount applied at the time the order was created. Does not include line-level discounts.',
+    'type': DATA_TYPES.NUMBER,
+    'graphqlPath': 'cartDiscountAmountSet { shopMoney { amount } }'
+  },
+  'currentCartDiscountAmount': {
+    'description': 'The current order-level (cart) discount amount after returns, refunds, order edits and cancellations. Does not include line-level discounts.',
+    'type': DATA_TYPES.NUMBER,
+    'graphqlPath': 'currentCartDiscountAmountSet { shopMoney { amount } }'
+  },
+  'currentShippingPrice': {
+    'description': 'The current shipping price, after refunds and discounts.',
+    'type': DATA_TYPES.NUMBER,
+    'graphqlPath': 'currentShippingPriceSet { shopMoney { amount } }'
+  },
+  'totalRefundedShipping': {
+    'description': 'The total amount of shipping that was refunded.',
+    'type': DATA_TYPES.NUMBER,
+    'graphqlPath': 'totalRefundedShippingSet { shopMoney { amount } }'
+  },
+  'currentTotalDuties': {
+    'description': 'The current total import duties for the order, after returns or modifications.',
+    'type': DATA_TYPES.NUMBER,
+    'graphqlPath': 'currentTotalDutiesSet { shopMoney { amount } }'
+  },
+  'originalTotalDuties': {
+    'description': 'The total import duties calculated when the order was created.',
+    'type': DATA_TYPES.NUMBER,
+    'graphqlPath': 'originalTotalDutiesSet { shopMoney { amount } }'
+  },
+  'currentTotalAdditionalFees': {
+    'description': 'The current total of all additional fees for the order.',
+    'type': DATA_TYPES.NUMBER,
+    'graphqlPath': 'currentTotalAdditionalFeesSet { shopMoney { amount } }'
+  },
+  'originalTotalAdditionalFees': {
+    'description': 'The total of all additional fees calculated when the order was created.',
+    'type': DATA_TYPES.NUMBER,
+    'graphqlPath': 'originalTotalAdditionalFeesSet { shopMoney { amount } }'
+  },
+  'refundDiscrepancy': {
+    'description': 'The difference between the suggested and the actual refunded amount. Positive values favor the merchant, negative values favor the customer.',
+    'type': DATA_TYPES.NUMBER,
+    'graphqlPath': 'refundDiscrepancySet { shopMoney { amount } }'
+  },
+  'presentmentCurrencyCode': {
+    'description': 'The currency the customer used when placing the order. Amount fields in this table are in the shop currency (currencyCode).',
+    'type': DATA_TYPES.STRING,
+    'graphqlPath': 'presentmentCurrencyCode'
+  },
+  'unpaid': {
+    'description': 'Whether no payments have been made for the order.',
+    'type': DATA_TYPES.BOOLEAN,
+    'graphqlPath': 'unpaid'
+  },
+  'refundable': {
+    'description': 'Whether the order can be refunded based on its payment transactions.',
+    'type': DATA_TYPES.BOOLEAN,
+    'graphqlPath': 'refundable'
+  },
+  'capturable': {
+    'description': 'Whether an authorized payment on the order can be captured.',
+    'type': DATA_TYPES.BOOLEAN,
+    'graphqlPath': 'capturable'
+  },
+  'canMarkAsPaid': {
+    'description': 'Whether the order can be manually marked as paid.',
+    'type': DATA_TYPES.BOOLEAN,
+    'graphqlPath': 'canMarkAsPaid'
+  },
+  'paymentGatewayNames': {
+    'description': 'The names of all payment gateways used for the order, comma-separated.',
+    'type': DATA_TYPES.STRING,
+    'graphqlPath': 'paymentGatewayNames'
+  },
+  'estimatedTaxes': {
+    'description': 'Whether taxes on the order are estimated.',
+    'type': DATA_TYPES.BOOLEAN,
+    'graphqlPath': 'estimatedTaxes'
+  },
+  'fulfillable': {
+    'description': 'Whether the order has any line items that can be fulfilled.',
+    'type': DATA_TYPES.BOOLEAN,
+    'graphqlPath': 'fulfillable'
+  },
+  'requiresShipping': {
+    'description': 'Whether the order requires physical shipping.',
+    'type': DATA_TYPES.BOOLEAN,
+    'graphqlPath': 'requiresShipping'
+  },
+  'subtotalLineItemsQuantity': {
+    'description': 'The sum of quantities for all line items contributing to the subtotal.',
+    'type': DATA_TYPES.INTEGER,
+    'graphqlPath': 'subtotalLineItemsQuantity'
+  },
+  'currentSubtotalLineItemsQuantity': {
+    'description': 'The current sum of quantities for all line items contributing to the subtotal, after returns.',
+    'type': DATA_TYPES.INTEGER,
+    'graphqlPath': 'currentSubtotalLineItemsQuantity'
+  },
+  'currentTotalWeight': {
+    'description': 'The total weight of the order in grams, after returns and refunds.',
+    'type': DATA_TYPES.NUMBER,
+    'graphqlPath': 'currentTotalWeight'
+  },
+  'restockable': {
+    'description': 'Whether any line items on the order can be restocked into inventory.',
+    'type': DATA_TYPES.BOOLEAN,
+    'graphqlPath': 'restockable'
+  },
+  'canNotifyCustomer': {
+    'description': 'Whether order notifications can be sent to the customer.',
+    'type': DATA_TYPES.BOOLEAN,
+    'graphqlPath': 'canNotifyCustomer'
+  },
+  'statusPageUrl': {
+    'description': "The URL where the customer can check the order's current status.",
+    'type': DATA_TYPES.STRING,
+    'graphqlPath': 'statusPageUrl'
+  },
+  'hasTimelineComment': {
+    'description': 'Whether the merchant added a timeline comment to the order.',
+    'type': DATA_TYPES.BOOLEAN,
+    'graphqlPath': 'hasTimelineComment'
+  },
+  'merchantEditable': {
+    'description': 'Whether the order can be edited by the merchant.',
+    'type': DATA_TYPES.BOOLEAN,
+    'graphqlPath': 'merchantEditable'
+  },
+  'merchantEditableErrors': {
+    'description': "Reasons why the order can't be edited, comma-separated. Empty when the order is editable.",
+    'type': DATA_TYPES.STRING,
+    'graphqlPath': 'merchantEditableErrors'
+  },
+  'dutiesIncluded': {
+    'description': 'Whether duties are included in the subtotal price of the order.',
+    'type': DATA_TYPES.BOOLEAN,
+    'graphqlPath': 'dutiesIncluded'
+  },
+  'poNumber': {
+    'description': 'The purchase order number associated with the order.',
+    'type': DATA_TYPES.STRING,
+    'graphqlPath': 'poNumber'
+  },
+  'sourceIdentifier': {
+    'description': 'A unique POS or third-party order identifier.',
+    'type': DATA_TYPES.STRING,
+    'graphqlPath': 'sourceIdentifier'
+  },
+  'registeredSourceUrl': {
+    'description': 'The URL of the source the order originated from.',
+    'type': DATA_TYPES.STRING,
+    'graphqlPath': 'registeredSourceUrl'
+  },
+  'productNetwork': {
+    'description': 'Whether the customer purchased items from other stores in the same network.',
+    'type': DATA_TYPES.BOOLEAN,
+    'graphqlPath': 'productNetwork'
+  },
+  'customerAcceptsMarketing': {
+    'description': 'Whether the customer agreed to receive marketing emails at the time of purchase.',
+    'type': DATA_TYPES.BOOLEAN,
+    'graphqlPath': 'customerAcceptsMarketing'
+  },
+  'customerLocale': {
+    'description': "The customer's language and region preference at the time of purchase.",
+    'type': DATA_TYPES.STRING,
+    'graphqlPath': 'customerLocale'
+  },
+  'billingAddressMatchesShippingAddress': {
+    'description': 'Whether the billing address matches the shipping address. False when either address is missing.',
+    'type': DATA_TYPES.BOOLEAN,
+    'graphqlPath': 'billingAddressMatchesShippingAddress'
+  },
+  'lineItems': {
+    'description': 'The line items in the order as JSON array, with discount amounts and per-discount allocations (discountAllocations; join to discountApplications by index). See the connector guide for how the amounts differ.',
+    'type': DATA_TYPES.STRING,
+    'graphqlPath': 'lineItems(first: 250) { nodes { id name title sku vendor quantity currentQuantity originalUnitPriceSet { shopMoney { amount } } discountedUnitPriceSet { shopMoney { amount } } discountedUnitPriceAfterAllDiscountsSet { shopMoney { amount } } totalDiscountSet { shopMoney { amount } } discountAllocations { allocatedAmountSet { shopMoney { amount } } discountApplication { index __typename targetSelection ... on DiscountCodeApplication { code } ... on AutomaticDiscountApplication { title } ... on ManualDiscountApplication { title } ... on ScriptDiscountApplication { title } } } } }'
   },
   'shippingLines': {
     'description': 'Shipping lines as JSON array.',

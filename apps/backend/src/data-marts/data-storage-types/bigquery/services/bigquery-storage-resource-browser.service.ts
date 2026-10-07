@@ -22,6 +22,7 @@ import {
   BigQueryOAuthCredentialsSchema,
   BigQueryServiceAccountCredentialsSchema,
 } from '../schemas/bigquery-credentials.schema';
+import { flagLocationMismatches } from './bigquery-resource-location.util';
 import { applyResourceFilter, type RawTableListing } from './bigquery-sharded-tables.util';
 
 // Page size and result cap keep latency bounded on accounts with many datasets/tables.
@@ -107,7 +108,10 @@ export class BigQueryStorageResourceBrowser implements IStorageResourceBrowserPr
       `listLeafResources(${namespaceId}, ${filter ?? 'unfiltered'}): ` +
         `${rawTables.length} raw rows from BQ`
     );
-    const result = applyResourceFilter(rawTables, namespaceId, filter);
+    const result = flagLocationMismatches(
+      applyResourceFilter(rawTables, namespaceId, filter),
+      clients.location
+    );
     this.logger.debug?.(
       `listLeafResources(${namespaceId}, ${filter ?? 'unfiltered'}): ` +
         `${result.length} leaves after wildcard collapsing`
@@ -253,7 +257,9 @@ export class BigQueryStorageResourceBrowser implements IStorageResourceBrowserPr
           datasetReference?: { datasetId?: string };
         };
         const id = dataset.id ?? metadata.datasetReference?.datasetId ?? '';
-        return { id, location: dataset.location ?? metadata.location };
+        // Only the API row is trusted: `dataset.location` falls back to the client's own
+        // location (the storage's) when the row has none, which would hide a mismatch.
+        return { id, location: metadata.location };
       })
       .filter(dataset => dataset.id);
   }
@@ -261,7 +267,7 @@ export class BigQueryStorageResourceBrowser implements IStorageResourceBrowserPr
   private async listTables(
     clients: BigQueryClients,
     projectId: string,
-    datasetId: string
+    { id: datasetId, location }: GbqDatasetListing
   ): Promise<GbqTableListing[]> {
     const bq = this.cloneForProject(clients, projectId);
     const [tables] = await bq
@@ -278,7 +284,13 @@ export class BigQueryStorageResourceBrowser implements IStorageResourceBrowserPr
         const rawType = metadata.type;
         const type: 'TABLE' | 'VIEW' =
           rawType === 'VIEW' || rawType === 'MATERIALIZED_VIEW' ? 'VIEW' : 'TABLE';
-        return { id, datasetId, type, fullyQualifiedName: `${projectId}.${datasetId}.${id}` };
+        return {
+          id,
+          datasetId,
+          type,
+          fullyQualifiedName: `${projectId}.${datasetId}.${id}`,
+          location,
+        };
       })
       .filter(table => table.id);
   }
@@ -306,7 +318,7 @@ export class BigQueryStorageResourceBrowser implements IStorageResourceBrowserPr
       const settled = await Promise.allSettled(
         batch.map(dataset =>
           raceWithTimeout(
-            this.listTables(clients, projectId, dataset.id),
+            this.listTables(clients, projectId, dataset),
             GBQ_PROJECT_TABLES_PER_DATASET_TIMEOUT_MS,
             `listTables ${projectId}.${dataset.id}`
           )

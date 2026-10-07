@@ -30,8 +30,10 @@ vi.mock('next-themes', () => ({
   useTheme: () => ({ resolvedTheme: 'light' }),
 }));
 
-async function openDialog() {
-  render(<GeneratedSqlViewer reportId='report-1' dataMartId='dm-1' variant='outline-button' />);
+async function openDialog(props: { hasUnsavedSqlChanges?: boolean } = {}) {
+  render(
+    <GeneratedSqlViewer reportId='report-1' dataMartId='dm-1' variant='header-link' {...props} />
+  );
   fireEvent.click(screen.getByRole('button', { name: 'Preview SQL' }));
   await waitFor(() => {
     expect(screen.getByDisplayValue('SELECT 1')).toBeInTheDocument();
@@ -60,5 +62,46 @@ describe('GeneratedSqlViewer — read-only viewers', () => {
 
     expect(screen.getByRole('button', { name: 'Copy as Data Mart' })).toBeInTheDocument();
     expect(screen.getByTestId('sql-validator')).toBeInTheDocument();
+  });
+});
+
+describe('GeneratedSqlViewer — unsaved changes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getGeneratedSql.mockResolvedValue({ sql: 'SELECT 1', canModifySource: false });
+  });
+
+  it('says the SQL leaves out unsaved Report Columns changes', async () => {
+    await openDialog({ hasUnsavedSqlChanges: true });
+
+    expect(
+      screen.getByText(
+        'This is the SQL of the saved report. Your unsaved changes in Report Columns are not included.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('shows no unsaved-changes note without such changes', async () => {
+    await openDialog();
+
+    expect(screen.queryByText(/unsaved changes in Report Columns/)).not.toBeInTheDocument();
+  });
+});
+
+describe('GeneratedSqlViewer — load failure', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('shows an error in place of the editor instead of an endless spinner', async () => {
+    getGeneratedSql.mockRejectedValue(new Error('boom'));
+
+    render(<GeneratedSqlViewer reportId='report-1' dataMartId='dm-1' variant='header-link' />);
+    fireEvent.click(screen.getByRole('button', { name: 'Preview SQL' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the SQL');
+    expect(screen.queryByText('Generating SQL...')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Copy to Clipboard/ })).toBeDisabled();
+    expect(screen.queryByTestId('sql-validator')).not.toBeInTheDocument();
   });
 });

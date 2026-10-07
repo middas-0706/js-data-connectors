@@ -1,5 +1,5 @@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@owox/ui/components/sheet';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { UnsavedChangesConfirmationDialog } from '../../../../../../shared/components/UnsavedChangesConfirmationDialog';
 import { DataDestinationProvider } from '../../../../../data-destination';
 import type { DataDestination } from '../../../../../data-destination';
@@ -54,6 +54,7 @@ export function EmailReportEditSheet({
     handleFormDirtyChange,
     handleFormSubmitSuccess: baseHandleFormSubmitSuccess,
   } = useUnsavedGuard(onClose);
+  const [hasUnsavedSqlChanges, setHasUnsavedSqlChanges] = useState(false);
 
   const handleFormSubmitSuccess = useCallback(() => {
     const to = projectId && dataMartId ? `/ui/${projectId}/data-marts/${dataMartId}/reports` : '/';
@@ -94,7 +95,11 @@ export function EmailReportEditSheet({
             {preSelectedDestination?.title ??
               (mode === ReportFormMode.CREATE ? 'Create Report' : 'Report')}
           </SheetTitle>
-          <ReportSheetDescription mode={mode} report={initialReport}>
+          <ReportSheetDescription
+            mode={mode}
+            report={initialReport}
+            hasUnsavedSqlChanges={hasUnsavedSqlChanges}
+          >
             {mode === ReportFormMode.CREATE
               ? 'Fill in the details to create a new report'
               : 'Update details of an existing report'}
@@ -106,6 +111,7 @@ export function EmailReportEditSheet({
             initialReport={initialReport}
             mode={mode}
             onDirtyChange={handleFormDirtyChange}
+            onSqlDirtyChange={setHasUnsavedSqlChanges}
             onSubmit={handleFormSubmitSuccess}
             onCancel={handleClose}
             preSelectedDestination={preSelectedDestination}

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@owox/ui/components/sheet';
 import { UnsavedChangesConfirmationDialog } from '../../../../../../shared/components/UnsavedChangesConfirmationDialog';
 import type { DataMartReport } from '../../../shared/model/types/data-mart-report.ts';
@@ -34,6 +35,7 @@ export function LookerStudioReportEditSheet({
     handleFormDirtyChange,
     handleFormSubmitSuccess,
   } = useUnsavedGuard(onClose);
+  const [hasUnsavedSqlChanges, setHasUnsavedSqlChanges] = useState(false);
 
   useIntercomLauncher(isOpen);
 
@@ -49,7 +51,11 @@ export function LookerStudioReportEditSheet({
       <SheetContent data-testid='reportEditSheet'>
         <SheetHeader>
           <SheetTitle>{preSelectedDestination?.title ?? 'Data Studio'}</SheetTitle>
-          <ReportSheetDescription mode={mode} report={initialReport}>
+          <ReportSheetDescription
+            mode={mode}
+            report={initialReport}
+            hasUnsavedSqlChanges={hasUnsavedSqlChanges}
+          >
             {mode === ReportFormMode.CREATE
               ? 'Set up Data Mart as a data source'
               : 'Update connection details'}
@@ -61,6 +67,7 @@ export function LookerStudioReportEditSheet({
             initialReport={initialReport}
             mode={mode}
             onDirtyChange={handleFormDirtyChange}
+            onSqlDirtyChange={setHasUnsavedSqlChanges}
             onSubmit={() => {
               void onSubmitSuccess?.();
               handleFormSubmitSuccess();

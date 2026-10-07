@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { cn } from '@owox/ui/lib/utils';
 import { Editor } from '@monaco-editor/react';
 import { useTheme } from 'next-themes';
-import { Copy, FileCode2, Loader2 } from 'lucide-react';
+import { CircleAlert, Copy, FileCode2, Loader2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { Button } from '@owox/ui/components/button';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -15,12 +16,16 @@ import {
 } from '@owox/ui/components/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@owox/ui/components/tooltip';
 import { Skeleton } from '@owox/ui/components/skeleton';
+import {
+  SheetHeaderAction,
+  SheetHeaderActionButton,
+} from '@owox/ui/components/common/sheet-header-action';
 import { reportService } from '../../../reports/shared/services/report.service';
 import { useProjectRoute } from '../../../../../shared/hooks';
 import { extractApiError, type ApiError } from '../../../../../app/api';
 import SqlValidator from '../SqlValidator/SqlValidator';
 
-type GeneratedSqlViewerVariant = 'action-icon' | 'outline-button';
+export type GeneratedSqlViewerVariant = 'action-icon' | 'header-link';
 
 interface GeneratedSqlViewerProps {
   reportId: string;
@@ -33,8 +38,8 @@ interface GeneratedSqlViewerProps {
    * Visual variant of the trigger:
    * - 'action-icon' (default): ghost icon button with tooltip, intended for
    *   table row action cells.
-   * - 'outline-button': outline button with label text, intended for use
-   *   inside forms.
+   * - 'header-link': muted text button with a leading divider, matching the
+   *   Copy link button in report sheet headers.
    */
   variant?: GeneratedSqlViewerVariant;
   /**
@@ -42,6 +47,12 @@ interface GeneratedSqlViewerProps {
    * action icon variant.
    */
   reportTitle?: string;
+  /**
+   * The SQL is generated from the saved report, so unsaved edits to the
+   * report's columns and output settings are not part of it. When set, the
+   * dialog says so.
+   */
+  hasUnsavedSqlChanges?: boolean;
   className?: string;
 }
 
@@ -53,11 +64,14 @@ export function GeneratedSqlViewer({
   dataMartId,
   variant = 'action-icon',
   reportTitle,
+  hasUnsavedSqlChanges = false,
   className,
 }: GeneratedSqlViewerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [sql, setSql] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  /** Why the last load failed; replaces the editor so a failure is not mistaken for loading. */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isCopyingAsDataMart, setIsCopyingAsDataMart] = useState(false);
   /**
    * Whether the viewer has maintenance access to the source Data Mart. Reading the SQL
@@ -79,9 +93,13 @@ export function GeneratedSqlViewer({
       // source or to a joined Data Mart). Only fall back to a generic toast when there
       // is none — otherwise the specific reason gets buried under it.
       const apiError = extractApiError(error) as ApiError | undefined;
-      if (!apiError?.message?.trim()) {
+      const message = apiError?.message?.trim();
+      if (!message) {
         toast.error('Failed to load generated SQL');
       }
+      setLoadError(
+        message === undefined || message === '' ? 'Failed to load generated SQL' : message
+      );
       setSql('');
       setCanModifySource(false);
     } finally {
@@ -94,6 +112,7 @@ export function GeneratedSqlViewer({
     if (open) {
       // Always refetch on open — skip cache, show fresh SQL.
       setSql(null);
+      setLoadError(null);
       setCanModifySource(false);
       void loadSql();
     }
@@ -156,17 +175,25 @@ export function GeneratedSqlViewer({
           </TooltipContent>
         </Tooltip>
       ) : (
-        <DialogTrigger asChild>
-          <Button type='button' variant='outline' size='sm'>
-            <FileCode2 className='mr-2 h-4 w-4' />
-            Preview SQL
-          </Button>
-        </DialogTrigger>
+        <SheetHeaderAction className={className}>
+          <DialogTrigger asChild>
+            <SheetHeaderActionButton>
+              <FileCode2 className='h-3.5 w-3.5' aria-hidden='true' />
+              Preview SQL
+            </SheetHeaderActionButton>
+          </DialogTrigger>
+        </SheetHeaderAction>
       )}
 
       <DialogContent className='flex flex-col gap-4 sm:max-w-[80vw]'>
         <DialogHeader>
           <DialogTitle>Report SQL</DialogTitle>
+          {hasUnsavedSqlChanges && (
+            <DialogDescription>
+              This is the SQL of the saved report. Your unsaved changes in Report Columns are not
+              included.
+            </DialogDescription>
+          )}
         </DialogHeader>
 
         <div className='min-h-[600px]'>
@@ -177,6 +204,15 @@ export function GeneratedSqlViewer({
               <Skeleton className='h-6 w-5/6' />
               <Skeleton className='h-6 w-full' />
               <Skeleton className='h-6 w-2/3' />
+            </div>
+          ) : loadError ? (
+            <div
+              role='alert'
+              className='text-muted-foreground flex h-[600px] flex-col items-center justify-center gap-2 rounded-md border px-6 text-center'
+            >
+              <CircleAlert className='h-6 w-6' aria-hidden='true' />
+              <p className='text-foreground text-sm font-medium'>Could not load the SQL</p>
+              <p className='max-w-xl text-sm'>{loadError}</p>
             </div>
           ) : (
             <div className='overflow-hidden rounded-md border' style={{ height: '600px' }}>
@@ -201,14 +237,14 @@ export function GeneratedSqlViewer({
         </div>
 
         <DialogFooter className='sm:items-center sm:justify-between'>
-          {isLoading || !sql ? (
+          {isLoading ? (
             <div className='inline-flex h-9 items-center px-3 py-2'>
               <div className='flex h-5 items-center gap-2 text-gray-500'>
                 <Loader2 className='h-4 w-4 animate-spin' />
                 <span className='text-sm'>Generating SQL...</span>
               </div>
             </div>
-          ) : canModifySource ? (
+          ) : sql && canModifySource ? (
             <SqlValidator sql={sql} dataMartId={dataMartId} />
           ) : (
             <div />

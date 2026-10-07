@@ -5,6 +5,7 @@ import type {
   PluginResponse,
 } from './protocol';
 import { OPAQUE_ORIGIN, PLUGIN_PROTOCOL_VERSION, isPluginHello, isPluginReady } from './protocol';
+import { isValidPluginRoute } from './pluginRoute';
 
 /** Supplied by the runtime authorization track. There is deliberately no default. */
 export type FetchRuntimeToken = () => Promise<{ runtimeToken: string; expiresIn: number }>;
@@ -19,6 +20,9 @@ export interface PluginHostBridgeOptions {
   onOpenExternal: (url: string) => void;
   /** A page inside OWOX the plugin asks to go to. The host decides whether it may. */
   onNavigate: (path: string) => void;
+  onRouteChange: (route: string) => void;
+  /** A rejection declines the copy; the plugin gets a refusal without the reason. */
+  onCopyLink: (route: string | undefined) => Promise<void> | void;
   /**
    * The bridge closed the channel on its own, and the frame is now inert.
    *
@@ -51,6 +55,8 @@ const MAX_CREDENTIAL_AI_BODY_LENGTH = 2 * 1024 * 1024;
 const REFRESH_MARGIN_MS = 60_000;
 /** Everything else the backend returns is host detail the plugin has no use for. */
 const FORWARDED_RESPONSE_HEADERS = ['content-type', 'x-owox-run-id'];
+
+const HOST_ONLY_KINDS = new Set(['openExternal', 'navigate', 'route', 'copyLink']);
 
 export interface PluginHostBridge {
   dispose(): void;
@@ -321,18 +327,23 @@ export function createPluginHostBridge(options: PluginHostBridgeOptions): Plugin
       return;
     }
 
-    // These host-only actions do not occupy API admission slots. Validate their small
-    // envelopes and preserve their fire-and-forget behavior even at API capacity.
-    if (
-      isRecord(candidate) &&
-      (candidate.kind === 'openExternal' || candidate.kind === 'navigate')
-    ) {
+    // Handled before admission, so these keep working while API requests hold every slot.
+    if (isRecord(candidate) && HOST_ONLY_KINDS.has(candidate.kind as string)) {
       try {
         const request = validateRequest(candidate);
         if (request.kind === 'openExternal') {
           options.onOpenExternal(request.url);
         } else if (request.kind === 'navigate') {
           options.onNavigate(request.path);
+        } else if (request.kind === 'route') {
+          options.onRouteChange(request.path);
+        } else if (request.kind === 'copyLink') {
+          try {
+            await options.onCopyLink(request.path);
+          } catch {
+            throw forbidden('The link could not be copied');
+          }
+          reply({ id, ok: true, status: 200, headers: {}, body: null });
         }
       } catch (caught) {
         reply({ id, ok: false, error: asErrorPayload(caught) });
@@ -359,16 +370,6 @@ export function createPluginHostBridge(options: PluginHostBridgeOptions): Plugin
       requestControllers.set(request.id, requestController);
       const signal = AbortSignal.any([teardown.signal, requestController.signal]);
 
-      if (request.kind === 'openExternal') {
-        options.onOpenExternal(request.url);
-        return;
-      }
-
-      if (request.kind === 'navigate') {
-        options.onNavigate(request.path);
-        return;
-      }
-
       if (request.kind === 'credentialFetch') {
         reply(await forwardCredential(request, signal));
         return;
@@ -378,6 +379,11 @@ export function createPluginHostBridge(options: PluginHostBridgeOptions): Plugin
         const response = await forwardCredentialAi(request, signal);
         await replyAndHoldStream(response, signal);
         return;
+      }
+
+      // Host-only kinds were answered before admission; this narrows the rest to an API request.
+      if (request.kind !== 'api') {
+        throw protocolError('The request kind is not recognized');
       }
 
       // Serialize once, before currentToken, and reuse the immutable string for a 401
@@ -542,6 +548,20 @@ function validateRequest(candidate: unknown): ValidatedPluginRequest {
   if (candidate.kind === 'navigate') {
     if (typeof candidate.path !== 'string') {
       throw protocolError('The navigation path must be a string');
+    }
+    return candidate as unknown as ValidatedPluginRequest;
+  }
+
+  if (candidate.kind === 'route') {
+    if (!isValidPluginRoute(candidate.path)) {
+      throw protocolError('The plugin route is invalid');
+    }
+    return candidate as unknown as ValidatedPluginRequest;
+  }
+
+  if (candidate.kind === 'copyLink') {
+    if (candidate.path !== undefined && !isValidPluginRoute(candidate.path)) {
+      throw protocolError('The plugin route is invalid');
     }
     return candidate as unknown as ValidatedPluginRequest;
   }

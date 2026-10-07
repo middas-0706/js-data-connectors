@@ -111,6 +111,9 @@ Marts frame or if no host answers within 10 seconds.
 | `ctx.collections(name)`                    | Provides a host-managed JSON collection declared by the current plugin version.                                                                                                                                                                                                                                                                                 |
 | `ctx.ui.openExternal(url)`                 | Asks the host to open an external HTTPS address in a new tab.                                                                                                                                                                                                                                                                                                   |
 | `ctx.ui.navigate(path)`                    | Asks the host to navigate to a page inside OWOX Data Marts—for example, `/ui/${ctx.projectId}/data-marts/${id}`—in place of the plugin frame. Resolutions off the app's origin are refused.                                                                                                                                                                     |
+| `ctx.route`                                | The plugin's own route the member opened, e.g. `/dashboards/42`; `undefined` on a host without page links.                                                                                                                                                                                                                                                      |
+| `ctx.ui.setRoute(path)`                    | Tells the host which of your pages is showing, so the address in the browser is a link to it.                                                                                                                                                                                                                                                                   |
+| `ctx.ui.copyLink(path?)`                   | Asks the host to copy a link to one of your pages (the current one by default) and confirm it.                                                                                                                                                                                                                                                                  |
 | `ctx.signal`                               | Aborts when the host tears the plugin down.                                                                                                                                                                                                                                                                                                                     |
 | `ctx.userId`, `ctx.projectId`, `ctx.theme` | Provides display context without exposing tokens. The member's name and avatar are available through `ctx.owox.auth` when needed.                                                                                                                                                                                                                               |
 
@@ -126,6 +129,33 @@ body)`, `patchJson<T>(path, body)`, `deleteJson<T = void>(path)`, and `getStream
 The generic does not validate the response at runtime, so validate returned data yourself. Paths
 must be root-relative `/api/...` and are limited to 2,048 characters; unsafe or redirecting paths
 are refused.
+
+### Make pages shareable
+
+A plugin's pages are reachable at `/ui/<project>/plugins/<pluginId>/open<route>`, where `<route>` is
+your own route. Read `ctx.route` after `connect()` and show that page; call `ctx.ui.setRoute(route)`
+whenever the member moves to another page, and `ctx.ui.copyLink()` from your own Share button.
+
+- `ctx.route` is `undefined` on a host without page links — that is how you detect support; hide
+  your Share button then. A host that supports page links always sends a route, at least `/`.
+- Treat `ctx.route` as untrusted, link-supplied input: use it only to choose what to show. Never
+  start a write, a run, or a credential use from it without the member's own click, and never put
+  secrets or personal data in a route — it appears in the address bar, history, and analytics. It
+  may still carry percent-encoded sequences (e.g. `%2F`); decode deliberately.
+- A route starts with `/`, may carry `?query` and `#hash`. Its path must not contain `.` or `..`
+  segments, `\`, an empty segment, or a trailing space; control, bidi, and invisible characters are
+  refused anywhere in the route — the host refuses such a route and opens your plugin at `/`.
+  `ctx.route` is percent-encoded, as in the address, and never carries a `utm_*` parameter — one you
+  report through `setRoute` or `copyLink` is dropped the same way. A query or hash may carry a
+  backslash or a trailing space; percent-encode a bidi or zero-width character you put in a route
+  yourself, or it is refused.
+- Use `ctx.ui.setRoute` for the plugin's own pages; `ctx.ui.navigate` is for host pages.
+- Call `ctx.ui.copyLink()` from a click handler: the host copies only during the member's own
+  interaction, one link at a time.
+- The host replaces the address rather than adding history entries, so the browser's Back button
+  leaves the plugin instead of stepping through its pages.
+- A member without the plugin who opens such a link is offered the install: automatically if a
+  publication lists the plugin for them, otherwise via a banner on the page.
 
 ### Use project Credentials
 
@@ -359,10 +389,10 @@ const prefs = saved?.document ?? { compactView: false, selectedTab: 'overview' }
 
 Choose the scope based on who owns the state:
 
-| Scope | Visibility and namespace | Typical uses |
-| --- | --- | --- |
-| `member` | Private to the current member for this plugin and project. It is not shared with other project members or with the same member in another project. | Preferences, personal layouts, drafts, and last-used settings. This is the usual replacement for `localStorage`. |
-| `project` | Shared by eligible members of the project. | Shared dashboards, configuration, and other collaborative state. |
+| Scope     | Visibility and namespace                                                                                                                           | Typical uses                                                                                                     |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `member`  | Private to the current member for this plugin and project. It is not shared with other project members or with the same member in another project. | Preferences, personal layouts, drafts, and last-used settings. This is the usual replacement for `localStorage`. |
+| `project` | Shared by eligible members of the project.                                                                                                         | Shared dashboards, configuration, and other collaborative state.                                                 |
 
 Collection declarations are immutable in structure within a compatibility line. A release may add
 collections and change action mappings, but cannot remove a collection or change its name, scope,
@@ -383,11 +413,11 @@ members. OWOX checks the mapped existing action on every request. For a bound co
 
 Each operation mapping must use an action supported by the bound entity type:
 
-| Entity type | Allowed action identifiers |
-| --- | --- |
-| `data-mart` | `SEE`, `USE`, `EDIT`, `DELETE`, `CONFIGURE_SHARING`, `MANAGE_OWNERS`, `MANAGE_TRIGGERS` |
+| Entity type              | Allowed action identifiers                                                               |
+| ------------------------ | ---------------------------------------------------------------------------------------- |
+| `data-mart`              | `SEE`, `USE`, `EDIT`, `DELETE`, `CONFIGURE_SHARING`, `MANAGE_OWNERS`, `MANAGE_TRIGGERS`  |
 | `storage`, `destination` | `SEE`, `USE`, `EDIT`, `DELETE`, `CONFIGURE_SHARING`, `MANAGE_OWNERS`, `COPY_CREDENTIALS` |
-| `report` | `SEE`, `EDIT`, `DELETE`, `RUN` |
+| `report`                 | `SEE`, `EDIT`, `DELETE`, `RUN`                                                           |
 
 See [Actions and access by entity](../project/ownership-and-sharing.md#actions) for what each action
 means and which members receive it.

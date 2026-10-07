@@ -1,3 +1,4 @@
+import { Alert, AlertDescription, AlertTitle } from '@owox/ui/components/alert';
 import { Badge } from '@owox/ui/components/badge';
 import { Button } from '@owox/ui/components/button';
 import { ExternalAnchor } from '@owox/ui/components/common/external-anchor';
@@ -19,7 +20,7 @@ import {
   RefreshCw,
   Tag,
 } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useAuth } from '../../../features/idp';
 import {
@@ -33,6 +34,7 @@ import {
   usePluginManageablePublications,
   usePluginPublishing,
   usePublishableScopes,
+  useCopyLink,
   repositoryPath,
   safeHttpsUrl,
   type PluginGalleryEntry,
@@ -65,7 +67,9 @@ const UNPUBLISH_LABELS: Record<string, string> = {
  * plugin does not read as a different product. Overview is the only tab this iteration
  * has: permissions, logs and per-plugin collections are explicit non-goals.
  */
-export default function PluginDetailsPage() {
+export default function PluginDetailsPage({
+  installOnOpen = false,
+}: { installOnOpen?: boolean } = {}) {
   const { pluginId } = useParams<{ pluginId: string }>();
   const { plugin, isLoading } = usePlugin(pluginId);
   const { install, uninstall, checkNow, isInstalling, isUpdating } = usePluginActions();
@@ -73,11 +77,28 @@ export default function PluginDetailsPage() {
   const publications = usePluginManageablePublications(pluginId ?? '');
   const { publish, unpublish, isPublishing, isUnpublishing } = usePluginPublishing();
   const publishableScopes = usePublishableScopes();
+  const { copyLink, fallbackDialog } = useCopyLink();
   const { scope } = useProjectRoute();
   const { user } = useAuth();
   const navigate = useNavigate();
 
   const [confirming, setConfirming] = useState<PluginGalleryEntry | null>(null);
+
+  // A shared deep link opens the dialog once; closing it is the member's answer.
+  const offeredInstall = useRef(false);
+  /** True only while the dialog the link opened by itself shows; cancelling it leaves the link. */
+  const leaveLinkOnCancel = useRef(false);
+  useEffect(() => {
+    if (!installOnOpen || offeredInstall.current || !plugin) {
+      return;
+    }
+    offeredInstall.current = true;
+    // An unlisted plugin waits for the member to choose Install on the banner instead.
+    if (isInstallableFromLink(plugin) && plugin.visibleViaScopes.length > 0) {
+      leaveLinkOnCancel.current = true;
+      setConfirming(plugin);
+    }
+  }, [installOnOpen, plugin]);
 
   if (isLoading || !plugin) {
     return (
@@ -107,9 +128,12 @@ export default function PluginDetailsPage() {
       return;
     }
 
+    leaveLinkOnCancel.current = false;
     setConfirming(null);
   };
 
+  const offersInstallBanner =
+    installOnOpen && isInstallableFromLink(plugin) && plugin.visibleViaScopes.length === 0;
   const isInstalled = plugin.installationState === 'installed';
   const isConfiguringCredentials = isInstalled && (plugin.credentialRequirements?.length ?? 0) > 0;
   // Label / confirm path: only a live install says "Reinstall". Uninstalled looks like
@@ -197,6 +221,19 @@ export default function PluginDetailsPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align='end'>
+                <DropdownMenuItem
+                  onClick={() => {
+                    // Refused only while an earlier copy is still running.
+                    void copyLink(
+                      `${window.location.origin}${scope(`/plugins/${plugin.pluginId}`)}`
+                    ).catch(() => undefined);
+                  }}
+                >
+                  Copy link
+                </DropdownMenuItem>
+                {(canShareWithProject || publications.length > 0 || isInstalled) && (
+                  <DropdownMenuSeparator />
+                )}
                 {canShareWithProject && (
                   <DropdownMenuItem
                     disabled={isPublishing || isUnpublishing}
@@ -247,6 +284,27 @@ export default function PluginDetailsPage() {
         </nav>
 
         <div className='flex flex-col gap-4 pt-4'>
+          {offersInstallBanner && (
+            <Alert>
+              <Info />
+              <AlertTitle>Install to open this page</AlertTitle>
+              <AlertDescription>
+                <p>The link you opened points to a page inside this plugin.</p>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  className='mt-2'
+                  disabled={isInstalling}
+                  onClick={() => {
+                    setConfirming(plugin);
+                  }}
+                >
+                  Install
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+
           <CollapsibleCard collapsible name='plugin-description'>
             <CollapsibleCardHeader>
               <CollapsibleCardHeaderTitle
@@ -454,6 +512,10 @@ export default function PluginDetailsPage() {
           onOpenChange={open => {
             if (!open) {
               setConfirming(null);
+              if (leaveLinkOnCancel.current) {
+                leaveLinkOnCancel.current = false;
+                void navigate(scope(`/plugins/${confirming.pluginId}`), { replace: true });
+              }
             }
           }}
           onConfirm={credentialSelections => void installPlugin(confirming, credentialSelections)}
@@ -461,7 +523,16 @@ export default function PluginDetailsPage() {
           mode={isConfiguringCredentials ? 'configure' : 'install'}
         />
       )}
+      {fallbackDialog}
     </div>
+  );
+}
+
+function isInstallableFromLink(plugin: PluginGalleryEntry): boolean {
+  return (
+    plugin.installationState !== 'installed' &&
+    !plugin.suspended &&
+    Boolean(plugin.currentVersionId)
   );
 }
 

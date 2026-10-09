@@ -59,6 +59,9 @@ const UNPUBLISH_LABELS: Record<string, string> = {
   member: 'Unpublish for me',
 };
 
+/** The version action's tooltip and accessible name: one string, so they cannot drift. */
+const CHECK_AND_UPDATE_LABEL = 'Check and Update';
+
 /**
  * One plugin's own page.
  *
@@ -83,6 +86,12 @@ export default function PluginDetailsPage({
   const navigate = useNavigate();
 
   const [confirming, setConfirming] = useState<PluginGalleryEntry | null>(null);
+  /**
+   * Fixed when the dialog opens. A stale-version retry can bring a version without Credential
+   * requirements, which must not turn an installed plugin's Configure Credentials into
+   * "Install this plugin?".
+   */
+  const [confirmingMode, setConfirmingMode] = useState<'install' | 'configure'>('install');
 
   // A shared deep link opens the dialog once; closing it is the member's answer.
   const offeredInstall = useRef(false);
@@ -96,6 +105,7 @@ export default function PluginDetailsPage({
     // An unlisted plugin waits for the member to choose Install on the banner instead.
     if (isInstallableFromLink(plugin) && plugin.visibleViaScopes.length > 0) {
       leaveLinkOnCancel.current = true;
+      setConfirmingMode('install');
       setConfirming(plugin);
     }
   }, [installOnOpen, plugin]);
@@ -109,8 +119,8 @@ export default function PluginDetailsPage({
   }
 
   /**
-   * Runs the install mutation. Used after the confirmation dialog (first install or
-   * restore of an uninstalled plugin) and for in-place reinstall while still installed.
+   * Runs the install mutation after the confirmation dialog: a first install, a restore of
+   * an uninstalled plugin, or a change to an installed plugin's Credential grants.
    *
    * Backend soft-deletes only: an uninstalled row is reactivated, not recreated. UI still
    * asks again after uninstall so the member re-agrees to what they are restoring.
@@ -136,9 +146,11 @@ export default function PluginDetailsPage({
     installOnOpen && isInstallableFromLink(plugin) && plugin.visibleViaScopes.length === 0;
   const isInstalled = plugin.installationState === 'installed';
   const isConfiguringCredentials = isInstalled && (plugin.credentialRequirements?.length ?? 0) > 0;
-  // Label / confirm path: only a live install says "Reinstall". Uninstalled looks like
-  // Install again (dialog), even though the API reactivates the same installation row.
-  const showReinstall = isInstalled && !isConfiguringCredentials;
+  // No "Reinstall": OWOX neither hosts nor packages a plugin, so installing a live one again
+  // would rebuild, replace or reset nothing. Once installed, the header keeps an action only
+  // when there are Credential grants to change. Uninstalled still reads Install (dialog),
+  // even though the API reactivates the same installation row.
+  const showHeaderAction = !isInstalled || isConfiguringCredentials;
   const installation = installations.find(item => item.pluginId === plugin.pluginId);
   const visibility = describeVisibility(plugin.visibleViaScopes);
   // Source URLs travel as untrusted strings; only absolute https becomes an href.
@@ -189,30 +201,29 @@ export default function PluginDetailsPage({
           <div className='flex shrink-0 items-center gap-2'>
             {plugin.suspended && <Badge variant='destructive'>Temporarily unavailable</Badge>}
 
-            <Button
-              variant='outline'
-              disabled={isInstalling || plugin.suspended || !plugin.currentVersionId}
-              onClick={() => {
-                if (isInstalling) {
-                  return;
-                }
-                // Every install/restore/reconfigure uses the same explicit Credential grant flow.
-                setConfirming(plugin);
-              }}
-            >
-              {isInstalling && <Loader2 className='size-4 animate-spin' aria-hidden />}
-              {isInstalling
-                ? showReinstall
-                  ? 'Reinstalling…'
-                  : isConfiguringCredentials
+            {showHeaderAction && (
+              <Button
+                variant='outline'
+                disabled={isInstalling || plugin.suspended || !plugin.currentVersionId}
+                onClick={() => {
+                  if (isInstalling) {
+                    return;
+                  }
+                  // Every install/restore/reconfigure uses the same explicit Credential grant flow.
+                  setConfirmingMode(isConfiguringCredentials ? 'configure' : 'install');
+                  setConfirming(plugin);
+                }}
+              >
+                {isInstalling && <Loader2 className='size-4 animate-spin' aria-hidden />}
+                {isInstalling
+                  ? isConfiguringCredentials
                     ? 'Saving…'
                     : 'Installing…'
-                : showReinstall
-                  ? 'Reinstall'
                   : isConfiguringCredentials
                     ? 'Configure Credentials'
                     : 'Install'}
-            </Button>
+              </Button>
+            )}
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -296,6 +307,7 @@ export default function PluginDetailsPage({
                   className='mt-2'
                   disabled={isInstalling}
                   onClick={() => {
+                    setConfirmingMode('install');
                     setConfirming(plugin);
                   }}
                 >
@@ -409,7 +421,7 @@ export default function PluginDetailsPage({
                     a line of text, which would push this card's content below the other
                     two in the same row.
 
-                    Not gated on installation: the backend opens Check now to any project
+                    Not gated on installation: the backend opens this check to any project
                     member who can reach this page (§6.3) -- an installation requirement
                     would only delay a check that is scheduled and inevitable anyway.
                   */}
@@ -420,7 +432,7 @@ export default function PluginDetailsPage({
                         size='icon'
                         className='shrink-0'
                         disabled={isUpdating}
-                        aria-label='Check now'
+                        aria-label={CHECK_AND_UPDATE_LABEL}
                         onClick={() => void checkNow(plugin.pluginId)}
                       >
                         <RefreshCw className={isUpdating ? 'size-4 animate-spin' : 'size-4'} />
@@ -428,9 +440,11 @@ export default function PluginDetailsPage({
                     </TooltipTrigger>
                     {/*
                       The deployment owns activation, so this only brings the already
-                      scheduled check forward. No confirmation: nothing here is a choice.
+                      scheduled check forward. No confirmation: nothing here is a choice. The
+                      label says Update because a newer valid release this check finds becomes
+                      current at once.
                     */}
-                    <TooltipContent>Check now</TooltipContent>
+                    <TooltipContent>{CHECK_AND_UPDATE_LABEL}</TooltipContent>
                   </Tooltip>
                 </InfoCard>
               </div>
@@ -520,7 +534,7 @@ export default function PluginDetailsPage({
           }}
           onConfirm={credentialSelections => void installPlugin(confirming, credentialSelections)}
           isInstalling={isInstalling}
-          mode={isConfiguringCredentials ? 'configure' : 'install'}
+          mode={confirmingMode}
         />
       )}
       {fallbackDialog}

@@ -5,3 +5,4 @@ export { PluginPageMessage } from './PluginPageMessage';
 export { PluginReleaseIssuesCard } from './PluginReleaseIssuesCard';
 export { PublishPluginSheet } from './PublishPluginSheet';
 export { useCopyLink } from './useCopyLink';
+export { useUninstallConfirmation } from './useUninstallConfirmation';

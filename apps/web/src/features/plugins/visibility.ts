@@ -1,4 +1,4 @@
-import type { PluginPublicationScope } from './types';
+import type { PluginInstallationState, PluginPublicationScope } from './types';
 
 /**
  * Who, besides the reader, can find this plugin in the Gallery -- or why they can
@@ -12,8 +12,6 @@ export interface GalleryVisibility {
   readonly summary: string;
   /** One sentence a member can act on. */
   readonly detail: string;
-  /** How the install dialog labels who listed it. */
-  readonly listing: string;
 }
 
 /**
@@ -26,16 +24,19 @@ export interface GalleryVisibility {
  *   That is the trust signal, so it wins over personal or project reasons.
  * - **project**: available to every member of this project.
  * - **you**: only this member listed it for themselves.
- * - **unlisted**: reached by direct link with no active publication.
+ * - **unlisted**: no active publication. Reached by direct link, or through the member's
+ *   own installation -- live or uninstalled -- which unpublishing never removes.
  */
-export function describeVisibility(scopes: PluginPublicationScope[]): GalleryVisibility | null {
+export function describeVisibility(
+  scopes: PluginPublicationScope[],
+  installationState?: PluginInstallationState
+): GalleryVisibility | null {
   if (scopes.includes('deployment')) {
     return {
       audience: 'verified',
       summary: 'Verified',
       // No product/admin story on the card yet -- just the trust mark.
       detail: 'Verified',
-      listing: 'Verified',
     };
   }
 
@@ -45,7 +46,6 @@ export function describeVisibility(scopes: PluginPublicationScope[]): GalleryVis
       // Who listed it is not the reader's concern -- what they can do with it is.
       summary: 'Available to the project',
       detail: 'Available to every member of this project to install.',
-      listing: 'Available to the whole project',
     };
   }
 
@@ -56,7 +56,28 @@ export function describeVisibility(scopes: PluginPublicationScope[]): GalleryVis
       audience: 'you',
       summary: 'Only you can see it',
       detail: 'You added this plugin for yourself. No one else in the project sees it here.',
-      listing: 'Added by you, for yourself',
+    };
+  }
+
+  // Not "reachable only by direct link": the member's menu and the Plugins page keep an
+  // installed plugin, and what they need to hear is why it is still there and how to remove it.
+  if (installationState === 'installed') {
+    return {
+      audience: 'unlisted',
+      summary: 'Installed, not listed',
+      detail:
+        'Nothing lists this plugin, but you have it installed, so it stays in your menu until you uninstall it.',
+    };
+  }
+
+  // Not "by direct link" either: a member who uninstalled it reaches it from Installation history.
+  // No promise to restore: a suspension or a missing version refuses it.
+  if (installationState === 'uninstalled') {
+    return {
+      audience: 'unlisted',
+      summary: 'Not in the Gallery',
+      detail:
+        'Nothing lists this plugin, and you uninstalled it. Installing it again does not list it for anyone.',
     };
   }
 
@@ -65,6 +86,5 @@ export function describeVisibility(scopes: PluginPublicationScope[]): GalleryVis
     summary: 'Not in the Gallery',
     detail:
       'Nothing lists this plugin, so it is reachable only by direct link. Installing it does not list it for anyone.',
-    listing: 'Not listed',
   };
 }

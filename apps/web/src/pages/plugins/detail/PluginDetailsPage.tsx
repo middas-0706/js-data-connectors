@@ -35,6 +35,7 @@ import {
   usePluginPublishing,
   usePublishableScopes,
   useCopyLink,
+  useUninstallConfirmation,
   repositoryPath,
   safeHttpsUrl,
   type PluginGalleryEntry,
@@ -75,7 +76,8 @@ export default function PluginDetailsPage({
 }: { installOnOpen?: boolean } = {}) {
   const { pluginId } = useParams<{ pluginId: string }>();
   const { plugin, isLoading } = usePlugin(pluginId);
-  const { install, uninstall, checkNow, isInstalling, isUpdating } = usePluginActions();
+  const { install, uninstall, checkNow, isInstalling, isUninstalling, isUpdating } =
+    usePluginActions();
   const { installations } = usePluginInstallations();
   const publications = usePluginManageablePublications(pluginId ?? '');
   const { publish, unpublish, isPublishing, isUnpublishing } = usePluginPublishing();
@@ -92,6 +94,12 @@ export default function PluginDetailsPage({
    * "Install this plugin?".
    */
   const [confirmingMode, setConfirmingMode] = useState<'install' | 'configure'>('install');
+  const actionsTriggerRef = useRef<HTMLButtonElement>(null);
+  const { requestUninstall, uninstallDialog } = useUninstallConfirmation({
+    uninstall,
+    isUninstalling,
+    fallbackFocus: () => actionsTriggerRef.current,
+  });
 
   // A shared deep link opens the dialog once; closing it is the member's answer.
   const offeredInstall = useRef(false);
@@ -152,7 +160,7 @@ export default function PluginDetailsPage({
   // even though the API reactivates the same installation row.
   const showHeaderAction = !isInstalled || isConfiguringCredentials;
   const installation = installations.find(item => item.pluginId === plugin.pluginId);
-  const visibility = describeVisibility(plugin.visibleViaScopes);
+  const visibility = describeVisibility(plugin.visibleViaScopes, plugin.installationState);
   // Source URLs travel as untrusted strings; only absolute https becomes an href.
   const ownerHref = safeHttpsUrl(plugin.source.ownerUrl);
   const repositoryHref = safeHttpsUrl(plugin.source.repositoryUrl);
@@ -177,7 +185,10 @@ export default function PluginDetailsPage({
       return;
     }
 
-    await unpublish(memberPublication.repository, 'member').catch(() => undefined);
+    // Quiet: the plugin just became more visible, and "unpublished" would say the opposite.
+    await unpublish(memberPublication.repository, 'member', { silent: true }).catch(
+      () => undefined
+    );
   };
 
   return (
@@ -227,7 +238,12 @@ export default function PluginDetailsPage({
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant='ghost' size='icon' aria-label='More plugin actions'>
+                <Button
+                  ref={actionsTriggerRef}
+                  variant='ghost'
+                  size='icon'
+                  aria-label='More plugin actions'
+                >
                   <EllipsisVertical className='size-4' />
                 </Button>
               </DropdownMenuTrigger>
@@ -275,7 +291,11 @@ export default function PluginDetailsPage({
                 {isInstalled && (
                   <>
                     {publications.length > 0 && <DropdownMenuSeparator />}
-                    <DropdownMenuItem onClick={() => void uninstall(plugin.pluginId)}>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        requestUninstall(plugin, actionsTriggerRef.current);
+                      }}
+                    >
                       Uninstall
                     </DropdownMenuItem>
                   </>
@@ -537,6 +557,7 @@ export default function PluginDetailsPage({
           mode={confirmingMode}
         />
       )}
+      {uninstallDialog}
       {fallbackDialog}
     </div>
   );

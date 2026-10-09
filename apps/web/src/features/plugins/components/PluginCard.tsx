@@ -26,7 +26,7 @@ export function PluginCard({ plugin, onInstall }: PluginCardProps) {
   const navigate = useNavigate();
   const isInstalled = plugin.installationState === 'installed';
   const canInstall = !plugin.suspended && plugin.currentVersionId !== null;
-  const visibility = describeVisibility(plugin.visibleViaScopes);
+  const visibility = describeVisibility(plugin.visibleViaScopes, plugin.installationState);
 
   const open = () => void navigate(scope(`/plugins/${plugin.pluginId}`));
 
@@ -114,11 +114,8 @@ export function PluginCard({ plugin, onInstall }: PluginCardProps) {
 
         {/*
           Icon alone, with the sentence in the tooltip: on a grid of cards a permanent
-          line of text competes with the plugin's own name for attention.
-
-          - verified (badge-check): deployment admins listed it product-wide.
-          - lock / users: the reader had a hand in listing it (personal or project).
-          - unlisted: direct link only.
+          line of text competes with the plugin's own name for attention. AudienceIcon says
+          which glyph means what.
         */}
         {visibility && (
           <Tooltip>

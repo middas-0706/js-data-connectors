@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@owox/ui/components/select';
-import { EllipsisVertical, Plus, Puzzle } from 'lucide-react';
+import { EllipsisVertical, History, Plus, Puzzle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import {
@@ -24,6 +24,7 @@ import {
   useGalleryView,
   usePluginActions,
   usePluginGallery,
+  usePluginInstallations,
   type PluginFilter,
   type PluginGalleryEntry,
   type PluginSort,
@@ -47,7 +48,10 @@ const SORT_LABELS: Record<PluginSort, string> = {
 };
 
 export default function PluginsGalleryPage() {
-  const { plugins, isLoading } = usePluginGallery();
+  const { plugins: listed, isLoading: galleryLoading } = usePluginGallery();
+  // The sidebar's query (uninstalled rows included): one cache entry, refreshed on mount like
+  // the Gallery, so a kept card never shows an audience from before an unpublish.
+  const { installations, isLoading: installationsLoading } = usePluginInstallations(true);
   const { install, isInstalling } = usePluginActions();
   const { view, update } = useGalleryView();
   const { scope } = useProjectRoute();
@@ -55,6 +59,33 @@ export default function PluginsGalleryPage() {
   const [query, setQuery] = useState('');
   const [candidate, setCandidate] = useState<PluginGalleryEntry | null>(null);
   const [publishing, setPublishing] = useState(false);
+
+  /**
+   * The Gallery plus every live installation that nothing lists any more.
+   *
+   * Unpublishing is not uninstalling: a plugin can leave the Gallery and stay installed, and
+   * it stays in the member's menu. Without its card here, the Installed filter would disagree
+   * with that menu, and the plugin's own page -- where uninstall lives -- would have no way in
+   * from this page. Its audience mark says why it is still here.
+   *
+   * Empty until both lists are in: before the Gallery arrives, every installation would look
+   * kept, and the grid would flash installed-only cards or "No plugins match".
+   */
+  const isLoading = galleryLoading || installationsLoading;
+  const plugins = useMemo<PluginGalleryEntry[]>(() => {
+    if (isLoading) {
+      return [];
+    }
+
+    const listedIds = new Set(listed.map(plugin => plugin.pluginId));
+    const kept = installations.filter(
+      installation => installation.uninstalledAt === null && !listedIds.has(installation.pluginId)
+    );
+
+    return [...listed, ...kept];
+  }, [isLoading, listed, installations]);
+  // Removed plugins are Installation history's to restore; the empty state points there.
+  const hasRemovedPlugins = installations.some(installation => installation.uninstalledAt !== null);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -199,6 +230,18 @@ export default function PluginsGalleryPage() {
                 Extend OWOX Data Marts with plugins published from a GitHub repository. Publishing
                 one lists it here — installing it is still up to each member.
               </p>
+              {hasRemovedPlugins && (
+                <>
+                  <p className='dm-empty-state-subtitle'>
+                    Plugins you uninstalled stay in Installation history.
+                  </p>
+                  <Button asChild variant='outline'>
+                    <Link to={scope('/plugins/history')}>
+                      <History className='size-4' aria-hidden /> Installation history
+                    </Link>
+                  </Button>
+                </>
+              )}
             </div>
           )}
 

@@ -16,7 +16,7 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { FunctionSquare, Plus } from 'lucide-react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType } from 'react';
 import { useOutletContext } from 'react-router';
 import type { BaseSchemaField } from '../../../../shared/types/data-mart-schema.types.ts';
@@ -27,6 +27,8 @@ import type { DragContextProps, RowComponentProps } from './BaseSchemaTable';
 import type { Props as SortableContextProps } from '@dnd-kit/sortable/dist/components/SortableContext';
 import type { DataMartContextType } from '../../../model/context/types';
 import type { SchemaToolbar } from '../types/schema-toolbar';
+import { SchemaFieldReferenceContext } from '../schema-field-reference';
+import { CollapsibleCardContext } from '../../../../../../shared/components/CollapsibleCard/CollapsibleCardContext';
 
 // Sticky columns configuration
 interface StickyColumnConfig {
@@ -128,6 +130,12 @@ export function SchemaTable<T extends BaseSchemaField>({
     columns,
     columnVisibilityStorageKey
   );
+  const reference = useContext(SchemaFieldReferenceContext);
+  const [revealNameFor, setRevealNameFor] = useState<string | null>(null);
+  const visibleColumns =
+    revealNameFor === reference?.navigationKey
+      ? { ...columnVisibility, name: true }
+      : columnVisibility;
 
   // Create table instance
   const table = useReactTable<T>({
@@ -138,9 +146,12 @@ export function SchemaTable<T extends BaseSchemaField>({
     columnResizeMode: 'onChange',
     enableColumnResizing: true,
     state: {
-      columnVisibility,
+      columnVisibility: visibleColumns,
     },
-    onColumnVisibilityChange: setColumnVisibility,
+    onColumnVisibilityChange: updater => {
+      setRevealNameFor(null);
+      setColumnVisibility(updater);
+    },
     enableGlobalFilter: true,
     globalFilterFn: schemaFieldFilter, // Use custom filter function that only searches in name, alias, and description
     defaultColumn: {
@@ -152,6 +163,32 @@ export function SchemaTable<T extends BaseSchemaField>({
 
   // Table filter hook
   const { value: filterValue, onChange: handleFilterChange, searchValue } = useTableFilter(table);
+  const { isCollapsed } = useContext(CollapsibleCardContext);
+  const referencedCell = useRef<HTMLTableCellElement | null>(null);
+  const preparedNavigation = useRef<string | null>(null);
+  const scrolledNavigation = useRef<string | null>(null);
+  const visibleRows = table.getRowModel().rows;
+
+  useEffect(() => {
+    if (!reference || preparedNavigation.current === reference.navigationKey) return;
+    preparedNavigation.current = reference.navigationKey;
+    handleFilterChange('');
+    setRevealNameFor(reference.navigationKey);
+  }, [reference, handleFilterChange]);
+
+  // Wait for the card's expansion transition and any nested record rows to finish mounting.
+  useEffect(() => {
+    if (!reference || isCollapsed || scrolledNavigation.current === reference.navigationKey) return;
+    const cell = referencedCell.current;
+    if (!cell) return;
+    const timeout = window.setTimeout(() => {
+      cell.closest('tr')?.scrollIntoView({ block: 'center', inline: 'nearest' });
+      scrolledNavigation.current = reference.navigationKey;
+    }, 250);
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [reference, isCollapsed, visibleRows, columnVisibility]);
 
   // Use ref to track previous search value to prevent infinite loops
   const prevSearchValueRef = useRef<string>('');
@@ -234,9 +271,15 @@ export function SchemaTable<T extends BaseSchemaField>({
             // separator away), so it uses the same separator colour as the rows above it.
             className='border-border-on-muted border-b bg-white dark:bg-white/1'
           >
-            {table.getRowModel().rows.length ? (
+            {visibleRows.length ? (
               <DragContext {...dragContextProps}>
-                {table.getRowModel().rows.map(row => {
+                {visibleRows.map(row => {
+                  const isReferenced =
+                    reference !== null &&
+                    row.original.name === reference.leafName &&
+                    ('path' in row.original
+                      ? row.original.path === reference.path
+                      : row.original.name === reference.name);
                   const cells = row.getVisibleCells();
                   const band = rowCellSpan?.bandFor(row);
                   const spannedIds = band?.length ? new Set(band) : undefined;
@@ -264,7 +307,8 @@ export function SchemaTable<T extends BaseSchemaField>({
                         // The cells below are painted `dark:bg-muted`, on which the ordinary
                         // `border` colour is invisible in the dark theme — see `--border-on-muted`.
                         'border-border-on-muted',
-                        row.original.isHiddenForReporting && 'opacity-70'
+                        row.original.isHiddenForReporting && 'opacity-70',
+                        isReferenced && 'scroll-mt-16'
                       )}
                     >
                       {cells.map((cell, index) => {
@@ -276,8 +320,19 @@ export function SchemaTable<T extends BaseSchemaField>({
                         return (
                           <TableCell
                             key={cell.id}
+                            ref={
+                              isReferenced && cell.column.id === 'name' ? referencedCell : undefined
+                            }
+                            data-referenced-field={
+                              isReferenced && cell.column.id === 'name' ? reference.name : undefined
+                            }
                             colSpan={colSpan > 1 ? colSpan : undefined}
-                            className='bg-background dark:bg-muted'
+                            className={cn(
+                              'bg-background dark:bg-muted',
+                              // Keep sticky cells opaque, with the tint layered above the base.
+                              isReferenced &&
+                                'from-primary/10 to-primary/10 dark:from-primary/15 dark:to-primary/15 bg-linear-to-r'
+                            )}
                             style={getStickyColumnStyle(cell.column.id, {
                               width: size !== 0 ? size : undefined,
                               // `pre` keeps a name or a formula on one line; a column that

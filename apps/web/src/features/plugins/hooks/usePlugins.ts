@@ -17,6 +17,8 @@ export const GALLERY_KEY = 'plugin-gallery';
 export const PUBLICATIONS_KEY = 'plugin-publications';
 /** Exported for the same reason: installation rows carry visibleViaScopes too. */
 export const INSTALLATIONS_KEY = 'plugin-installations';
+/** Every lifecycle mutation adds a history row, so each of them invalidates this key. */
+export const HISTORY_KEY = 'plugin-history';
 
 const EMPTY_GALLERY: PluginGalleryEntry[] = [];
 const EMPTY_INSTALLATIONS: InstalledPlugin[] = [];
@@ -97,6 +99,8 @@ export function usePluginActions() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: [GALLERY_KEY, projectId] }),
       queryClient.invalidateQueries({ queryKey: [INSTALLATIONS_KEY, projectId] }),
+      // Reset, not invalidate: a refetch would reload every loaded page, each an audit scan.
+      queryClient.resetQueries({ queryKey: [HISTORY_KEY, projectId] }),
     ]);
   }, [queryClient, projectId]);
 

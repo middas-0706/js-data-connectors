@@ -84,7 +84,7 @@ export default function PluginsGalleryPage() {
 
     return [...listed, ...kept];
   }, [isLoading, listed, installations]);
-  // Removed plugins are Installation history's to restore; the empty state points there.
+  // Removed plugins are Plugin history's to restore; the empty state points there.
   const hasRemovedPlugins = installations.some(installation => installation.uninstalledAt !== null);
 
   const visible = useMemo(() => {
@@ -154,8 +154,7 @@ export default function PluginsGalleryPage() {
             <Plus className='size-4' aria-hidden /> Publish Plugin
           </Button>
 
-          {/* History is a recovery path, not a routine one, so it sits behind the menu
-              rather than competing with the only action that adds a plugin. */}
+          {/* History sits behind the menu so it does not compete with the only action that adds a plugin. */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant='ghost' size='icon' aria-label='More plugin actions'>
@@ -164,7 +163,7 @@ export default function PluginsGalleryPage() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align='end'>
               <DropdownMenuItem asChild>
-                <Link to={scope('/plugins/history')}>Installation history</Link>
+                <Link to={scope('/plugins/history')}>Plugin history</Link>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -233,11 +232,11 @@ export default function PluginsGalleryPage() {
               {hasRemovedPlugins && (
                 <>
                   <p className='dm-empty-state-subtitle'>
-                    Plugins you uninstalled stay in Installation history.
+                    Plugins you uninstalled stay in Plugin history.
                   </p>
                   <Button asChild variant='outline'>
                     <Link to={scope('/plugins/history')}>
-                      <History className='size-4' aria-hidden /> Installation history
+                      <History className='size-4' aria-hidden /> Plugin history
                     </Link>
                   </Button>
                 </>

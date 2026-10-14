@@ -14,6 +14,7 @@ import { PluginVersion } from './entities/plugin-version.entity';
 import { Plugin } from './entities/plugin.entity';
 import { PluginAdminController } from './controllers/plugin-admin.controller';
 import { PluginGalleryController } from './controllers/plugin-gallery.controller';
+import { PluginHistoryController } from './controllers/plugin-history.controller';
 import { PluginInstallationsController } from './controllers/plugin-installations.controller';
 import { PluginReleaseCheckController } from './controllers/plugin-release-check.controller';
 import { PluginPublicationsController } from './controllers/plugin-publications.controller';
@@ -41,6 +42,7 @@ import { GetPluginDetailsService } from './use-cases/get-plugin-details.service'
 import { GetPluginInstallationEntryService } from './use-cases/get-plugin-installation-entry.service';
 import { InstallPluginService } from './use-cases/install-plugin.service';
 import { ListInstallationsService } from './use-cases/list-installations.service';
+import { ListPluginHistoryService } from './use-cases/list-plugin-history.service';
 import { UninstallPluginService } from './use-cases/uninstall-plugin.service';
 import { UpdatePluginService } from './use-cases/update-plugin.service';
 import { CheckPluginReleaseService } from './use-cases/check-plugin-release.service';
@@ -110,6 +112,7 @@ import { PutPluginCollectionDocumentService } from './collections/use-cases/put-
     PluginAdminController,
     PluginReleaseCheckController,
     PluginInstallationsController,
+    PluginHistoryController,
     PluginGalleryController,
   ],
   providers: [
@@ -154,6 +157,7 @@ import { PutPluginCollectionDocumentService } from './collections/use-cases/put-
     InstallPluginService,
     UninstallPluginService,
     ListInstallationsService,
+    ListPluginHistoryService,
     GetPluginInstallationEntryService,
     UpdatePluginService,
     CheckPluginReleaseService,

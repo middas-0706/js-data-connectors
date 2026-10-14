@@ -84,6 +84,22 @@ describe('usePluginPublishing', () => {
     expect(publish).toHaveBeenCalledWith({ repository: 'OWOX/example', scope: 'member' });
   });
 
+  it('resets the history after a publish instead of refetching every loaded page', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const reset = vi.spyOn(client, 'resetQueries');
+    const { result } = renderHook(() => usePluginPublishing(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    });
+
+    await act(async () => {
+      await result.current.publish('OWOX/example', 'member');
+    });
+
+    expect(reset).toHaveBeenCalledWith({ queryKey: ['plugin-history', 'project-1'] });
+  });
+
   it('confirms a first publish plainly', async () => {
     getInstallations.mockResolvedValue([
       { pluginId: 'other', displayName: 'Other', uninstalledAt: null },
@@ -115,7 +131,7 @@ describe('usePluginPublishing', () => {
     );
   });
 
-  // Installation history keeps uninstalled rows; those are not "already installed".
+  // Plugin history keeps uninstalled rows; those are not "already installed".
   it('does not count an uninstalled plugin as installed', async () => {
     getInstallations.mockResolvedValue([
       { pluginId: 'p1', displayName: 'Run History', uninstalledAt: '2026-10-01T00:00:00.000Z' },

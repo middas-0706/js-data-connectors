@@ -4,6 +4,18 @@ import {
   CheckPluginReleaseCommand,
   PluginReleaseCheckResultDto,
 } from '../dto/domain/check-plugin-release.command';
+import type {
+  PluginHistoryPageDto,
+  PluginHistoryPluginDto,
+} from '../dto/domain/plugin-history.dto';
+import {
+  ListPluginHistoryCommand,
+  PLUGIN_HISTORY_DEFAULT_LIMIT,
+} from '../dto/domain/list-plugin-history.command';
+import {
+  ListPluginHistoryQueryApiDto,
+  PluginHistoryPageApiDto,
+} from '../dto/presentation/plugin-history-api.dto';
 import { FindPluginByRepositoryCommand } from '../dto/domain/find-plugin-by-repository.command';
 import { GetPluginDetailsCommand } from '../dto/domain/get-plugin-details.command';
 import { GetPluginGalleryCommand } from '../dto/domain/get-plugin-gallery.command';
@@ -117,6 +129,33 @@ export class PluginPresentationMapper {
     return new ListInstallationsCommand(context, includeUninstalled);
   }
 
+  toListPluginHistoryCommand(
+    context: AuthorizationContext,
+    query: ListPluginHistoryQueryApiDto
+  ): ListPluginHistoryCommand {
+    return new ListPluginHistoryCommand(
+      context,
+      query.type ?? 'all',
+      query.limit ?? PLUGIN_HISTORY_DEFAULT_LIMIT,
+      query.cursor ?? null
+    );
+  }
+
+  toPluginHistoryResponse(page: PluginHistoryPageDto): PluginHistoryPageApiDto {
+    return {
+      items: page.items.map(item => ({
+        id: item.id,
+        occurredAt: item.occurredAt.toISOString(),
+        action: item.action,
+        scope: item.scope,
+        plugin: { ...item.plugin },
+        actor: item.actor ? { ...item.actor } : null,
+        version: item.version,
+      })),
+      nextCursor: page.nextCursor,
+    };
+  }
+
   toFindPluginByRepositoryCommand(
     repository: string,
     context: AuthorizationContext
@@ -183,11 +222,7 @@ export class PluginPresentationMapper {
   ): PluginGalleryEntryDto {
     return {
       pluginId: plugin.id,
-      // Falling back keeps a plugin with no eligible release recognisable rather than
-      // blank, but the repository name is exactly what `toSource` withholds for a private
-      // repository -- so that case falls back to the owner, which `toSource` discloses anyway.
-      displayName:
-        version?.displayName ?? (plugin.isPrivateRepo ? plugin.repoOwner : plugin.repoName),
+      displayName: this.displayNameOf(plugin, version),
       description: version?.description ?? '',
       currentSemver: version?.semver ?? null,
       currentVersionId: version?.id ?? null,
@@ -198,6 +233,14 @@ export class PluginPresentationMapper {
       addedAt: plugin.createdAt.toISOString(),
       nextCheckAt: plugin.nextUpdateCheckAt?.toISOString() ?? null,
       credentialRequirements: version?.credentialRequirements ?? [],
+    };
+  }
+
+  toHistoryPlugin(plugin: Plugin, version: PluginVersion | null): PluginHistoryPluginDto {
+    return {
+      pluginId: plugin.id,
+      displayName: this.displayNameOf(plugin, version),
+      ownerName: plugin.repoOwner,
     };
   }
 
@@ -328,6 +371,15 @@ export class PluginPresentationMapper {
       suspended: dto.suspended,
       note: dto.note,
     };
+  }
+
+  /**
+   * Falling back keeps a plugin with no eligible release recognisable rather than blank, but
+   * the repository name is exactly what `toSource` withholds for a private repository -- so
+   * that case falls back to the owner, which `toSource` discloses anyway.
+   */
+  private displayNameOf(plugin: Plugin, version: PluginVersion | null): string {
+    return version?.displayName ?? (plugin.isPrivateRepo ? plugin.repoOwner : plugin.repoName);
   }
 
   /**

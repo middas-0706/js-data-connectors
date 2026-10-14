@@ -763,6 +763,34 @@ A valid higher release applies to every installation. There is no member-level v
 To roll back, restore the last working source, deploy it, and create a new higher patch release
 that explains the restoration; do not try to move or recreate an older tag.
 
+Check a release before you create it:
+
+```bash
+owox-ctl plugins check OWNER/PLUGIN_NAME --ref main
+```
+
+The check runs the release rules against a branch, tag, or commit:
+
+- the manifest;
+- collection compatibility with the highest recorded version in the candidate's compatibility line;
+- the delivery URL;
+- Credential definitions.
+
+It lists every failed rule it can evaluate, with release sync's rejection codes. It records
+nothing and does not delay **Check and Update** or the daily check. The command prints JSON to
+stdout and a summary to stderr. It exits with code 1 when it finds issues.
+
+Without `--version`, the check takes the next version after the current one. Below `1.0.0` that
+is the next patch; from `1.0.0` it is the next minor. A plugin with no current version then gets
+no collection compatibility check. Pass `--version MAJOR.MINOR.PATCH` to check another version.
+The check reports `VERSION_CONFLICT` for a recorded version and for an unrecorded version below
+the current one.
+
+Deployment publishers and members who manage a publication of the plugin can run the check. They
+see GitHub errors in full. When OWOX Data Marts cannot read the repository, the error includes the
+GitHub App installation URL. `PLUGIN_HOST_SYNC_MIN_INTERVAL_SEC` limits checks per plugin and
+caller: 30 seconds by default with GitHub App or token access, 300 seconds without.
+
 OWOX Data Marts records the exact commit referenced by each eligible release, but the delivery URL
 does not pin the files served there. Once an eligible release version is recorded, moving,
 deleting, or recreating its tag cannot rewrite that recorded version; use a new higher eligible

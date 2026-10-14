@@ -73,19 +73,25 @@ export interface PublishFailure {
   installationUrl?: string;
 }
 
+export type PublishOutcome = { failure: null; pluginId: string } | { failure: PublishFailure };
+
 export function usePluginPublishing() {
   const queryClient = useQueryClient();
   const projectId = useProjectId();
 
+  // Off-screen queries refetch too: the plugin's open route decides on its first render.
   const invalidate = useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: [PUBLICATIONS_KEY, projectId] }),
       // Publishing changes what the Gallery shows, so refreshing one without the other
       // leaves the member looking at a list that no longer matches.
-      queryClient.invalidateQueries({ queryKey: [GALLERY_KEY, projectId] }),
+      queryClient.invalidateQueries({ queryKey: [GALLERY_KEY, projectId], refetchType: 'all' }),
       // Installation rows say why each plugin is visible as well, and the Plugins page draws
       // a plugin nothing lists any more from them.
-      queryClient.invalidateQueries({ queryKey: [INSTALLATIONS_KEY, projectId] }),
+      queryClient.invalidateQueries({
+        queryKey: [INSTALLATIONS_KEY, projectId],
+        refetchType: 'all',
+      }),
       queryClient.resetQueries({ queryKey: [HISTORY_KEY, projectId] }),
     ]);
   }, [queryClient, projectId]);
@@ -147,7 +153,7 @@ export function usePluginPublishing() {
       repository: string,
       scope: PluginPublicationScope,
       { mentionInstalled = false }: { mentionInstalled?: boolean } = {}
-    ): Promise<PublishFailure | null> => {
+    ): Promise<PublishOutcome> => {
       try {
         const publication = await publishMutation.mutateAsync({ repository, scope });
         const installed = mentionInstalled
@@ -160,9 +166,9 @@ export function usePluginPublishing() {
             ? `Plugin published. You already have ${installed.displayName} installed.`
             : 'Plugin published'
         );
-        return null;
+        return { failure: null, pluginId: publication.pluginId };
       } catch (caught) {
-        return readPublishFailure(caught);
+        return { failure: readPublishFailure(caught) };
       }
     },
     [publishMutation, findActiveInstallation]

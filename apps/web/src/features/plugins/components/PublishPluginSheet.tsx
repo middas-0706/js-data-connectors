@@ -6,7 +6,14 @@ import {
   AccordionTrigger,
 } from '@owox/ui/components/accordion';
 import { Button } from '@owox/ui/components/button';
+import { ButtonGroup } from '@owox/ui/components/button-group';
 import { ExternalAnchor } from '@owox/ui/components/common/external-anchor';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@owox/ui/components/dropdown-menu';
 import {
   AppForm,
   Form,
@@ -35,10 +42,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@owox/ui/components/sheet';
-import { Loader2 } from 'lucide-react';
+import { ChevronDown, Loader2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
+import { useNavigate } from 'react-router';
 import { z } from 'zod';
+import { useProjectRoute } from '../../../shared/hooks/useProjectRoute';
 import {
   usePluginPublishing,
   usePublishableScopes,
@@ -81,6 +90,8 @@ interface PublishPluginSheetProps {
 export function PublishPluginSheet({ isOpen, onClose }: PublishPluginSheetProps) {
   const scopes = usePublishableScopes();
   const { publish, isPublishing } = usePluginPublishing();
+  const { scope: projectPath } = useProjectRoute();
+  const navigate = useNavigate();
   const [failure, setFailure] = useState<PublishFailure | null>(null);
   const installationHref = safeHttpsUrl(failure?.installationUrl);
 
@@ -92,25 +103,30 @@ export function PublishPluginSheet({ isOpen, onClose }: PublishPluginSheetProps)
   // has the plugin. Until the sheet closes, a second click would publish again.
   const isSubmitting = isPublishing || form.formState.isSubmitting;
 
-  const submit = async (values: PublishFormValues) => {
-    const result = await publish(values.repository.trim(), values.scope, {
+  const submit = async (values: PublishFormValues, install: boolean) => {
+    const outcome = await publish(values.repository.trim(), values.scope, {
       mentionInstalled: true,
     });
-    if (result) {
-      setFailure(result);
+    if (outcome.failure) {
+      setFailure(outcome.failure);
       return;
     }
 
     form.reset();
     setFailure(null);
     onClose();
+    if (install) {
+      // The open route offers the install to a member without the plugin, then runs it.
+      void navigate(projectPath(`/plugins/${outcome.pluginId}/open`));
+    }
   };
 
   return (
     <Sheet
       open={isOpen}
       onOpenChange={open => {
-        if (!open) {
+        // A publish finishing after the sheet closed would still navigate the member away.
+        if (!open && !isSubmitting) {
           setFailure(null);
           onClose();
         }
@@ -120,7 +136,8 @@ export function PublishPluginSheet({ isOpen, onClose }: PublishPluginSheetProps)
         <SheetHeader>
           <SheetTitle>Publish a plugin</SheetTitle>
           <SheetDescription>
-            Publishing lists a plugin so people can find it. It does not install it for anyone.
+            Publishing lists a plugin so people can find it. Publish &amp; Install then offers to
+            install it for you, and only for you.
           </SheetDescription>
         </SheetHeader>
 
@@ -129,7 +146,7 @@ export function PublishPluginSheet({ isOpen, onClose }: PublishPluginSheetProps)
           <AppForm
             noValidate
             onSubmit={event => {
-              void form.handleSubmit(submit)(event);
+              void form.handleSubmit(values => submit(values, true))(event);
             }}
           >
             <FormLayout>
@@ -211,9 +228,9 @@ export function PublishPluginSheet({ isOpen, onClose }: PublishPluginSheetProps)
                         </p>
                         <p>
                           Whichever you pick, publishing only makes the plugin{' '}
-                          <strong>findable</strong>. It installs it for nobody: each member still
-                          installs it themselves, and unpublishing later removes the listing without
-                          uninstalling anyone.
+                          <strong>findable</strong>. Publish &amp; Install offers to add it to your
+                          menu alone: every other member still installs it themselves, and
+                          unpublishing later removes the listing without uninstalling anyone.
                         </p>
                         <p>
                           The levels are independent, so the same plugin can be listed at both and
@@ -255,10 +272,37 @@ export function PublishPluginSheet({ isOpen, onClose }: PublishPluginSheetProps)
               <Button type='button' variant='secondary' onClick={onClose} disabled={isSubmitting}>
                 Cancel
               </Button>
-              <Button type='submit' disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 className='size-4 animate-spin' aria-hidden /> : null}
-                {isSubmitting ? 'Publishing…' : 'Publish'}
-              </Button>
+              <ButtonGroup aria-label='Publish' className='w-full'>
+                <Button type='submit' disabled={isSubmitting} className='flex-1'>
+                  {isSubmitting ? <Loader2 className='size-4 animate-spin' aria-hidden /> : null}
+                  {isSubmitting ? 'Publishing…' : 'Publish & Install'}
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type='button'
+                      disabled={isSubmitting}
+                      aria-label='More publish options'
+                      className='group'
+                    >
+                      <ChevronDown
+                        className='size-4 transition-transform duration-200 group-data-[state=open]:rotate-180'
+                        aria-hidden
+                      />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align='end' side='top'>
+                    <DropdownMenuItem
+                      disabled={isSubmitting}
+                      onClick={() => {
+                        void form.handleSubmit(values => submit(values, false))();
+                      }}
+                    >
+                      Publish only
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </ButtonGroup>
             </FormActions>
           </AppForm>
         </Form>

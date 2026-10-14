@@ -5,6 +5,8 @@ import type {
 } from '../dto/domain/plugin-collection.types';
 import {
   PluginCollectionAuthorizationDeniedError,
+  PluginCollectionNotEntityBoundError,
+  PluginCollectionParentIdRequiredError,
   PluginCollectionQuotaExceededError,
   PluginCollectionValidationError,
 } from '../errors/plugin-collection.errors';
@@ -23,6 +25,17 @@ export class PutPluginCollectionDocumentService {
   async run(command: PutPluginCollectionCommand): Promise<PluginCollectionDocumentDto> {
     const resolved = await this.declarations.resolve(command.collectionName, command.context);
     try {
+      const { entityBinding } = resolved.declaration;
+      if (command.parentId !== null && !entityBinding) {
+        throw new PluginCollectionNotEntityBoundError(command.collectionName, resolved.semver);
+      }
+      if (command.parentId === null && entityBinding) {
+        throw new PluginCollectionParentIdRequiredError(
+          command.collectionName,
+          entityBinding.type,
+          resolved.semver
+        );
+      }
       return await this.persistence.put(resolved, command);
     } catch (error) {
       const outcome =

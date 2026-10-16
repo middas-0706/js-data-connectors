@@ -273,6 +273,42 @@ export class AbstractSource {
    *   redirects use undici's default transparent follow.
    */
   async urlFetchWithRetry(url, options = {}, validate) {
+    return this._urlFetchWithRetry(url, options, validate, false);
+  }
+
+  /**
+   * Same request and retry policy as `urlFetchWithRetry`, but the body is READ AND
+   * PARSED INSIDE the retry loop, and the parsed JSON is what you get back.
+   *
+   * Why this exists: `urlFetchWithRetry` returns the Response unread, so callers
+   * parsed it AFTER the retry budget was out of scope. A provider that answers 200
+   * with a corrupted body (valid JSON plus trailing bytes, a truncated stream) threw
+   * straight past `MaxFetchRetries` and failed the whole run on a blip the very next
+   * request would have fixed. Here a body-read or parse failure is thrown inside the
+   * loop with no `.statusCode`, so it travels the same path as a network error:
+   * `isValidToRetry()` decides, and backoff applies.
+   *
+   * Only for JSON endpoints — the body is consumed, so there is no Response left to
+   * read again. Non-JSON responses (CSV, binary) must keep using `urlFetchWithRetry`.
+   *
+   * Use only for idempotent requests (GET): an unparseable 200 is re-requested, so a
+   * POST passed here would be replayed.
+   *
+   * @param {string} url
+   * @param {object} [options] - fetch options; `redirect` is set per the rule above.
+   * @param {(nextUrl: string) => (void | Promise<void>)} [validate] - per-hop SSRF validator.
+   * @returns {Promise<*>} the parsed JSON body
+   */
+  async urlFetchJsonWithRetry(url, options = {}, validate) {
+    return this._urlFetchWithRetry(url, options, validate, true);
+  }
+
+  /**
+   * Shared implementation behind `urlFetchWithRetry` (parseJson=false) and
+   * `urlFetchJsonWithRetry` (parseJson=true). See those for the contract.
+   * @private
+   */
+  async _urlFetchWithRetry(url, options = {}, validate, parseJson = false) {
     let maxRetries = this._getRetryParam('MaxFetchRetries', 3);
     let initialDelay = this._getRetryParam('InitialRetryDelay', 5000);
 
@@ -421,7 +457,46 @@ export class AbstractSource {
           throw error;
         }
 
-        return response;
+        if (!parseJson) return response;
+
+        // Read and parse WHILE STILL INSIDE the retry loop. A rejected body read
+        // (undici's "terminated" on a cut stream) or a corrupted body therefore
+        // falls into the catch below and is retried like any other transport
+        // failure, instead of throwing past the caller's retry budget.
+        let bodyText;
+        try {
+          bodyText = await response.text();
+        } catch (readError) {
+          readError.message = `Failed reading response body from ${this._redactUrl(currentUrl)}: ${readError.message}`;
+          throw readError;
+        }
+        try {
+          return JSON.parse(bodyText);
+        } catch (parseError) {
+          // Name the endpoint and the body's size. "position 88743" alone says nothing
+          // about which request failed; against the total it says whether a complete
+          // document had bytes appended (88743 of 88761) or arrived cut short.
+          //
+          // The body itself stays OUT of the message deliberately. A page's tail holds
+          // `paging.next`, which carries the access token, and AbstractContext's
+          // redactSecrets() only replaces a secret it matches IN FULL -- so a tail
+          // clipped mid-token would put the fragment into persisted run logs.
+          //
+          // V8 itself can quote the body: the "Unexpected token" family embeds a
+          // ~10-character excerpt
+          // ("Unexpected token 'Z', ..."LUE"},"x":Z"y"}" is not valid JSON") and quotes a
+          // short body in full; the positional families quote nothing. Keep the kind,
+          // drop the excerpt. The single offending character stays: it is the "HTML
+          // error page, not JSON" tell and cannot constitute a credential.
+          const kind = parseError.message.endsWith(' is not valid JSON')
+            ? parseError.message.replace(/,[\s\S]*$/, '')
+            : parseError.message;
+          // `length` counts UTF-16 code units, the same unit as V8's `position`.
+          parseError.message =
+            `Malformed JSON response from ${this._redactUrl(currentUrl)} ` +
+            `(${bodyText.length} chars): ${kind}`;
+          throw parseError;
+        }
       } catch (error) {
         // Redirect-control errors (too-many-redirects, a per-hop validate
         // rejection) are deterministic security/limit decisions — never retry or

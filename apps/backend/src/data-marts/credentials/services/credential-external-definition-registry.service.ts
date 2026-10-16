@@ -217,6 +217,9 @@ export class CredentialExternalDefinitionRegistryService {
   }
 
   private async validateNetworkBoundary(contract: CredentialDefinitionContract): Promise<void> {
+    if (contract.auth.type !== 'header') {
+      throw new BadRequestException('An external Credential definition must use header auth');
+    }
     try {
       for (const origin of contract.origins) {
         const url = await assertPublicHttpUrl(origin, { allowedProtocols: ['https:'] });
@@ -263,7 +266,8 @@ function isCompatibleWithinLine(
   return (
     previous.id === next.id &&
     sameSet(previous.origins, next.origins) &&
-    previous.auth.type === next.auth.type &&
+    previous.auth.type === 'header' &&
+    next.auth.type === 'header' &&
     previous.auth.headerName.toLowerCase() === next.auth.headerName.toLowerCase() &&
     (previous.auth.prefix ?? '') === (next.auth.prefix ?? '') &&
     (!previous.ai || Boolean(next.ai)) &&

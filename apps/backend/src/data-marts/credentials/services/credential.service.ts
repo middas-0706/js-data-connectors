@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Not, Repository } from 'typeorm';
 import { CredentialConsumerBinding } from '../entities/credential-consumer-binding.entity';
+import type { CredentialSecret, CredentialValidationResult } from '../credential.types';
 import { Credential } from '../entities/credential.entity';
 
 @Injectable()
@@ -86,6 +87,57 @@ export class CredentialService {
 
   async softDelete(id: string, projectId: string): Promise<void> {
     await this.credentials.softDelete({ id, projectId });
+  }
+
+  /** Writes a validation result only if the stored key is still the one that was checked. */
+  async writeValidation(
+    id: string,
+    checkedSecret: CredentialSecret,
+    result: CredentialValidationResult
+  ): Promise<void> {
+    await this.updateValidationWhileSecret(id, checkedSecret, {
+      validationState: result.state,
+      validationMessage: result.message.slice(0, 2000),
+      validatedAt: result.validatedAt,
+    });
+  }
+
+  /** Records that the provider refused the stored secret, once per refused key and message. */
+  async markRejected(id: string, rejectedSecret: CredentialSecret, message: string): Promise<void> {
+    const cut = message.slice(0, 2000);
+    const stored = await this.credentials.findOne({
+      where: { id },
+      select: { id: true, validationState: true, validationMessage: true },
+    });
+    if (!stored || (stored.validationState === 'rejected' && stored.validationMessage === cut)) {
+      return;
+    }
+    await this.updateValidationWhileSecret(id, rejectedSecret, {
+      validationState: 'rejected',
+      validationMessage: cut,
+      validatedAt: new Date(),
+    });
+  }
+
+  /** The key check is part of the UPDATE, so a key replaced meanwhile keeps its own validation. */
+  private async updateValidationWhileSecret(
+    id: string,
+    secret: CredentialSecret,
+    values: Pick<Credential, 'validationState' | 'validationMessage' | 'validatedAt'>
+  ): Promise<void> {
+    const type = this.credentials.manager.connection.options.type;
+    const storedValue =
+      type === 'mysql' || type === 'mariadb'
+        ? "JSON_UNQUOTE(JSON_EXTRACT(secret, '$.value'))"
+        : "JSON_EXTRACT(secret, '$.value')";
+    await this.credentials
+      .createQueryBuilder()
+      .update(Credential)
+      .set(values)
+      .where('id = :id', { id })
+      .andWhere('deletedAt IS NULL')
+      .andWhere(`${storedValue} = :secretValue`, { secretValue: secret.value })
+      .execute();
   }
 
   /** Best-effort and throttled: runtime success must never depend on usage telemetry. */

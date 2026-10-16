@@ -1,3 +1,8 @@
+import { DataSource } from 'typeorm';
+import {
+  CREDENTIAL_VALIDATION_ENTITIES,
+  credentialValidationWriteCases,
+} from '../../../../test/fixtures/credential-validation-writes';
 import { CredentialService } from './credential.service';
 
 describe('CredentialService usage metadata', () => {
@@ -58,4 +63,23 @@ describe('CredentialService usage metadata', () => {
     ).resolves.toBeNull();
     expect(findOne).not.toHaveBeenCalled();
   });
+});
+
+describe('CredentialService validation writes (SQLite)', () => {
+  let dataSource: DataSource;
+
+  beforeAll(async () => {
+    dataSource = new DataSource({
+      type: 'better-sqlite3',
+      database: ':memory:',
+      entities: CREDENTIAL_VALIDATION_ENTITIES,
+      synchronize: true,
+      logging: false,
+    });
+    await dataSource.initialize();
+  });
+
+  afterAll(() => dataSource.destroy());
+
+  credentialValidationWriteCases(() => dataSource);
 });

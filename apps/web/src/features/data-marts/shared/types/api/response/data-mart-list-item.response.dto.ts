@@ -18,6 +18,8 @@ export interface DataMartListItemResponseDto {
   connectorSourceName: string | null;
   triggersCount: number;
   reportsCount: number;
+  /** Relationships the Data Mart defines plus the ones that point to it. */
+  relationshipsCount?: number;
   createdByUser: UserProjectionDto | null;
   businessOwnerUsers?: UserProjectionDto[];
   technicalOwnerUsers?: UserProjectionDto[];

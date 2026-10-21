@@ -264,6 +264,30 @@ export class DataMartService {
     return rows.map(row => row.id);
   }
 
+  /**
+   * The given Data Marts the caller can see, by the same rule as the Data Marts list. The caller
+   * is required: without a user the visibility gate is skipped and every Data Mart passes.
+   */
+  async findVisibleIdsByProjectIdAndIds(
+    projectId: string,
+    ids: readonly string[],
+    options: { userId: string; roles: string[]; roleScope: RoleScope }
+  ): Promise<string[]> {
+    const uniqueIds = Array.from(new Set(ids));
+    if (uniqueIds.length === 0) return [];
+
+    const qb = this.dataMartRepository
+      .createQueryBuilder('dm')
+      .select('dm.id', 'id')
+      .where('dm.projectId = :projectId', { projectId })
+      .andWhere('dm.id IN (:...visibleCandidateIds)', { visibleCandidateIds: uniqueIds })
+      .andWhere('dm.deletedAt IS NULL');
+    this.applyNonAdminVisibilityGate(qb, projectId, options);
+
+    const rows = await qb.getRawMany<{ id: string }>();
+    return rows.map(row => row.id);
+  }
+
   async findByProjectIdAndDefinitionType(
     projectId: string,
     definitionType: DataMartDefinitionType

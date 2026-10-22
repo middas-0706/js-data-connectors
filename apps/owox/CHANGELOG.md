@@ -1,5 +1,109 @@
 # owox
 
+## 0.40.0
+
+### Minor Changes 0.40.0
+
+- 9dc6e5f: **Warnings when a Count reads a joined Data Mart**
+
+  **Count** on a joined field counts the rows of the report's Data Mart that found a match, not the joined Data Mart's own rows. The aggregation popover in the report editor and in the Google Sheets extension now says so while **Count** is ticked: whether the number can come out higher, lower, or cannot be checked because a primary key is missing. It points to **Count Unique**, and to the joined Data Mart's **Unique Count** when that Data Mart offers one. Nothing is blocked, and no warning appears when every join on the way is keyed by a primary key on both sides.
+
+  ![The aggregation popover for the joined column order_id from Orders, with Count ticked and a warning that several Orders rows can share one join key value, so the count can be lower, pointing to Count Unique and the Unique Count of Orders](https://imagedelivery.net/zKr-4bdC5CBGL2DuuEmvYw/3fde0c96-13de-46f1-9242-663c2c94e300/public)
+
+  The formula editor gives the same advice for a calculated field that counts a joined field, and now reads the primary key as you have set it in the Output Schema, saved or not. Previously it kept saying the key was missing until you pressed **Save**, and the save then answered differently. Clearing the key works the same way.
+
+  ![The Output Schema editor with the primary key ticked on session_id but not saved, and the formula editor for orders_count = COUNT(orders.order_id) warning that several Orders rows can share one join key value](https://imagedelivery.net/zKr-4bdC5CBGL2DuuEmvYw/12959419-7228-49d6-2ae3-a04a61eb4000/public)
+
+  The video walks through both on a Sessions Data Mart joined to Orders:
+
+  <https://customer-4geatlj66rtkaxtz.cloudflarestream.com/f551463ad4902cba92d74e0670509707/iframe>
+
+  See [Counting rows in a group](../../docs/getting-started/setup-guide/report-aggregations.md#counting-rows-in-a-group) and [A joined `COUNT` counts this Data Mart's rows, not the joined one's](../../docs/getting-started/setup-guide/joinable-data-marts.md#a-joined-count-counts-this-data-marts-rows-not-the-joined-ones).
+
+  <!-- markdownlint-disable-file MD041 MD036 -->
+
+- 5eee385: **Fix loading indicator errors when requests fail**
+
+  Fixed the `Cannot read properties of undefined (reading 'skipLoadingIndicator')` error on Data Mart pages and other application pages. This secondary error could appear while handling a failed request and hide its original cause.
+
+  <!-- markdownlint-disable-file MD041 MD036 -->
+
+- a9faca2: **Invalid HTTP Data queries no longer create Run History entries**
+
+  HTTP Data requests to a Data Mart rejected because of invalid query configuration no longer
+  create failed Run History entries.
+
+  See the [HTTP Data API](../../docs/api/openapi.md) for details.
+
+  <!-- markdownlint-disable-file MD041 MD036 -->
+
+- 814b882: <!-- markdownlint-disable-file MD041 MD036 -->
+
+  **Plugins do their work on schedule, also when nobody has them open**
+
+  A plugin's backend action used to run only while a member had the plugin open, so a check meant
+  for every Monday at nine waited for someone to open it. Now a plugin can create schedules for its
+  installation with `ctx.schedules`, and OWOX Data Marts starts the action on its cron expression and
+  time zone with the installing member's access. The plugin's page lists its schedules, and members
+  pause, resume and delete them under **Plugins → Schedules**, which also lists their runs and lets
+  them cancel a queued or running one; a project admin sees the whole project there, and the plugin
+  cannot resume a schedule an admin paused.
+
+  The video adds a Google Doc to a weekly schedule of the example plugin Metric Watch, then opens
+  **Plugins → Schedules**, the schedule's run in **Run History**, and the check that run added to
+  the Doc:
+
+  <https://customer-4geatlj66rtkaxtz.cloudflarestream.com/7739195f870a655a5e0e7da55f148ed2/iframe>
+
+  OWOX Data Marts disables a schedule, with the reason, when the action is no longer declared or the
+  parameters no longer match its schema, and skips its runs while the member is out of the project or
+  their account is locked.
+  A scheduled run that meets the installation's action limits waits, up to 24 hours, and starts once
+  they allow. In the SDK, `PluginActionStatus` now includes `QUEUED`, and an execution's `trigger`
+  can be `schedule`.
+  See [Run actions on a schedule](../../docs/plugins/authoring-guide.md#run-actions-on-a-schedule).
+  A self-managed deployment can change the schedule limits with five `PLUGIN_HOST_*` variables, such
+  as `PLUGIN_HOST_MAX_SCHEDULES_PER_INSTALLATION`; see
+  [Environment variables](../../docs/getting-started/deployment-guide/environment-variables.md#plugins).
+
+  In the SDK, `BackendActionContext.schedules`, `PluginActionExecution.scheduleId`,
+  `PluginActionExecutionContext.scheduleId` and `PluginContext.schedules` are new members: update
+  test doubles and exhaustive switches.
+
+- 27b4843: **Tell contexts apart at a glance: pick an icon for each context**
+
+  A project that groups its Data Marts, Storages and Destinations by many contexts showed every context as a plain-text badge, so finding the Marketing or the Finance resources in a long list meant reading each label. Now a Project Admin picks an icon for each context, from the same set as Data Mart icons, and it appears before the context name: in the contexts list, on the context badges of Data Marts, Storages, Destinations and members, and in every **Contexts** picker. A context without a picked icon shows the default tag icon.
+
+  Watch a Project Admin give the Marketing and Finance contexts their icons, and the Data Marts list pick them up.
+
+  <https://customer-4geatlj66rtkaxtz.cloudflarestream.com/ec24d7794cb0cb2102b7d9b436d6522e/iframe>
+
+  Scripts that set up contexts through the API can set the icon too. `PUT /api/contexts/{id}/icon` sets it, or resets it with `null`, and `POST /api/contexts` and `PUT /api/contexts/{id}` accept an optional `icon`. The contexts list and the contexts listed on Data Marts, Storages, Destinations and Credentials now return `icon`. MCP tools are unchanged. See [Contexts](../../docs/project/contexts.md#context-icons).
+
+  <!-- markdownlint-disable-file MD041 MD036 -->
+
+- 91c287a: **Organizing a project is faster: find Data Marts missing a context or a relationship**
+
+  A project admin who groups Data Marts into contexts needs to find the joined Data Marts that are still outside every context: members whose access is limited to selected contexts do not see them. Before, that took two screens and a manual comparison. The Models canvas showed which Data Marts have relationships, one storage at a time and without contexts, and the Data Marts list could show "no context" only by excluding every context one by one. Now the Data Marts list answers it with two filters: **Relationships** _With relationships_ and **Contexts** _No context_.
+
+  ![The Data Marts list Filters panel with two conditions, Relationships is any of With relationships and Contexts is any of No context, and the list behind it narrowed to 2 rows](https://imagedelivery.net/zKr-4bdC5CBGL2DuuEmvYw/075111d8-962d-42bb-4ff7-72cc2f293000/w=800)
+  - **Relationships** filter: _With relationships_ or _Without relationships_, across all storages. A relationship counts whether the Data Mart defines it or another Data Mart points to it; a relationship with a Data Mart you cannot see does not count.
+  - **Contexts** filter: a new **No context** option, which you can combine with real contexts.
+  - `GET /api/data-marts` returns `relationshipsCount` on every list item: the same number as on the Data Mart's Models canvas card.
+
+  See [Find Data Marts With or Without Relationships](../../docs/getting-started/setup-guide/joinable-data-marts.md#find-data-marts-with-or-without-relationships) and [Contexts](../../docs/project/contexts.md#attaching-contexts-to-resources).
+
+  <!-- markdownlint-disable-file MD041 MD036 -->
+
+### Patch Changes 0.40.0
+
+- @owox/internal-helpers@0.40.0
+- @owox/idp-protocol@0.40.0
+- @owox/idp-better-auth@0.40.0
+- @owox/idp-owox-better-auth@0.40.0
+- @owox/backend@0.40.0
+- @owox/web@0.40.0
+
 ## 0.39.0
 
 ### Minor Changes 0.39.0
@@ -286,7 +390,7 @@ was not found.` — and the same report could fail with a different message ever
 
   Other errors from Google Sheets now name the step that failed and Google's reason.
 
-    <!-- markdownlint-disable-file MD041 MD036 -->
+      <!-- markdownlint-disable-file MD041 MD036 -->
 
 - ad99842: **Plugin SDK: links to a plugin's own pages**
 

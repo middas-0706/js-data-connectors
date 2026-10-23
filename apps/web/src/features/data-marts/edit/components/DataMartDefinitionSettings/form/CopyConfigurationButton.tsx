@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Button } from '@owox/ui/components/button';
-import { Box, ChevronRight, PackageSearch } from 'lucide-react';
+import { Box, ChevronRight, Copy, PackageSearch } from 'lucide-react';
 import { cn } from '@owox/ui/lib/utils';
 import {
   DropdownMenu,
@@ -35,6 +35,15 @@ export function CopyConfigurationButton({
   const [dataMarts, setDataMarts] = useState<DataMartResponseDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  // Radix returns focus to the trigger when the menu closes, and a focused trigger opens
+  // the tooltip. Keep that focus return (keyboard users rely on it) and swallow only the
+  // one tooltip open it causes; the same hint heads the list anyway.
+  const [tooltipOpen, setTooltipOpen] = useState(false);
+  const skipNextTooltipOpenRef = useRef(false);
+  // The same for every connector: credentials are what people hesitate to enter or grant
+  // again, and the settings come along with them.
+  const reuseHint =
+    'Copies the credentials and connection settings of another Data Mart with the same source, so you do not enter or grant access again. You can change them afterwards.';
 
   const loadDataMarts = useCallback(async () => {
     setLoading(true);
@@ -135,20 +144,48 @@ export function CopyConfigurationButton({
   return (
     <TooltipProvider>
       <DropdownMenu open={open} onOpenChange={setOpen}>
-        <DropdownMenuTrigger asChild>
-          <Button type='button' variant='ghost' size='sm' className='cursor-pointer'>
-            <span className='text-muted-foreground/75 text-xs font-semibold tracking-wide uppercase'>
-              Copy from&hellip;
-            </span>
-            <ChevronRight
-              className={cn(
-                'text-foreground/75 h-3.5 w-3.5 transition-transform duration-200',
-                open && 'rotate-90'
-              )}
-            />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent side='bottom' align='end' className='w-72'>
+        <Tooltip
+          delayDuration={300}
+          open={tooltipOpen && !open}
+          onOpenChange={next => {
+            if (next && skipNextTooltipOpenRef.current) {
+              skipNextTooltipOpenRef.current = false;
+              return;
+            }
+            setTooltipOpen(next);
+          }}
+        >
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Button type='button' variant='outline' size='sm' className='cursor-pointer'>
+                <Copy className='h-3.5 w-3.5' aria-hidden='true' />
+                Reuse from another Data&nbsp;Mart
+                <ChevronRight
+                  className={cn(
+                    'text-muted-foreground h-3.5 w-3.5 transition-transform duration-200',
+                    open && 'rotate-90'
+                  )}
+                />
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side='bottom' className='max-w-xs'>
+            {reuseHint}
+          </TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent
+          side='bottom'
+          align='end'
+          className='w-72'
+          onCloseAutoFocus={() => {
+            // The focus return (and the tooltip open it triggers) happens right after this
+            // handler; the flag is cleared again in case no focus event follows.
+            skipNextTooltipOpenRef.current = true;
+            setTimeout(() => {
+              skipNextTooltipOpenRef.current = false;
+            }, 0);
+          }}
+        >
           {loading ? (
             <DropdownMenuItem disabled>Loading&hellip;</DropdownMenuItem>
           ) : dataMarts.length === 0 ? (
@@ -160,16 +197,13 @@ export function CopyConfigurationButton({
                 No matching Data&nbsp;Marts
               </span>
               <span className='text-muted-foreground text-sm'>
-                You can reuse configuration settings only from connector-based Data&nbsp;Marts that
-                use the same source.
+                You can reuse settings only from connector-based Data&nbsp;Marts that use the same
+                source.
               </span>
             </div>
           ) : (
             <div className='flex flex-col gap-2'>
-              <div className='text-muted-foreground border-b p-2 text-sm'>
-                Select one of your existing Data&nbsp;Marts to&nbsp;reuse its configuration
-                settings.
-              </div>
+              <div className='text-muted-foreground border-b p-2 text-sm'>{reuseHint}</div>
               <div>
                 {dataMarts.map(dataMart => {
                   const definition = dataMart.definition as ConnectorDefinitionConfig;

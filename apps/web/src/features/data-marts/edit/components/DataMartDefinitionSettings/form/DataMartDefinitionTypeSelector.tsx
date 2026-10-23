@@ -9,6 +9,14 @@ import {
   SelectValue,
 } from '@owox/ui/components/select';
 import { Label } from '@owox/ui/components/label';
+import {
+  FacebookAdsIcon,
+  GoogleAdsIcon,
+  GoogleSheetsIcon,
+  LinkedInAdsIcon,
+  TikTokAdsIcon,
+} from '../../../../../../shared/icons';
+import type { LocalIcon } from '../../../../../../shared/icons';
 
 interface DataMartDefinitionTypeSelectorProps {
   initialType?: DataMartDefinitionType | null;
@@ -28,8 +36,25 @@ interface DataMartDefinitionTypeSelectorProps {
 interface TypeOption {
   type: DataMartDefinitionType;
   label: string;
-  description: string;
+  /** Secondary text in the list; `examples` replaces it when set. */
+  description?: string;
+  /**
+   * Sources shown as a row of logos, the way the list shows Data Owners as avatars: a
+   * spreadsheet owner recognises the Google Sheets logo faster than the words "data
+   * import". Names stay in the tooltip and for screen readers.
+   */
+  examples?: { name: string; icon: LocalIcon }[];
 }
+
+// Ordered by how often they run in practice; Google Sheets stays because plans and
+// targets live there.
+const POPULAR_CONNECTORS: { name: string; icon: LocalIcon }[] = [
+  { name: 'Facebook Ads', icon: FacebookAdsIcon },
+  { name: 'Google Ads', icon: GoogleAdsIcon },
+  { name: 'TikTok Ads', icon: TikTokAdsIcon },
+  { name: 'LinkedIn Ads', icon: LinkedInAdsIcon },
+  { name: 'Google Sheets', icon: GoogleSheetsIcon },
+];
 
 export function DataMartDefinitionTypeSelector({
   initialType,
@@ -76,7 +101,7 @@ export function DataMartDefinitionTypeSelector({
     {
       type: DataMartDefinitionType.CONNECTOR,
       label: 'Connector',
-      description: 'Data import from Source to Storage',
+      examples: POPULAR_CONNECTORS,
     },
   ];
 
@@ -102,7 +127,21 @@ export function DataMartDefinitionTypeSelector({
               {typeOptions.map(option => (
                 <SelectItem key={option.type} value={option.type}>
                   {option.label}
-                  <span className='text-muted-foreground/80 ml-2'>{option.description}</span>
+                  {option.examples ? (
+                    <span className='text-muted-foreground/80 ml-2 inline-flex items-center gap-1.5'>
+                      <span className='inline-flex items-center gap-1'>
+                        {option.examples.map(({ name, icon: Icon }) => (
+                          <span key={name} title={name} className='inline-flex'>
+                            <Icon size={16} />
+                            <span className='sr-only'>{name}</span>
+                          </span>
+                        ))}
+                      </span>
+                      <span>and others</span>
+                    </span>
+                  ) : (
+                    <span className='text-muted-foreground/80 ml-2'>{option.description}</span>
+                  )}
                   {savedType === option.type && (
                     <span className='text-muted-foreground/60 ml-2'>(current)</span>
                   )}

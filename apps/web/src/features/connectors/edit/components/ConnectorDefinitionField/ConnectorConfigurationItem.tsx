@@ -16,7 +16,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@owox/ui/components/too
 import { DataMartStatus } from '../../../../data-marts/shared/enums';
 import type { DataStorage } from '../../../../data-storage/shared/model/types/data-storage';
 import { useConnector } from '../../../shared/model/hooks/useConnector';
-import { useEffect } from 'react';
+import { getConnectorInfoByName } from '../../../shared/utils';
+import { GOOGLE_SHEETS_CONNECTOR_NAME } from '../../../shared/utils/google-sheets-fields.utils';
+import { spreadsheetUrlFrom } from '../../../../google-oauth';
+import { useEffect, useState } from 'react';
 import { RawBase64Icon } from '../../../../../shared/icons';
 import { unquoteIdentifier } from '../../utils/snowflake-identifier.utils';
 import { RedshiftConnectionType } from '../../../../data-storage/shared/model/types/credentials';
@@ -46,6 +49,27 @@ export function ConnectorConfigurationItem({
     void fetchAvailableConnectors();
   }, [fetchAvailableConnectors]);
 
+  // The manifest title ("Google Sheets"), not the technical name ("GoogleSheets").
+  // Bundled titles come from the list `useConnector` already loaded; only a source
+  // absent from it (a custom connector) needs the project-scoped lookup. The technical
+  // name shows until either lands, and stays if the lookup fails.
+  const sourceName = connectorDef.connector.source.name;
+  const bundledTitle = connectors.find(c => c.name === sourceName)?.displayName;
+  const [customTitle, setCustomTitle] = useState<string | null>(null);
+  useEffect(() => {
+    if (bundledTitle || connectors.length === 0) return;
+    let cancelled = false;
+    setCustomTitle(null);
+    getConnectorInfoByName(sourceName)
+      .then(info => {
+        if (!cancelled && info) setCustomTitle(info.displayName);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [bundledTitle, connectors.length, sourceName]);
+
   const getConnectorIcon = (connectorName: string) => {
     const connector = connectors.find(c => c.name === connectorName);
     if (connector?.logoBase64) {
@@ -54,12 +78,43 @@ export function ConnectorConfigurationItem({
     return undefined;
   };
 
+  // For Google Sheets the node is always "sheet"; the sheet (tab) name is what tells
+  // one plan apart from another, so show it and link it to the spreadsheet.
+  const getGoogleSheetsSource = () => {
+    if (connectorDef.connector.source.name !== GOOGLE_SHEETS_CONNECTOR_NAME) return null;
+    const config = connectorDef.connector.source.configuration[configIndex];
+    const sheetName = typeof config.SheetName === 'string' ? config.SheetName.trim() : '';
+    const spreadsheet = typeof config.SpreadsheetId === 'string' ? config.SpreadsheetId.trim() : '';
+    if (!sheetName) return null;
+    return { sheetName, spreadsheetUrl: spreadsheet ? spreadsheetUrlFrom(spreadsheet) : null };
+  };
+
   const getConnectorSubtitle = () => {
     const node = connectorDef.connector.source.node || 'No node selected';
+    const googleSheetsSource = getGoogleSheetsSource();
     return (
       <div className='flex flex-wrap items-center gap-2'>
-        <span className='text-muted-foreground/75'>Data:</span>{' '}
-        <span className='text-muted-foreground font-medium'>{node}</span>
+        {googleSheetsSource ? (
+          googleSheetsSource.spreadsheetUrl ? (
+            formatLinkParam(
+              'Sheet',
+              googleSheetsSource.sheetName,
+              googleSheetsSource.spreadsheetUrl
+            )
+          ) : (
+            <>
+              <span className='text-muted-foreground/75'>Sheet:</span>{' '}
+              <span className='text-muted-foreground font-medium'>
+                {googleSheetsSource.sheetName}
+              </span>
+            </>
+          )
+        ) : (
+          <>
+            <span className='text-muted-foreground/75'>Data:</span>{' '}
+            <span className='text-muted-foreground font-medium'>{node}</span>
+          </>
+        )}
         <span className='text-muted-foreground'>•</span>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -296,8 +351,8 @@ export function ConnectorConfigurationItem({
             }}
           >
             <ListItemCard
-              icon={getConnectorIcon(connectorDef.connector.source.name)}
-              title={connectorDef.connector.source.name || 'Connector'}
+              icon={getConnectorIcon(sourceName)}
+              title={bundledTitle ?? customTitle ?? (sourceName || 'Connector')}
               subtitle={getConnectorSubtitle()}
               className='bg-background hover:bg-muted min-h-[80px] cursor-pointer border-0 transition-colors hover:shadow-none'
             />

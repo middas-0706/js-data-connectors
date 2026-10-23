@@ -8,6 +8,14 @@ const GAPI_SRC = 'https://apis.google.com/js/api.js';
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
 const GOOGLE_SHEETS_MIME_TYPE = 'application/vnd.google-apps.spreadsheet';
 const PICKER_LOAD_TIMEOUT_MS = 10000;
+// Google Picker clamps the dialog to 566x350 .. 1051x650 and centres it in the window.
+// Without an explicit size it uses the maximum, and in a short window the top of the
+// dialog (title and search box) ends up above the viewport.
+const PICKER_MIN_WIDTH = 566;
+const PICKER_MIN_HEIGHT = 350;
+const PICKER_MAX_WIDTH = 1051;
+const PICKER_MAX_HEIGHT = 650;
+const PICKER_VIEWPORT_MARGIN = 32;
 
 export interface PickedGoogleSpreadsheet {
   id: string;
@@ -46,6 +54,7 @@ interface PickerBuilderLike {
   setAppId(appId: string): PickerBuilderLike;
   addView(view: DocsViewLike): PickerBuilderLike;
   enableFeature(feature: unknown): PickerBuilderLike;
+  setSize(width: number, height: number): PickerBuilderLike;
   setCallback(callback: (response: PickerResponse) => void): PickerBuilderLike;
   build(): PickerInstanceLike;
 }
@@ -228,17 +237,42 @@ export async function verifyGooglePickerAccount(
   }
 }
 
+export function getPickerDialogSize(viewport: { innerWidth: number; innerHeight: number }): {
+  width: number;
+  height: number;
+} {
+  // Picker ignores anything below its minimum, so clamp to it rather than pretend.
+  return {
+    width: Math.max(
+      PICKER_MIN_WIDTH,
+      Math.min(PICKER_MAX_WIDTH, viewport.innerWidth - PICKER_VIEWPORT_MARGIN)
+    ),
+    height: Math.max(
+      PICKER_MIN_HEIGHT,
+      Math.min(PICKER_MAX_HEIGHT, viewport.innerHeight - PICKER_VIEWPORT_MARGIN)
+    ),
+  };
+}
+
 function buildPickerView(picker: GooglePicker) {
   return new picker.DocsView(picker.ViewId.SPREADSHEETS)
     .setMimeTypes(GOOGLE_SHEETS_MIME_TYPE)
     .setMode(picker.DocsViewMode.LIST);
 }
 
+/** The spreadsheet's edit URL from either its ID or an already complete URL. */
+export function spreadsheetUrlFrom(idOrUrl: string): string {
+  const value = idOrUrl.trim();
+  return /^https?:\/\//i.test(value)
+    ? value
+    : `https://docs.google.com/spreadsheets/d/${value}/edit`;
+}
+
 function buildItemUrl(doc: PickerDoc): string {
   if (doc.url) {
     return doc.url;
   }
-  return `https://docs.google.com/spreadsheets/d/${doc.id}/edit`;
+  return spreadsheetUrlFrom(doc.id);
 }
 
 export function useGoogleSheetsPicker() {
@@ -297,12 +331,14 @@ export function useGoogleSheetsPicker() {
             settle();
           };
 
+          const { width, height } = getPickerDialogSize(window);
           const builtPicker = new picker.PickerBuilder()
             .setOAuthToken(token)
             .setDeveloperKey(apiKey)
             .setAppId(appId)
             .addView(buildPickerView(picker))
             .enableFeature(picker.Feature.SUPPORT_DRIVES)
+            .setSize(width, height)
             .setCallback(response => {
               if (!isMountedRef.current || activePickerRef.current !== builtPicker) {
                 return;

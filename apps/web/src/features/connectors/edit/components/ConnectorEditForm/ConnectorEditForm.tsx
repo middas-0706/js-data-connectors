@@ -39,6 +39,7 @@ import type { CustomConnectorListItemDto } from '../../../../connector-builder/s
 import { useProjectRoute } from '../../../../../shared/hooks/useProjectRoute';
 import { usePermissions } from '../../../../../app/permissions';
 import { isUnpublishedCustomConnector } from '../../../shared/utils/custom-connector-publish.utils';
+import { suggestGoogleSheetsTableName } from '../../../shared/utils/google-sheets-table-name.utils';
 
 const connectorKey = (c: ConnectorListItem) =>
   c.isCustom && c.id ? `custom:${c.id}` : `bundled:${c.name}`;
@@ -367,10 +368,26 @@ export function ConnectorEditForm({
     void fetchConnectorFields(connector);
   };
 
+  // The sheet the target table is suggested from. When it changes while creating a
+  // Google Sheets Data Mart, the target seeded from the previous sheet is dropped, so
+  // going Back, picking another sheet and returning suggests a name for the new sheet
+  // instead of keeping the old one.
+  const googleSheetsSourceKeyRef = useRef<string | null>(null);
+
   const handleConnectorSelect = (connector: ConnectorListItem) => {
     setSelectedConnector(connector);
     setConnectorConfiguration({});
     setConfigurationIsValid(false);
+    if (
+      !existingConnector &&
+      (!selectedConnector || connectorKey(selectedConnector) !== connectorKey(connector))
+    ) {
+      // A target seeded for the previous connector (or its sheet) must not survive a
+      // connector change; the target step re-seeds from the new connector. Re-clicking
+      // the selected connector keeps whatever the user typed there.
+      setTarget(null);
+      googleSheetsSourceKeyRef.current = null;
+    }
     if (
       connector.name === GOOGLE_SHEETS_CONNECTOR_NAME ||
       selectedConnector?.name === GOOGLE_SHEETS_CONNECTOR_NAME
@@ -455,10 +472,21 @@ export function ConnectorEditForm({
       setConnectorConfiguration(configuration);
       if (isGoogleSheetsConnector) {
         setPreviewConfigurationKey(null);
+        if (!existingConnector) {
+          const asText = (value: unknown) => (typeof value === 'string' ? value : '');
+          const sourceKey = `${asText(configuration.SpreadsheetId)}\u0000${asText(configuration.SheetName)}`;
+          if (
+            googleSheetsSourceKeyRef.current !== null &&
+            googleSheetsSourceKeyRef.current !== sourceKey
+          ) {
+            setTarget(null);
+          }
+          googleSheetsSourceKeyRef.current = sourceKey;
+        }
       }
       setIsDirty(true);
     },
-    [isGoogleSheetsConnector]
+    [existingConnector, isGoogleSheetsConnector]
   );
 
   const handleConfigurationValidationChange = useCallback((isValid: boolean) => {
@@ -895,10 +923,12 @@ export function ConnectorEditForm({
         ) : null;
       case 4:
         if (isGoogleSheetsConnector) {
+          // Suggest the table from the selected sheet, not the connector's generic
+          // `google_sheets`: two sheets of one document must not default to one table.
           return selectedNode && connectorFields ? (
             <TargetSetupStep
               dataStorageType={dataStorageType}
-              destinationName={getDestinationName(connectorFields, selectedNode)}
+              destinationName={suggestGoogleSheetsTableName(connectorConfiguration.SheetName)}
               connectorName={selectedConnector.displayName}
               target={target}
               onTargetChange={handleTargetChange}

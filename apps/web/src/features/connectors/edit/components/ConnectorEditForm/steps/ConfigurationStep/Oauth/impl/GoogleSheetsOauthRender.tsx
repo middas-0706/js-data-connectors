@@ -6,8 +6,9 @@ import type { OauthRenderComponentProps } from '../OauthRenderFactory';
 import { useGoogleSheetsPicker } from '../../../../../../../../google-oauth';
 import { Button } from '@owox/ui/components/button';
 import { ExternalAnchor } from '@owox/ui/components/common/external-anchor';
-import { FileSpreadsheet } from 'lucide-react';
+import { CircleCheck, FileSpreadsheet } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'react-hot-toast';
 
 export function GoogleSheetsOauthRender({
   isLoading,
@@ -22,31 +23,39 @@ export function GoogleSheetsOauthRender({
   const { openPicker } = useGoogleSheetsPicker();
 
   const connectedEmail = status?.user?.email ?? status?.user?.name;
+  const spreadsheetUrl =
+    typeof configuration.SpreadsheetId === 'string' ? configuration.SpreadsheetId.trim() : '';
+  const spreadsheetSelected = spreadsheetUrl !== '';
 
   const handleGoogleLogin = async (response: GoogleSheetsLoginResponse) => {
     const result = await onOAuthSuccess({ code: response.code });
     const nextEmail = result?.user.email ?? result?.user.name;
 
-    if (
+    const accountChanged = Boolean(
       result &&
       connectedEmail &&
       nextEmail &&
-      nextEmail.toLowerCase() !== connectedEmail.toLowerCase() &&
-      configuration.SpreadsheetId
-    ) {
+      nextEmail.toLowerCase() !== connectedEmail.toLowerCase()
+    );
+    if (accountChanged && spreadsheetSelected) {
       onValueChange('SpreadsheetId', '');
     }
     if (result) {
       setPickerError(null);
+      // The popup closes on its own; say out loud that the account is connected and,
+      // when no spreadsheet is chosen yet, what comes next, so the user does not have
+      // to spot the changed button label.
+      const connected = nextEmail
+        ? `Google account ${nextEmail} connected.`
+        : 'Google account connected.';
+      const needsSpreadsheet = accountChanged || !spreadsheetSelected;
+      toast.success(needsSpreadsheet ? `${connected} Now choose a spreadsheet.` : connected);
     }
   };
 
   const clientId = settings?.vars.ClientId as string | undefined;
   const pickerApiKey = settings?.vars.PickerApiKey as string | undefined;
   const projectNumber = settings?.vars.ProjectNumber as string | undefined;
-  const spreadsheetUrl =
-    typeof configuration.SpreadsheetId === 'string' ? configuration.SpreadsheetId.trim() : '';
-  const spreadsheetSelected = spreadsheetUrl !== '';
   const handlePickSpreadsheet = () => {
     if (!clientId || !pickerApiKey || !projectNumber) {
       setPickerError('Google Picker configuration is incomplete');
@@ -83,6 +92,7 @@ export function GoogleSheetsOauthRender({
       >
         {status?.user ? (
           <>
+            {status.valid && <CircleCheck className='h-4 w-4 text-green-600' aria-hidden='true' />}
             Connected as <strong>{status.user.name ?? status.user.id}</strong>
           </>
         ) : (

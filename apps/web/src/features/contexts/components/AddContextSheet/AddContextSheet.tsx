@@ -141,7 +141,13 @@ export function AddContextSheet({ isOpen, members, onClose, onCreated }: AddCont
         if (!open) handleClose();
       }}
     >
-      <SheetContent onEscapeKeyDown={preventSheetDismissWhileSuggesting}>
+      <SheetContent
+        onEscapeKeyDown={preventSheetDismissWhileSuggesting}
+        onOpenAutoFocus={event => {
+          event.preventDefault();
+          form.setFocus('name');
+        }}
+      >
         <SheetHeader>
           <SheetTitle>Add context</SheetTitle>
           <SheetDescription>
@@ -192,6 +198,7 @@ export function AddContextSheet({ isOpen, members, onClose, onCreated }: AddCont
                       </FormLabel>
                       <FormControl>
                         <DescriptionEditor
+                          startEditing
                           ref={field.ref}
                           name={field.name}
                           onBlur={field.onBlur}

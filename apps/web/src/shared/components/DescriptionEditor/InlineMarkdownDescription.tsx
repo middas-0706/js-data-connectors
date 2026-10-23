@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@owox/ui/components/button';
 import type { InlineEditDescriptionProps } from '../InlineEditDescription/InlineEditDescription';
-import { MarkdownEditorPreview } from '../MarkdownEditor';
-import { useDescriptionPreview } from './useDescriptionPreview';
 import { DescriptionEditor } from './DescriptionEditor';
+import { DescriptionView } from './DescriptionView';
 
 export function InlineMarkdownDescription({
   projectId,
@@ -18,11 +17,13 @@ export function InlineMarkdownDescription({
   const [value, setValue] = useState(description ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const preview = useDescriptionPreview({
-    markdown: description ?? '',
-    enabled: !editing,
-    projectId,
-  });
+  const editButtonRef = useRef<HTMLButtonElement>(null);
+  const wasEditing = useRef(false);
+  useEffect(() => {
+    if (!editing && wasEditing.current) editButtonRef.current?.focus();
+    wasEditing.current = editing;
+  }, [editing]);
+  const scope = currentDataMartId ? 'data_mart' : 'project';
   useEffect(() => {
     setValue(description ?? '');
     setEditing(false);
@@ -55,7 +56,7 @@ export function InlineMarkdownDescription({
   const ai = typeof aiButton === 'function' ? aiButton({ setValue }) : aiButton;
   return (
     <div className='w-full space-y-2'>
-      {editing ? (
+      {editing && !readOnly ? (
         <>
           <DescriptionEditor
             projectId={projectId}
@@ -65,55 +66,55 @@ export function InlineMarkdownDescription({
             disabled={saving}
             placeholder={placeholder}
             autoFocus
+            startEditing
+            scope={scope}
+            saveError={error}
+            returnFocusRef={editButtonRef}
             onSave={() => {
               void save();
             }}
             onCancel={cancel}
+            footer={
+              <div className='flex items-center gap-2'>
+                <Button
+                  type='button'
+                  size='sm'
+                  onClick={() => {
+                    void save();
+                  }}
+                  disabled={saving}
+                >
+                  Save
+                </Button>
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  onClick={cancel}
+                  disabled={saving}
+                >
+                  Cancel
+                </Button>
+                {ai}
+              </div>
+            }
           />
-          <div className='flex items-center gap-2'>
-            <Button
-              type='button'
-              size='sm'
-              onClick={() => {
-                void save();
-              }}
-              disabled={saving}
-            >
-              Save
-            </Button>
-            <Button type='button' variant='outline' size='sm' onClick={cancel} disabled={saving}>
-              Cancel
-            </Button>
-            {ai}
-          </div>
-          {error && (
-            <p className='text-destructive text-xs' role='alert'>
-              {error}
-            </p>
-          )}
         </>
       ) : (
-        <>
-          {!description || preview.loading || preview.error ? (
-            <p className='text-muted-foreground whitespace-pre-wrap'>
-              {description ?? placeholder}
-            </p>
-          ) : (
-            <MarkdownEditorPreview {...preview} />
-          )}
-          {!readOnly && (
-            <Button
-              type='button'
-              variant='outline'
-              size='sm'
-              onClick={() => {
-                setEditing(true);
-              }}
-            >
-              Edit description
-            </Button>
-          )}
-        </>
+        <DescriptionView
+          projectId={projectId}
+          value={description ?? ''}
+          placeholder={placeholder}
+          scope={scope}
+          editButtonProps={{ ref: editButtonRef }}
+          onEdit={
+            readOnly
+              ? undefined
+              : () => {
+                  setEditing(true);
+                }
+          }
+        />
       )}
     </div>
   );

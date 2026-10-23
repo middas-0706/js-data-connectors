@@ -3,6 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContextDto } from '../../types/context.types';
 import { ContextDetailsSheet } from './ContextDetailsSheet';
 
+vi.mock('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'light' }) }));
+vi.mock('../../../../shared/hooks', () => ({
+  useProjectRoute: () => ({ scope: (path: string) => '/ui/p1' + path }),
+}));
+vi.mock('../../../../shared/components/DescriptionEditor/useDescriptionPreview', () => ({
+  useDescriptionPreview: () => ({ html: '<h1>Revenue</h1>', loading: false, error: null }),
+}));
+
 const { contextServiceMock, trackEventMock } = vi.hoisted(() => ({
   contextServiceMock: {
     updateContext: vi.fn(),
@@ -56,6 +64,14 @@ describe('ContextDetailsSheet icon', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     contextServiceMock.updateContext.mockResolvedValue(makeContext(null));
+  });
+
+  it('focuses Name on opening instead of the icon or copy-link button', async () => {
+    renderSheet(makeContext(null));
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: /^Name/ })).toHaveFocus();
+    });
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
 
   it('saves a picked icon in the same request as the name and description', async () => {
@@ -125,5 +141,44 @@ describe('ContextDetailsSheet icon', () => {
       description: '',
     });
     expect(trackEventMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Context read-only sharing', () => {
+  it('shows the description and sharing actions without edit or membership controls', async () => {
+    render(
+      <ContextDetailsSheet
+        isOpen
+        readOnly
+        members={[]}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+        context={{
+          id: 'context-1',
+          name: 'Revenue',
+          description: '# Revenue',
+          icon: null,
+          createdAt: '',
+          modifiedAt: '',
+          createdById: null,
+          createdByUser: null,
+        }}
+      />
+    );
+    expect(screen.getByRole('dialog', { name: 'Revenue' })).toBeInTheDocument();
+    expect(screen.getByTitle('Description')).toHaveAttribute(
+      'srcdoc',
+      expect.stringContaining('<h1>Revenue</h1>')
+    );
+    expect(screen.getByRole('button', { name: 'Copy link to context' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy as Markdown' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Expand description' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit description' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.queryByText('Assigned members')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Revenue' })).toHaveFocus();
+    });
   });
 });

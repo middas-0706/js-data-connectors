@@ -18,9 +18,18 @@ vi.mock('../../../../utils', async importOriginal => ({
 }));
 vi.mock('../../../idp/hooks/useAuthState', () => ({ useUser: () => ({ projectId: 'p1' }) }));
 vi.mock('../../../../shared/components/DescriptionEditor/DescriptionEditor', () => ({
-  DescriptionEditor: ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
+  DescriptionEditor: ({
+    value,
+    onChange,
+    startEditing,
+  }: {
+    value: string;
+    onChange: (v: string) => void;
+    startEditing?: boolean;
+  }) => (
     <textarea
       aria-label='Description'
+      data-start-editing={startEditing}
       value={value}
       onChange={event => {
         onChange(event.target.value);
@@ -48,6 +57,17 @@ describe('AddContextSheet icon', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     contextServiceMock.createContext.mockResolvedValue(created);
+  });
+
+  it('opens the description for typing while keeping initial focus on Name', async () => {
+    renderSheet();
+    expect(screen.getByRole('textbox', { name: 'Description' })).toHaveAttribute(
+      'data-start-editing',
+      'true'
+    );
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Marketing')).toHaveFocus();
+    });
   });
 
   it('creates the context with the picked icon', async () => {

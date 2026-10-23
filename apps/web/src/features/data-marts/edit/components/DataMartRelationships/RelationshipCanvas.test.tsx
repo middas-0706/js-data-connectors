@@ -6,7 +6,7 @@ import type { ErdCardField } from '../../../shared/canvas/erd-fields';
 import type { DataMartRelationship } from '../../../shared/types/relationship.types';
 import { RelationshipCanvas } from './RelationshipCanvas';
 import { getViewportForBounds } from '@xyflow/react';
-import { getGraphZoomRange } from './relationship-canvas-zoom';
+import { GRAPH_READABLE_ZOOM, getGraphZoomRange } from './relationship-canvas-zoom';
 
 const FIT_VIEW_PADDING = 1 / 0.85 - 1;
 
@@ -194,6 +194,115 @@ describe('RelationshipCanvas viewport', () => {
     expect(reactFlowHarness.fitView).not.toHaveBeenCalled();
   });
 
+  it('opens a graph too large to read when fitted on the root card at a readable zoom', async () => {
+    const relationships = Array.from({ length: 12 }, (_, index) =>
+      buildRelationship(`rel-${String(index)}`, `target-${String(index)}`)
+    );
+    render(<RelationshipCanvas {...buildCanvasProps(relationships)} />);
+
+    await waitFor(() => {
+      expect(reactFlowHarness.setViewport).toHaveBeenCalledTimes(1);
+    });
+    const viewport = reactFlowHarness.setViewport.mock.lastCall?.[0];
+    const root = reactFlowHarness.latestProps?.nodes?.find(node => node.data.isSource);
+    if (!viewport || !root) throw new Error('expected an initial viewport and a root card');
+
+    expect(viewport.zoom).toBe(GRAPH_READABLE_ZOOM);
+    // The root card sits in the vertical middle of the pane (screen position
+    // of a flow point = viewport offset + point * zoom).
+    expect(viewport.y + (root.position.y + (root.height ?? 0) / 2) * viewport.zoom).toBeCloseTo(
+      reactFlowHarness.store.height / 2
+    );
+    // Zooming out still reaches the whole graph.
+    expect(reactFlowHarness.latestProps?.minZoom).toBeLessThan(GRAPH_READABLE_ZOOM);
+    expect(reactFlowHarness.fitView).not.toHaveBeenCalled();
+  });
+
+  it('opens a large vertical graph on the root card at a readable zoom', async () => {
+    const relationships = Array.from({ length: 12 }, (_, index) =>
+      buildRelationship(`rel-${String(index)}`, `target-${String(index)}`)
+    );
+    render(<RelationshipCanvas {...buildCanvasProps(relationships)} direction='vertical' />);
+
+    await waitFor(() => {
+      expect(reactFlowHarness.setViewport).toHaveBeenCalledTimes(1);
+    });
+    const viewport = reactFlowHarness.setViewport.mock.lastCall?.[0];
+    const root = reactFlowHarness.latestProps?.nodes?.find(node => node.data.isSource);
+    if (!viewport || !root) throw new Error('expected an initial viewport and a root card');
+    const bounds = getRenderedGraphBounds();
+
+    expect(viewport.zoom).toBe(GRAPH_READABLE_ZOOM);
+    // The row of 12 cards is too wide for the pane: the view centers on the
+    // root card horizontally...
+    expect(viewport.x + (root.position.x + (root.width ?? 0) / 2) * viewport.zoom).toBeCloseTo(
+      reactFlowHarness.store.width / 2
+    );
+    // ...while the two ranks fit the pane height and stay vertically centered.
+    const topGap = viewport.y + bounds.minY * viewport.zoom;
+    const bottomGap = reactFlowHarness.store.height - (viewport.y + bounds.maxY * viewport.zoom);
+    expect(topGap).toBeCloseTo(bottomGap);
+  });
+
+  it('re-applies the initial view when a layout change moves the graph before any interaction', async () => {
+    const relationships = Array.from({ length: 12 }, (_, index) =>
+      buildRelationship(`rel-${String(index)}`, `target-${String(index)}`)
+    );
+    const { rerender } = render(<RelationshipCanvas {...buildCanvasProps(relationships)} />);
+
+    await waitFor(() => {
+      expect(reactFlowHarness.setViewport).toHaveBeenCalledTimes(1);
+    });
+
+    // Horizontal -> Vertical moves the root card from the left edge to the top
+    // middle. The user has not touched the canvas yet, so the view follows it
+    // instead of staying where the root used to be.
+    rerender(<RelationshipCanvas {...buildCanvasProps(relationships)} direction='vertical' />);
+
+    await waitFor(() => {
+      expect(reactFlowHarness.setViewport).toHaveBeenCalledTimes(2);
+    });
+    const viewport = reactFlowHarness.setViewport.mock.lastCall?.[0];
+    const root = reactFlowHarness.latestProps?.nodes?.find(node => node.data.isSource);
+    if (!viewport || !root) throw new Error('expected an initial viewport and a root card');
+
+    expect(viewport.zoom).toBe(GRAPH_READABLE_ZOOM);
+    expect(viewport.x + (root.position.x + (root.width ?? 0) / 2) * viewport.zoom).toBeCloseTo(
+      reactFlowHarness.store.width / 2
+    );
+    const rootTop = viewport.y + root.position.y * viewport.zoom;
+    const rootBottom = viewport.y + (root.position.y + (root.height ?? 0)) * viewport.zoom;
+    expect(rootTop).toBeGreaterThanOrEqual(0);
+    expect(rootBottom).toBeLessThanOrEqual(reactFlowHarness.store.height);
+    expect(reactFlowHarness.fitView).not.toHaveBeenCalled();
+  });
+
+  it('follows the search matches on a relayout without snapping to the initial view', async () => {
+    const relationships = Array.from({ length: 12 }, (_, index) =>
+      buildRelationship(`rel-${String(index)}`, `target-${String(index)}`)
+    );
+    const props = { ...buildCanvasProps(relationships), searchQuery: 'target-3' };
+    const { rerender } = render(<RelationshipCanvas {...props} />);
+
+    await waitFor(() => {
+      expect(reactFlowHarness.fitView).toHaveBeenCalledWith(
+        expect.objectContaining({ nodes: [{ id: 'path:target-3' }] })
+      );
+    });
+    expect(reactFlowHarness.setViewport).toHaveBeenCalledTimes(1);
+    const matchZooms = reactFlowHarness.fitView.mock.calls.length;
+
+    // The search box and the settings popover sit outside the canvas, so the
+    // user has not taken over the viewport. The relayout must go straight to
+    // the matches — not snap to the root view first and animate back.
+    rerender(<RelationshipCanvas {...props} direction='vertical' />);
+
+    await waitFor(() => {
+      expect(reactFlowHarness.fitView.mock.calls.length).toBeGreaterThan(matchZooms);
+    });
+    expect(reactFlowHarness.setViewport).toHaveBeenCalledTimes(1);
+  });
+
   it('passes the low zoom floor to a full fit while the interactive floor is raised', async () => {
     render(<RelationshipCanvas {...buildCanvasProps([buildRelationship('rel-1', 'target-1')])} />);
 
@@ -226,10 +335,63 @@ describe('RelationshipCanvas viewport', () => {
       expect(reactFlowHarness.latestProps?.nodes).toHaveLength(2);
     });
 
+    // A mid-range zoom, so both steps stay inside the range (a zoom-out step
+    // that reaches the floor fits the whole graph instead — tested below).
+    reactFlowHarness.getZoom.mockReturnValue(2);
     fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
     expect(reactFlowHarness.zoomTo).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Zoom out' }));
     expect(reactFlowHarness.zoomTo).toHaveBeenCalledTimes(2);
+  });
+
+  it('fits the whole graph when zooming out reaches the full-fit floor', async () => {
+    // zoomTo pivots on the pane centre: zooming out from a view opened on the
+    // root card would reach the floor with part of the graph off screen.
+    const relationships = Array.from({ length: 12 }, (_, index) =>
+      buildRelationship(`rel-${String(index)}`, `target-${String(index)}`)
+    );
+    render(<RelationshipCanvas {...buildCanvasProps(relationships)} />);
+
+    await waitFor(() => {
+      expect(reactFlowHarness.setViewport).toHaveBeenCalledTimes(1);
+    });
+    const floor = reactFlowHarness.latestProps?.minZoom ?? Number.NaN;
+    expect(floor).toBeLessThan(GRAPH_READABLE_ZOOM);
+
+    reactFlowHarness.getZoom.mockReturnValue(floor * 2);
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom out' }));
+    expect(reactFlowHarness.zoomTo).toHaveBeenCalledTimes(1);
+    expect(reactFlowHarness.fitView).not.toHaveBeenCalled();
+
+    reactFlowHarness.getZoom.mockReturnValue(floor * 1.2);
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom out' }));
+    expect(reactFlowHarness.zoomTo).toHaveBeenCalledTimes(1);
+    expect(reactFlowHarness.fitView).toHaveBeenCalledWith(
+      expect.objectContaining({
+        minZoom: 0.05,
+        maxZoom: 3,
+        padding: FIT_VIEW_PADDING,
+        duration: 150,
+      })
+    );
+  });
+
+  it('keeps stepping down to the 1x floor of a graph that fits at the maximum zoom', async () => {
+    // A tiny graph on a huge pane fits at the 3x cap, so its floor is the 1x
+    // fallback, not the full fit — fitting there would zoom back in to 3x.
+    reactFlowHarness.store.width = 20000;
+    reactFlowHarness.store.height = 20000;
+    render(<RelationshipCanvas {...buildCanvasProps([buildRelationship('rel-1', 'target-1')])} />);
+
+    await waitFor(() => {
+      expect(reactFlowHarness.setViewport).toHaveBeenCalledTimes(1);
+    });
+    expect(reactFlowHarness.latestProps?.minZoom).toBe(1);
+
+    reactFlowHarness.getZoom.mockReturnValue(1.2);
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom out' }));
+    expect(reactFlowHarness.zoomTo).toHaveBeenCalledWith(1, { duration: 150 });
+    expect(reactFlowHarness.fitView).not.toHaveBeenCalled();
   });
 
   it('recovers with a full fit when the viewport zoom is corrupted', async () => {
@@ -637,6 +799,8 @@ describe('RelationshipCanvas view settings', () => {
     });
 
     const rootId = reactFlowHarness.latestProps?.nodes?.find(node => node.data.isSource)?.id ?? '';
+    // Selecting a card hands the viewport over to the user. No pointer press
+    // here, as with keyboard activation: the selection alone must count.
     act(() => {
       reactFlowHarness.latestProps?.onNodeClick?.(null, { id: rootId });
     });
@@ -644,8 +808,9 @@ describe('RelationshipCanvas view settings', () => {
       true
     );
 
-    // Cosmetic toggles relayout the graph but keep every node id — the
-    // selection and the user's viewport must survive (no extra fit).
+    // Cosmetic toggles relayout the graph but keep every node id — after the
+    // user has touched the canvas, the selection and their viewport must
+    // survive (no extra fit).
     rerender(<RelationshipCanvas {...buildCanvasProps(relationships)} showJoinFields />);
     rerender(<RelationshipCanvas {...buildCanvasProps(relationships)} viewMode='erd' />);
     rerender(<RelationshipCanvas {...buildCanvasProps(relationships)} direction='vertical' />);

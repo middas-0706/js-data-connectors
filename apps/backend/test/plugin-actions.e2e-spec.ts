@@ -627,20 +627,28 @@ describe('Plugin backend actions (e2e)', () => {
       await asExecution('/api/data-marts', token).expect(401);
     });
 
-    it('refuses AI Credentials to the token', async () => {
+    it('lets the token past the AI declaration and model checks to its installation binding', async () => {
+      const plugin = await installPlugin('actions-e2e-ai', '7139');
+      await app
+        .get<Repository<PluginVersion>>(getRepositoryToken(PluginVersion))
+        .update(plugin.versionId, {
+          credentialRequirements: [{ id: 'ai', optional: false, models: ['fast'] }],
+        });
       const token = randomUUID();
-      await seedExecution(token);
+      await seedExecution(token, {
+        pluginId: plugin.pluginId,
+        pluginVersionId: plugin.versionId,
+        installationId: plugin.installationId,
+      });
 
       const res = await agent
         .post(`${RUNTIME}/credentials/ai/ai/generate`)
         .set('x-owox-execution-token', token)
         .send({ version: 1, model: 'fast', options: {} })
-        .expect(403);
+        .expect(404);
 
-      expect(res.body).toMatchObject({
-        code: 'EXECUTION_TOKEN_NOT_ALLOWED',
-        message: 'AI Credentials are not available in a backend action',
-      });
+      // The binding lookup is the first check after the declared model; no provider is needed.
+      expect(res.body.message).toBe('Credential ai is not configured');
     });
 
     it('refuses a runtime token on executions/current, which is not read as an id', async () => {

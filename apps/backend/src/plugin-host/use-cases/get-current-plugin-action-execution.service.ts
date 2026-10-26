@@ -1,6 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { castError } from '@owox/internal-helpers';
 import {
   CREDENTIAL_CONSUMER_BINDING_FACADE,
+  isExpectedUnusableCredentialError,
   type CredentialConsumerBindingFacade,
 } from '../../data-marts/credentials/facades/credential-consumer-binding.facade';
 import { normalizeCredentialRequirement } from '../../data-marts/credentials/credential.types';
@@ -15,9 +17,11 @@ import { PluginVersionService } from '../services/plugin-version.service';
 import { PluginService } from '../services/plugin.service';
 import { toCredentialHandles } from '../utils/credential-handles.util';
 
-/** Exact Credentials come from the plugin's current release, as frontend calls get them. */
+/** Credentials come from the plugin's current release, as frontend calls get them. */
 @Injectable()
 export class GetCurrentPluginActionExecutionService {
+  private readonly logger = new Logger(GetCurrentPluginActionExecutionService.name);
+
   constructor(
     private readonly executions: PluginActionExecutionService,
     private readonly plugins: PluginService,
@@ -49,17 +53,40 @@ export class GetCurrentPluginActionExecutionService {
       throw new ExecutionNotFoundError();
     }
 
-    const ready = await this.credentialBindings.assertConsumerReady({
+    const consumer = {
       projectId: context.projectId,
       userId: context.userId,
       roles: context.roles ?? [],
-      consumerType: 'plugin-installation',
+      consumerType: 'plugin-installation' as const,
       consumerId: execution.installationId,
-      // AI Credentials are not available in a backend, so they must not deny it its context.
-      requirements: (current.credentialRequirements ?? []).filter(
-        requirement => normalizeCredentialRequirement(requirement).definitionId !== null
-      ),
+    };
+    const requirements = current.credentialRequirements ?? [];
+    const isExact = (requirement: (typeof requirements)[number]) =>
+      normalizeCredentialRequirement(requirement).definitionId !== null;
+    const ready = await this.credentialBindings.assertConsumerReady({
+      ...consumer,
+      requirements: requirements.filter(isExact),
     });
+    // AI Credentials never deny a backend its context: an unusable one is only left out. An SDK
+    // without AI support would get handles that only fail, so it gets none.
+    const readyAi = command.aiCredentials
+      ? await Promise.all(
+          requirements
+            .filter(requirement => !isExact(requirement))
+            .map(requirement =>
+              this.credentialBindings
+                .assertConsumerReady({ ...consumer, requirements: [requirement] })
+                .catch((error: unknown) => {
+                  if (!isExpectedUnusableCredentialError(error)) throw error;
+                  // The plugin sees only a missing handle; the reason stays here.
+                  this.logger.warn(
+                    `AI Credential ${normalizeCredentialRequirement(requirement).key} left out of execution ${execution.id}: ${castError(error).message}`
+                  );
+                  return [];
+                })
+            )
+        )
+      : [];
 
     return {
       executionId: execution.id,
@@ -73,7 +100,7 @@ export class GetCurrentPluginActionExecutionService {
       installationId: execution.installationId,
       projectId: execution.projectId,
       userId: execution.userId,
-      credentialHandles: toCredentialHandles(ready),
+      credentialHandles: toCredentialHandles([...ready, ...readyAi.flat()]),
     };
   }
 }

@@ -1,9 +1,6 @@
-import { useMemo, useCallback, useState } from 'react';
+import { useMemo, useCallback, useContext, useState } from 'react';
 import React from 'react';
 import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
   HoverCardHeader,
   HoverCardHeaderText,
   HoverCardHeaderIcon,
@@ -17,9 +14,9 @@ import {
 } from '@owox/ui/components/hover-card';
 import { type ConnectorConfig } from '../../../../data-marts/edit';
 import { useConnector } from '../../model/hooks/useConnector.ts';
-import { useDataMartContext } from '../../../../data-marts/edit/model';
+import { DataMartContext, useDataMartContext } from '../../../../data-marts/edit/model';
 import { RawBase64Icon } from '../../../../../shared';
-import { type ReactNode } from 'react';
+import { DetailsPopover } from '../../../../../shared/components/DetailsPopover';
 import { Button } from '@owox/ui/components/button';
 import { ExternalLink } from 'lucide-react';
 import RelativeTime from '@owox/ui/components/common/relative-time';
@@ -35,7 +32,8 @@ import { getStorageButtonText, openStorageConsole } from '../../../../data-stora
 
 interface ConnectorHoverCardProps {
   connector: ConnectorConfig;
-  children: ReactNode;
+  /** Extra classes for the info button, e.g. hover-reveal classes of a table cell */
+  className?: string;
 }
 
 const useConnectorData = (connectorName: string) => {
@@ -44,11 +42,14 @@ const useConnectorData = (connectorName: string) => {
 };
 
 export const ConnectorHoverCard = React.memo(
-  function ConnectorHoverCard({ connector, children }: ConnectorHoverCardProps) {
+  function ConnectorHoverCard({ connector, className }: ConnectorHoverCardProps) {
     const connectorInfo = useConnectorData(connector.source.name);
 
-    // Use controlled hover card to only load context data when open
+    // Controlled so the context-dependent content only renders while the card is open
     const [isOpen, setIsOpen] = useState(false);
+    // Run stats and the storage button need a loaded Data Mart; the project-wide Triggers page has
+    // only the trigger's Data Mart id and title, so it shows the connector header alone
+    const hasDataMart = useContext(DataMartContext) !== undefined;
 
     const connectorIcon = useMemo(() => {
       if (connectorInfo?.logoBase64) {
@@ -162,23 +163,23 @@ export const ConnectorHoverCard = React.memo(
     HoverCardContentInner.displayName = 'HoverCardContentInner';
 
     return (
-      <HoverCard open={isOpen} onOpenChange={setIsOpen}>
-        <HoverCardTrigger asChild>
-          <span>{children}</span>
-        </HoverCardTrigger>
-        <HoverCardContent>
-          <HoverCardHeader>
-            <HoverCardHeaderIcon>{connectorIcon}</HoverCardHeaderIcon>
-            <HoverCardHeaderText>
-              <HoverCardHeaderTitle>
-                <ConnectorNameDisplay connector={connector} />
-              </HoverCardHeaderTitle>
-              <HoverCardHeaderDescription>{descriptionText}</HoverCardHeaderDescription>
-            </HoverCardHeaderText>
-          </HoverCardHeader>
-          {isOpen && <HoverCardContentInner />}
-        </HoverCardContent>
-      </HoverCard>
+      <DetailsPopover
+        label='Connector details'
+        className={className}
+        open={isOpen}
+        onOpenChange={setIsOpen}
+      >
+        <HoverCardHeader>
+          <HoverCardHeaderIcon>{connectorIcon}</HoverCardHeaderIcon>
+          <HoverCardHeaderText>
+            <HoverCardHeaderTitle>
+              <ConnectorNameDisplay connector={connector} />
+            </HoverCardHeaderTitle>
+            <HoverCardHeaderDescription>{descriptionText}</HoverCardHeaderDescription>
+          </HoverCardHeaderText>
+        </HoverCardHeader>
+        {isOpen && hasDataMart && <HoverCardContentInner />}
+      </DetailsPopover>
     );
   },
   (prevProps, nextProps) => {
@@ -191,9 +192,6 @@ export const ConnectorHoverCard = React.memo(
       prevProps.connector.source.node !== nextProps.connector.source.node ||
       prevProps.connector.source.fields.length !== nextProps.connector.source.fields.length;
 
-    // Also compare children to ensure we re-render if children change
-    const childrenChanged = prevProps.children !== nextProps.children;
-
-    return !connectorChanged && !childrenChanged;
+    return !connectorChanged && prevProps.className === nextProps.className;
   }
 );

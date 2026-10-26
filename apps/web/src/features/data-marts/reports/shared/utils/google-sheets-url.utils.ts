@@ -1,4 +1,6 @@
+import { DataDestinationType } from '../../../../data-destination/shared';
 import {
+  type DataMartReport,
   type DestinationConfig,
   isGoogleSheetsDestinationConfig,
 } from '../model/types/data-mart-report';
@@ -93,6 +95,23 @@ export function getGoogleSheetsReportDocumentUrl(config?: DestinationConfig): st
   return config && isGoogleSheetsDestinationConfig(config)
     ? getGoogleSheetTabUrl(config.spreadsheetId, config.sheetId)
     : '';
+}
+
+/**
+ * The Google Sheets tab a report writes into, or null when it has no complete sheet.
+ *
+ * Shared by every place that links to a report's document, so they agree on when a link exists.
+ *
+ * @param report - Report with its destination and destination config
+ */
+export function getReportGoogleSheetUrl(
+  report: Pick<DataMartReport, 'dataDestination' | 'destinationConfig'>
+): string | null {
+  if (report.dataDestination.type !== DataDestinationType.GOOGLE_SHEETS) return null;
+  if (!isGoogleSheetsDestinationConfig(report.destinationConfig)) return null;
+  // Only the spreadsheet can be missing: sheet ID 0 is its first tab, not an absent one
+  if (!report.destinationConfig.spreadsheetId) return null;
+  return getGoogleSheetsReportDocumentUrl(report.destinationConfig);
 }
 
 /**

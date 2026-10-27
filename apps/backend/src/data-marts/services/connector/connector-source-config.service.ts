@@ -11,6 +11,12 @@ import { ConnectorDefinition as DataMartConnectorDefinition } from '../../dto/sc
 import { ConnectorStateItem } from '../../connector-types/interfaces/connector-state';
 import { ConnectorCredentialInjectorService } from './connector-credential-injector.service';
 import { unwrapRunPayload } from '../../utils/manual-backfill-range';
+import {
+  buildOutputSchemaFieldTypesValue,
+  OUTPUT_SCHEMA_FIELD_TYPES_PARAMETER,
+  OutputSchemaRunContext,
+  sourceReadsOutputSchemaFieldTypes,
+} from './output-schema-field-types';
 
 @Injectable()
 export class ConnectorSourceConfigService {
@@ -24,7 +30,10 @@ export class ConnectorSourceConfigService {
     connector: DataMartConnectorDefinition['connector'],
     config: Record<string, unknown>,
     configId: string,
-    state?: ConnectorStateItem
+    state: ConnectorStateItem | undefined,
+    // Required, not optional: a caller that left it out would read as "no Output Schema" and
+    // let a source infer types for a Data Mart whose columns are already fixed.
+    outputSchema: OutputSchemaRunContext
   ): Promise<SourceConfigDto> {
     const fieldsConfig = connector.source.fields
       .map(field => `${connector.source.node} ${field}`)
@@ -52,8 +61,29 @@ export class ConnectorSourceConfigService {
         ...(state?.state?.date
           ? { LastRequestedDate: new Date(state.state.date as string).toISOString().split('T')[0] }
           : {}),
+        ...this.buildOutputSchemaParameters(connector.source.name, outputSchema),
       },
     });
+  }
+
+  /**
+   * The Output Schema type classes for a source that reads them, as a run-time parameter.
+   *
+   * Always set for such a source, overriding anything a saved configuration might hold; it is
+   * unset (undefined) only for a new Data Mart, which tells the source there is nothing to
+   * follow yet. Other sources get nothing.
+   */
+  private buildOutputSchemaParameters(
+    sourceName: string,
+    outputSchema: OutputSchemaRunContext
+  ): Record<string, string | undefined> {
+    if (!sourceReadsOutputSchemaFieldTypes(sourceName)) {
+      return {};
+    }
+
+    return {
+      [OUTPUT_SCHEMA_FIELD_TYPES_PARAMETER]: buildOutputSchemaFieldTypesValue(outputSchema),
+    };
   }
 
   buildRunConfig(

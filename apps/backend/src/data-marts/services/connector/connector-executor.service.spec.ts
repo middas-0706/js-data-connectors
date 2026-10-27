@@ -12,6 +12,9 @@ import { ConnectorMessageType } from '../../connector-types/enums/connector-mess
 import { ConnectorDefinitionService } from './connector-definition.service';
 
 jest.mock('@owox/connectors', () => ({
+  Connectors: {
+    GoogleSheets: { GoogleSheetsSource: { readsOutputSchemaFieldTypes: true } },
+  },
   Core: {
     ConfigDto: jest.fn().mockImplementation(function (this: unknown, data: unknown) {
       Object.assign(this as object, data);
@@ -308,6 +311,75 @@ describe('ConnectorExecutorService', () => {
     expect(
       (dataMartRunRepository.update as jest.Mock).mock.invocationCallOrder[successUpdate]
     ).toBeLessThan((dataMartService.actualizeSchema as jest.Mock).mock.invocationCallOrder[0]);
+  });
+
+  const createSheetsDataMart = (overrides = {}) =>
+    createDataMart({
+      definition: {
+        connector: {
+          source: {
+            name: 'GoogleSheets',
+            node: 'sheet',
+            fields: ['date'],
+            configuration: [{ _id: 'cfg-1', SheetName: 'Growth' }],
+          },
+          storage: { fullyQualifiedName: 'dataset.table' },
+        },
+      },
+      ...overrides,
+    });
+  const earlierImportQuery = expect.objectContaining({
+    where: expect.objectContaining({ type: 'CONNECTOR' }),
+  });
+
+  it('passes the Output Schema to a Google Sheets run without querying earlier runs', async () => {
+    const schema = { type: 'bigquery-data-mart-schema', fields: [{ name: 'date', type: 'DATE' }] };
+    const { service, sourceConfigService, dataMartRunRepository } = createService();
+
+    await service.executeInBackground(createSheetsDataMart({ schema }), createRun(), null);
+
+    expect((sourceConfigService.buildSourceConfig as jest.Mock).mock.calls[0][6]).toEqual({
+      schema,
+      hasImportedBefore: false,
+    });
+    expect(dataMartRunRepository.findOne).not.toHaveBeenCalledWith(earlierImportQuery);
+  });
+
+  it('does not query earlier runs for a source that does not read the Output Schema', async () => {
+    const { service, sourceConfigService, dataMartRunRepository } = createService();
+
+    await service.executeInBackground(createDataMart({ schema: null }), createRun(), null);
+
+    expect((sourceConfigService.buildSourceConfig as jest.Mock).mock.calls[0][6]).toEqual({
+      schema: null,
+      hasImportedBefore: false,
+    });
+    expect(dataMartRunRepository.findOne).not.toHaveBeenCalledWith(earlierImportQuery);
+  });
+
+  it('tells a Google Sheets run without an Output Schema whether an earlier import succeeded', async () => {
+    for (const earlierImport of [{ id: 'run-0' }, null]) {
+      const { service, sourceConfigService, dataMartRunRepository } = createService();
+      (dataMartRunRepository.findOne as jest.Mock).mockImplementation(({ where }) =>
+        Promise.resolve(where?.type === 'CONNECTOR' ? earlierImport : null)
+      );
+
+      await service.executeInBackground(createSheetsDataMart(), createRun(), null);
+
+      expect((sourceConfigService.buildSourceConfig as jest.Mock).mock.calls[0][6]).toEqual({
+        schema: null,
+        hasImportedBefore: earlierImport !== null,
+      });
+      expect(dataMartRunRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          dataMartId: 'dm-1',
+          type: 'CONNECTOR',
+          status: 'SUCCESS',
+          id: expect.objectContaining({ _type: 'not', _value: 'run-1' }),
+        },
+        select: { id: true },
+      });
+    }
   });
 
   it('persists sanitized fields emitted by a successful connector run', async () => {

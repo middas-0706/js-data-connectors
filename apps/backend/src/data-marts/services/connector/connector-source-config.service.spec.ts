@@ -1,6 +1,7 @@
 // connector-source-config.service.spec.ts
 import { ConnectorSourceConfigService } from './connector-source-config.service';
 import { ConnectorCredentialInjectorService } from './connector-credential-injector.service';
+import type { DataMartSchema } from '../../data-storage-types/data-mart-schema.type';
 
 describe('ConnectorSourceConfigService', () => {
   const createService = () => {
@@ -34,7 +35,9 @@ describe('ConnectorSourceConfigService', () => {
         'proj-1',
         connector as any,
         config,
-        'cfg-1'
+        'cfg-1',
+        undefined,
+        { schema: null, hasImportedBefore: false }
       );
 
       expect(result).toBeDefined();
@@ -55,17 +58,103 @@ describe('ConnectorSourceConfigService', () => {
         connector as any,
         config,
         'cfg-1',
-        state
+        state,
+        { schema: null, hasImportedBefore: false }
       );
 
       expect(result).toBeDefined();
+    });
+
+    describe('Output Schema field types', () => {
+      const sheetsConnector = {
+        ...connector,
+        source: { ...connector.source, name: 'GoogleSheets', node: 'sheet' },
+      };
+      const schema = {
+        type: 'bigquery-data-mart-schema',
+        fields: [
+          { name: 'date', type: 'DATE' },
+          { name: 'created_at', type: 'TIMESTAMP' },
+          { name: 'title', type: 'STRING' },
+          { name: 'margin', type: 'FLOAT', calculated: { formula: '1', level: 'row' } },
+        ],
+      } as unknown as DataMartSchema;
+      const build = (
+        sourceConnector: unknown,
+        config: Record<string, unknown>,
+        outputSchema: { schema: DataMartSchema | null; hasImportedBefore: boolean }
+      ) =>
+        createService().service.buildSourceConfig(
+          'dm-1',
+          'proj-1',
+          sourceConnector as any,
+          config,
+          'cfg-1',
+          undefined,
+          outputSchema
+        );
+
+      it('passes the class of every warehouse field to a Google Sheets run', async () => {
+        const result = await build(
+          sheetsConnector,
+          { SheetName: 'Growth' },
+          { schema, hasImportedBefore: true }
+        );
+
+        expect(JSON.parse(result.config.OutputSchemaFieldTypes.value)).toEqual({
+          fields: { date: 'DATE', created_at: 'OTHER', title: 'OTHER' },
+          unlistedColumns: 'INFER',
+        });
+      });
+
+      it('tells a Google Sheets run to keep column types when the Data Mart imported before without an Output Schema', async () => {
+        const result = await build(
+          sheetsConnector,
+          { SheetName: 'Growth' },
+          { schema: null, hasImportedBefore: true }
+        );
+
+        expect(JSON.parse(result.config.OutputSchemaFieldTypes.value)).toEqual({
+          fields: {},
+          unlistedColumns: 'KEEP',
+        });
+      });
+
+      it('leaves it unset for a new Google Sheets Data Mart, whatever the saved configuration holds', async () => {
+        const result = await build(
+          sheetsConnector,
+          { SheetName: 'Growth', OutputSchemaFieldTypes: '{"fields":{"date":"DATE"}}' },
+          { schema: null, hasImportedBefore: false }
+        );
+
+        expect(result.config).toHaveProperty('OutputSchemaFieldTypes');
+        expect(result.config.OutputSchemaFieldTypes.value).toBeUndefined();
+      });
+
+      it('does not pass it to sources that do not read it', async () => {
+        const result = await build(
+          connector,
+          { param1: 'val1' },
+          { schema, hasImportedBefore: true }
+        );
+
+        expect(result.config).not.toHaveProperty('OutputSchemaFieldTypes');
+      });
     });
 
     it('calls credential injector for OAuth credentials', async () => {
       const { service, credentialInjector } = createService();
       const config = { _source_credential_id: 'cred-1' };
 
-      await service.buildSourceConfig('dm-1', 'proj-1', connector as any, config, 'cfg-1');
+      await service.buildSourceConfig(
+        'dm-1',
+        'proj-1',
+        connector as any,
+        config,
+        'cfg-1',
+        undefined,
+        { schema: null, hasImportedBefore: false }
+      );
 
       expect(credentialInjector.injectOAuthCredentials).toHaveBeenCalledWith(
         config,

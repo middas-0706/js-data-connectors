@@ -108,13 +108,15 @@ function createSource({
   fields = 'sheet _owox_row_number',
   inferTypes = true,
   authType = null,
+  outputSchemaFieldTypes,
+  sheetName = 'Data',
 } = {}) {
   const logs = [];
   const source = Object.create(GoogleSheetsSource.prototype);
   const parameters = {
     HeaderRow: { value: headerRow },
     Range: { value: range },
-    SheetName: { value: 'Data' },
+    SheetName: { value: sheetName },
     SpreadsheetId: { value: 'spreadsheet-id' },
     ImportAllColumns: { value: importAllColumns },
     Fields: { value: fields },
@@ -124,6 +126,9 @@ function createSource({
   };
   if (authType) {
     parameters.AuthType = { value: authType, items: {} };
+  }
+  if (outputSchemaFieldTypes !== undefined) {
+    parameters.OutputSchemaFieldTypes = { value: outputSchemaFieldTypes };
   }
   source.context = {
     getParameter: name => parameters[name] ?? null,
@@ -1063,4 +1068,521 @@ test('reports a missing credential item as a configuration error instead of a pr
 
   authType = { value: 'service_account', items: {} };
   await assert.rejects(source.getAccessToken(), /'AuthType\.ServiceAccountKey' is required/);
+});
+
+// --- Date columns ----------------------------------------------------------------------------
+//
+// A fake sheet that answers every read the source makes, for the ranges it asks for: the values
+// read, the number formats of the preview sample, and the batched read of date columns. A
+// date-like cell shows as text in the values read and as a serial with its number format in the
+// grid reads, the way the Sheets API reports it. Grid blocks carry zero-based startRow and
+// startColumn, as the API returns them.
+
+function dateCell(text, serial, formatType = 'DATE') {
+  return { text, serial, formatType };
+}
+
+const OCT_1 = dateCell('10/1/2026', 46296);
+const OCT_2 = dateCell('10/2/2026', 46297);
+const OCT_1_AT = dateCell('10/1/2026 14:30:00', 46296.604166666664, 'DATE_TIME');
+const OCT_2_AT = dateCell('10/2/2026 08:00:00', 46297.333333333336, 'DATE_TIME');
+const NOON = dateCell('12:00:00', 0.5, 'TIME');
+const DAY_AND_HALF = dateCell('36:00:00', 1.5, 'TIME');
+
+const isDateLike = cell => cell !== null && typeof cell === 'object';
+
+function parseA1(range) {
+  const gridRange = range.slice(range.lastIndexOf('!') + 1);
+  const match = gridRange.match(/^([A-Z]+)(\d+):([A-Z]+)(\d*)$/);
+  const letters = value =>
+    value.split('').reduce((total, letter) => total * 26 + letter.charCodeAt(0) - 64, 0);
+  return {
+    startColumn: letters(match[1]),
+    startRow: Number(match[2]),
+    endColumn: letters(match[3]),
+    endRow: match[4] ? Number(match[4]) : Infinity,
+  };
+}
+
+function sheetSlice(sheet, { startColumn, startRow, endColumn, endRow }) {
+  return sheet
+    .slice(startRow - 1, Math.min(endRow, sheet.length))
+    .map(row => (row ?? []).slice(startColumn - 1, endColumn));
+}
+
+function gridCell(cell, { readsColumns, formattedText }) {
+  if (!readsColumns) {
+    return isDateLike(cell) ? { effectiveFormat: { numberFormat: { type: cell.formatType } } } : {};
+  }
+  if (cell === null || cell === undefined) return {};
+  if (isDateLike(cell)) {
+    return {
+      formattedValue: formattedText(cell),
+      effectiveValue: { numberValue: cell.serial },
+      effectiveFormat: { numberFormat: { type: cell.formatType } },
+    };
+  }
+  const effectiveValue =
+    typeof cell === 'number'
+      ? { numberValue: cell }
+      : typeof cell === 'boolean'
+        ? { boolValue: cell }
+        : { stringValue: cell };
+  return { formattedValue: String(cell), effectiveValue };
+}
+
+/**
+ * @param {Array<Array<*>>} sheet - Rows from row 1; a cell is a plain value or a dateCell
+ * @param {Object} [options]
+ * @param {function(Array, number): Array} [options.sheetForColumnRead] - The sheet as the Nth
+ *   date-column read sees it, to change the sheet between the reads
+ * @param {function(Object): string} [options.formattedText] - How the date-column read renders a
+ *   date cell's text
+ * @param {number} [options.skipLeadingRows] - Rows the date-column read leaves out at the top of
+ *   every block, reporting a later startRow for it
+ */
+function fakeSheet(
+  sheet,
+  {
+    sheetForColumnRead = current => current,
+    formattedText = cell => cell.text,
+    skipLeadingRows = 0,
+  } = {}
+) {
+  let columnReads = 0;
+  return url => {
+    const parsedUrl = new URL(url);
+    if (parsedUrl.pathname.includes('/values/')) {
+      const range = parseA1(decodeURIComponent(parsedUrl.pathname.split('/values/')[1]));
+      return jsonResponse({
+        values: sheetSlice(sheet, range).map(row =>
+          row.map(cell => (isDateLike(cell) ? cell.text : (cell ?? '')))
+        ),
+      });
+    }
+
+    const readsColumns = parsedUrl.searchParams.get('fields').includes('formattedValue');
+    const source = readsColumns ? sheetForColumnRead(sheet, columnReads++) : sheet;
+    const data = parsedUrl.searchParams.getAll('ranges').map(range => {
+      const bounds = parseA1(range);
+      const skipped = readsColumns ? skipLeadingRows : 0;
+      return {
+        startRow: bounds.startRow - 1 + skipped,
+        startColumn: bounds.startColumn - 1,
+        rowData: sheetSlice(source, { ...bounds, startRow: bounds.startRow + skipped }).map(
+          row => ({
+            values: row.map(cell => gridCell(cell, { readsColumns, formattedText })),
+          })
+        ),
+      };
+    });
+    return jsonResponse({ sheets: [{ data }] });
+  };
+}
+
+const DATE_SHEET = [
+  ['Date', 'Visitors', 'Note', 'When', 'Duration', 'Mixed'],
+  [OCT_1, 912.5, 'x', OCT_1_AT, DAY_AND_HALF, OCT_1],
+  [OCT_2, 1825, 'y', OCT_2_AT, NOON, 'TBD'],
+];
+const DATE_SHEET_FIELDS = ['date', 'visitors', 'note', 'when', 'duration', 'mixed'];
+
+function outputSchemaTypes(fields, unlistedColumns = 'INFER') {
+  return JSON.stringify({ fields, unlistedColumns });
+}
+
+function allOther(overrides = {}) {
+  return outputSchemaTypes({
+    ...Object.fromEntries(DATE_SHEET_FIELDS.map(name => [name, 'OTHER'])),
+    ...overrides,
+  });
+}
+
+async function runSheet(sheet, sourceOptions = {}, fakeOptions = {}) {
+  const source = createSource(sourceOptions);
+  source.getAccessToken = async () => 'token';
+  return withFetch(fakeSheet(sheet, fakeOptions), async calls => {
+    const rows = await source.fetchData();
+    return {
+      source,
+      calls,
+      rows: plain(rows),
+      fields: plain(source.fieldsSchema.sheet.fields),
+    };
+  });
+}
+
+function columnOf(rows, name) {
+  return rows.map(row => row[name]);
+}
+
+function requestedRanges(call) {
+  return new URL(call.url).searchParams.getAll('ranges');
+}
+
+test('declares that it reads the Output Schema types of its Data Mart', () => {
+  assert.equal(GoogleSheetsSource.readsOutputSchemaFieldTypes, true);
+});
+
+test('imports a column of Date cells as DATE in a Data Mart without an Output Schema', async () => {
+  const { rows, fields, calls } = await runSheet(DATE_SHEET);
+
+  assert.deepEqual(columnOf(rows, 'date'), ['2026-10-01', '2026-10-02']);
+  assert.equal(fields.date.type, DATA_TYPES.DATE);
+
+  // Everything else is imported exactly as before, date-time and time cells included.
+  assert.equal(fields.visitors.type, DATA_TYPES.NUMBER);
+  assert.deepEqual(columnOf(rows, 'note'), ['x', 'y']);
+  assert.deepEqual(columnOf(rows, 'when'), ['10/1/2026 14:30:00', '10/2/2026 08:00:00']);
+  assert.equal(fields.when.type, DATA_TYPES.STRING);
+  assert.deepEqual(columnOf(rows, 'duration'), ['36:00:00', '12:00:00']);
+  assert.equal(fields.duration.type, DATA_TYPES.STRING);
+  assert.deepEqual(columnOf(rows, 'mixed'), ['10/1/2026', 'TBD']);
+  assert.equal(fields.mixed.type, DATA_TYPES.STRING);
+
+  // The values read, the sample formats, then one read of the only Date column.
+  assert.equal(calls.length, 3);
+  assert.equal(
+    new URL(calls[1].url).searchParams.get('fields'),
+    'sheets(data(startRow,startColumn,rowData(values(effectiveFormat(numberFormat(type))))))'
+  );
+  assert.deepEqual(requestedRanges(calls[2]), ["'Data'!A2:A3"]);
+});
+
+test('imports every column exactly as before, with no extra request, when the Output Schema keeps it as text', async () => {
+  const { rows, fields, calls, source } = await runSheet(DATE_SHEET, {
+    outputSchemaFieldTypes: allOther(),
+  });
+
+  assert.deepEqual(columnOf(rows, 'date'), ['10/1/2026', '10/2/2026']);
+  assert.equal(fields.date.type, DATA_TYPES.STRING);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(source.logs, []);
+});
+
+test('reads every declared DATE column in one request and keeps the day of date-time cells', async () => {
+  const { rows, fields, calls, source } = await runSheet(DATE_SHEET, {
+    outputSchemaFieldTypes: allOther({ date: 'DATE', when: 'DATE' }),
+  });
+
+  assert.deepEqual(columnOf(rows, 'date'), ['2026-10-01', '2026-10-02']);
+  assert.deepEqual(columnOf(rows, 'when'), ['2026-10-01', '2026-10-02']);
+  assert.equal(fields.date.type, DATA_TYPES.DATE);
+  assert.equal(fields.when.type, DATA_TYPES.DATE);
+  // No sample read, since nothing is inferred, and both columns in one request.
+  assert.equal(calls.length, 2);
+  assert.deepEqual(requestedRanges(calls[1]), ["'Data'!A2:A3", "'Data'!D2:D3"]);
+  assert.deepEqual(source.logs, []);
+});
+
+test('keeps a declared DATE column as DATE and imports the cells that are not dates as empty', async () => {
+  const sheet = [['Mixed'], [OCT_1], ['TBD'], [42], [NOON], [OCT_2]];
+
+  const { rows, fields, source } = await runSheet(sheet, {
+    outputSchemaFieldTypes: outputSchemaTypes({ mixed: 'DATE' }),
+  });
+
+  assert.equal(fields.mixed.type, DATA_TYPES.DATE);
+  assert.deepEqual(columnOf(rows, 'mixed'), ['2026-10-01', null, null, null, '2026-10-02']);
+  assert.equal(source.logs.length, 1);
+  assert.match(
+    source.logs[0],
+    /^Column 'Mixed' is DATE in the Output Schema, but rows 3, 4, 5 are not dates in the sheet, so they were imported as empty values\./
+  );
+  // Row numbers only: the run log is visible to every viewer of the Data Mart.
+  assert.doesNotMatch(source.logs[0], /TBD|42|12:00/);
+});
+
+test('imports a declared DATE column with no date at all as before, instead of emptying it', async () => {
+  const sheet = [['Date'], ['Q4 2026'], ['TBD']];
+
+  const { rows, fields, source } = await runSheet(sheet, {
+    outputSchemaFieldTypes: outputSchemaTypes({ date: 'DATE' }),
+  });
+
+  assert.equal(fields.date.type, DATA_TYPES.STRING);
+  assert.deepEqual(columnOf(rows, 'date'), ['Q4 2026', 'TBD']);
+  assert.match(
+    source.logs[0],
+    /but none of its cells is a date in the sheet, so it was not imported as a date\. Format the cells as dates, then check that the field is still DATE in the Output Schema/
+  );
+});
+
+test('detects dates in a column the Output Schema does not list yet', async () => {
+  const { fields, rows } = await runSheet(DATE_SHEET, {
+    outputSchemaFieldTypes: outputSchemaTypes({ visitors: 'OTHER', note: 'OTHER', when: 'OTHER' }),
+  });
+
+  assert.equal(fields.date.type, DATA_TYPES.DATE);
+  assert.deepEqual(columnOf(rows, 'date'), ['2026-10-01', '2026-10-02']);
+  assert.equal(fields.mixed.type, DATA_TYPES.STRING);
+});
+
+test('infers nothing when the Data Mart has imported before without an Output Schema', async () => {
+  const { fields, calls } = await runSheet(DATE_SHEET, {
+    outputSchemaFieldTypes: outputSchemaTypes({}, 'KEEP'),
+  });
+
+  assert.equal(fields.date.type, DATA_TYPES.STRING);
+  assert.equal(calls.length, 1);
+});
+
+test('checks every row below the preview sample before inferring DATE', async () => {
+  const dates = Array.from({ length: 105 }, (_, index) =>
+    dateCell(`day ${index + 1}`, 46296 + index)
+  );
+  for (const [label, odd] of [
+    ['time', NOON],
+    ['date-time', OCT_2_AT],
+    ['text', 'N/A'],
+  ]) {
+    const sheet = [['Date'], ...dates.map(cell => [cell])];
+    sheet[104] = [odd];
+
+    const inferred = await runSheet(sheet);
+    assert.equal(inferred.fields.date.type, DATA_TYPES.STRING, label);
+    assert.equal(inferred.rows[103].date, typeof odd === 'string' ? odd : odd.text, label);
+    assert.equal(inferred.rows[0].date, 'day 1', label);
+  }
+
+  const sheet = [['Date'], ...dates.map(cell => [cell])];
+  sheet[104] = [NOON];
+  const declared = await runSheet(sheet, {
+    outputSchemaFieldTypes: outputSchemaTypes({ date: 'DATE' }),
+  });
+  assert.equal(declared.fields.date.type, DATA_TYPES.DATE);
+  assert.equal(declared.rows[103].date, null);
+  assert.equal(declared.rows[0].date, '2026-10-01');
+  assert.match(
+    declared.source.logs[0],
+    /but row 105 is not a date in the sheet, so it was imported as an empty value\./
+  );
+});
+
+test('reads the sheet again when it changes between the reads', async () => {
+  // A row inserted above the data during the first read shifts every cell down by one.
+  const insertRow = sheet => [sheet[0], [OCT_2], ...sheet.slice(1)];
+  const sheet = [['Date'], [OCT_1], [OCT_2]];
+
+  for (const outputSchemaFieldTypes of [undefined, outputSchemaTypes({ date: 'DATE' })]) {
+    const { fields, rows, calls, source } = await runSheet(
+      sheet,
+      { outputSchemaFieldTypes },
+      { sheetForColumnRead: (current, read) => (read === 0 ? insertRow(current) : current) }
+    );
+
+    assert.equal(fields.date.type, DATA_TYPES.DATE);
+    assert.deepEqual(columnOf(rows, 'date'), ['2026-10-01', '2026-10-02']);
+    assert.equal(calls.filter(call => call.url.includes('/values/')).length, 2);
+    assert.deepEqual(source.logs, ['The sheet changed while it was being read; reading it again']);
+  }
+});
+
+test('takes the dates from the latest read, with a warning, when the reads keep disagreeing', async () => {
+  // Every read renders the dates differently from the values read: a sheet edited throughout,
+  // or two APIs formatting the same date in two ways. Either way the type must not flip.
+  const sheet = [['Date'], [OCT_1], [OCT_2]];
+
+  const { fields, rows, calls, source } = await runSheet(
+    sheet,
+    { outputSchemaFieldTypes: outputSchemaTypes({ date: 'DATE' }) },
+    { formattedText: cell => `${cell.text} ` }
+  );
+
+  assert.equal(fields.date.type, DATA_TYPES.DATE);
+  assert.deepEqual(columnOf(rows, 'date'), ['2026-10-01', '2026-10-02']);
+  assert.equal(calls.filter(call => call.url.includes('/values/')).length, 2);
+  assert.match(source.logs.at(-1), /^The sheet changed while it was being read, so date columns/);
+});
+
+test('on the last attempt, a row inserted between the reads shifts the dates, and the run log says so', async () => {
+  // The values read never sees the new row; every date-column read does. The dates then come
+  // from the date-column read, one row off, rather than being emptied (see the README).
+  const SEP_30 = dateCell('9/30/2026', 46295);
+  const sheet = [
+    ['Date', 'Note'],
+    [OCT_1, 'a'],
+    [OCT_2, 'b'],
+  ];
+
+  const { fields, rows, calls, source } = await runSheet(
+    sheet,
+    { outputSchemaFieldTypes: outputSchemaTypes({ date: 'DATE', note: 'OTHER' }) },
+    { sheetForColumnRead: current => [current[0], [SEP_30, 'new'], ...current.slice(1)] }
+  );
+
+  assert.equal(fields.date.type, DATA_TYPES.DATE);
+  assert.deepEqual(columnOf(rows, 'date'), ['2026-09-30', '2026-10-01']);
+  assert.deepEqual(columnOf(rows, 'note'), ['a', 'b']);
+  assert.equal(calls.filter(call => call.url.includes('/values/')).length, 2);
+  assert.deepEqual(source.logs, [
+    'The sheet changed while it was being read; reading it again',
+    'The sheet changed while it was being read, so date columns were taken from the latest read. If rows were moved or inserted during the import, run it again.',
+  ]);
+});
+
+test('logs date warnings only for the attempt that is kept', async () => {
+  // Column A warns about row 3 on both attempts; column B changes during the first one only.
+  const sheet = [
+    ['A', 'B'],
+    [OCT_1, OCT_1],
+    ['TBD', OCT_2],
+  ];
+
+  const { fields, rows, source } = await runSheet(
+    sheet,
+    { outputSchemaFieldTypes: outputSchemaTypes({ a: 'DATE', b: 'DATE' }) },
+    {
+      sheetForColumnRead: (current, read) =>
+        read === 0 ? [current[0], [OCT_1, OCT_2], current[2]] : current,
+    }
+  );
+
+  assert.equal(fields.a.type, DATA_TYPES.DATE);
+  assert.deepEqual(columnOf(rows, 'b'), ['2026-10-01', '2026-10-02']);
+  assert.equal(source.logs.length, 2);
+  assert.equal(source.logs[0], 'The sheet changed while it was being read; reading it again');
+  assert.match(source.logs[1], /^Column 'A' is DATE in the Output Schema, but row 3 is not a date/);
+});
+
+test('splits date-column reads so a long encoded tab name keeps each request URL short', async () => {
+  const columnCount = 60;
+  const header = Array.from({ length: columnCount }, (_, index) => `d${index + 1}`);
+  const sheet = [header, header.map(() => OCT_1), header.map(() => OCT_2)];
+
+  const { fields, rows, calls } = await runSheet(sheet, {
+    sheetName: 'Планування зростання',
+    outputSchemaFieldTypes: outputSchemaTypes(
+      Object.fromEntries(header.map(name => [name, 'DATE']))
+    ),
+  });
+
+  const columnReads = calls.filter(call => !call.url.includes('/values/'));
+  assert.ok(columnReads.length > 1);
+  for (const call of columnReads) {
+    assert.ok(new URL(call.url).search.length < 4500, `${new URL(call.url).search.length}`);
+  }
+  assert.equal(columnReads.flatMap(requestedRanges).length, columnCount);
+  assert.equal(fields.d60.type, DATA_TYPES.DATE);
+  assert.deepEqual(columnOf(rows, 'd60'), ['2026-10-01', '2026-10-02']);
+});
+
+test('places cells by the start row the response reports', async () => {
+  const sheet = [['Date'], [null], [null], [OCT_1], [OCT_2]];
+
+  const { fields, rows, source } = await runSheet(
+    sheet,
+    { outputSchemaFieldTypes: outputSchemaTypes({ date: 'DATE' }) },
+    { skipLeadingRows: 2 }
+  );
+
+  assert.equal(fields.date.type, DATA_TYPES.DATE);
+  assert.deepEqual(columnOf(rows, 'date'), ['2026-10-01', '2026-10-02']);
+  assert.deepEqual(source.logs, []);
+});
+
+test('with Infer Types off imports as DATE only the columns the Output Schema declares', async () => {
+  const undeclared = await runSheet(DATE_SHEET, { inferTypes: false });
+  assert.equal(undeclared.fields.date.type, DATA_TYPES.STRING);
+  assert.equal(undeclared.calls.length, 1);
+
+  const declared = await runSheet(DATE_SHEET, {
+    inferTypes: false,
+    outputSchemaFieldTypes: outputSchemaTypes({ date: 'DATE' }),
+  });
+  assert.equal(declared.fields.date.type, DATA_TYPES.DATE);
+  assert.equal(declared.fields.mixed.type, DATA_TYPES.STRING);
+});
+
+test('imports no column as a date when the Output Schema field types cannot be read', async () => {
+  for (const value of ['{not json', JSON.stringify({ date: 'DATE' })]) {
+    const { fields, calls, source } = await runSheet(DATE_SHEET, {
+      outputSchemaFieldTypes: value,
+    });
+
+    assert.equal(fields.date.type, DATA_TYPES.STRING);
+    assert.equal(calls.length, 1);
+    assert.match(source.logs[0], /Could not read the Output Schema field types/);
+  }
+});
+
+test('creates an empty column the Output Schema declares as DATE with that type', async () => {
+  const sheet = [['Date', 'Closed'], [OCT_1], [OCT_2]];
+
+  const { fields, rows, calls } = await runSheet(sheet, {
+    outputSchemaFieldTypes: outputSchemaTypes({ date: 'OTHER', closed: 'DATE' }),
+  });
+
+  assert.equal(fields.closed.type, DATA_TYPES.DATE);
+  assert.deepEqual(columnOf(rows, 'closed'), [null, null]);
+  assert.equal(fields.date.type, DATA_TYPES.STRING);
+  assert.equal(calls.length, 1);
+});
+
+test('reads the right cells with a custom header row and range', async () => {
+  const sheet = [
+    ['notes above the table'],
+    [],
+    [null, 'Name', 'Date'],
+    [null, 'Ada', OCT_1],
+    [null, 'Grace', OCT_2],
+  ];
+
+  const { fields, rows, calls } = await runSheet(sheet, { headerRow: 3, range: 'B3:D' });
+
+  assert.deepEqual(columnOf(rows, 'date'), ['2026-10-01', '2026-10-02']);
+  assert.equal(fields.date.type, DATA_TYPES.DATE);
+  assert.deepEqual(columnOf(rows, '_owox_row_number'), [4, 5]);
+  assert.deepEqual(requestedRanges(calls[2]), ["'Data'!C4:C5"]);
+});
+
+test('reports Date columns as DATE in the field preview', async () => {
+  const source = createSource();
+  source.getAccessToken = async () => 'token';
+
+  await withFetch(fakeSheet(DATE_SHEET), async calls => {
+    const schema = plain(await source.fetchFieldsSchema());
+
+    assert.equal(schema.sheet.fields.date.type, DATA_TYPES.DATE);
+    assert.equal(schema.sheet.fields.when.type, DATA_TYPES.STRING);
+    assert.equal(schema.sheet.fields.mixed.type, DATA_TYPES.STRING);
+    assert.deepEqual(requestedRanges(calls[2]), ["'Data'!A2:A3"]);
+  });
+});
+
+test('keeps the field preview working when the date check fails', async () => {
+  const source = createSource();
+  source.getAccessToken = async () => 'token';
+  const sheetReader = fakeSheet(DATE_SHEET);
+
+  await withFetch(
+    url =>
+      url.includes('/values/')
+        ? sheetReader(url)
+        : jsonResponse({ error: { message: 'Backend Error' } }, { status: 400 }),
+    async () => {
+      const schema = plain(await source.fetchFieldsSchema());
+
+      assert.equal(schema.sheet.fields.date.type, DATA_TYPES.STRING);
+      assert.equal(schema.sheet.fields.visitors.type, DATA_TYPES.NUMBER);
+      assert.match(source.logs.at(-1), /^Could not check the sheet for date columns/);
+    }
+  );
+});
+
+test('converts a date serial to its calendar day', () => {
+  const source = createSource();
+
+  assert.equal(source._serialToDate(46296), '2026-10-01');
+  // A Date time cell keeps the day it shows.
+  assert.equal(source._serialToDate(46296.99), '2026-10-01');
+  // Midnight a hair short, as time arithmetic can leave it, is the next day the cell shows.
+  assert.equal(source._serialToDate(46296.99999999999), '2026-10-02');
+  assert.equal(source._serialToDate(-1), '1899-12-29');
+  assert.equal(source._serialToDate('46296'), null);
+  assert.equal(source._serialToDate(Number.NaN), null);
+  assert.equal(source._serialToDate(Number.POSITIVE_INFINITY), null);
+  // Past year 9999, and far enough out that the timestamp is no longer a valid Date.
+  assert.equal(source._serialToDate(3e6), null);
+  assert.equal(source._serialToDate(123456789012), null);
 });

@@ -173,22 +173,26 @@ export class ContextService {
     return this.contextMapper.toDomainDto(saved, userProjections);
   }
 
-  async getImpact(contextId: string, projectId: string): Promise<ContextImpactDto> {
+  /**
+   * @param nonAdminMemberIds current project members other than admins. Only
+   *   their assignments can limit access, so only they are counted.
+   */
+  async getImpact(
+    contextId: string,
+    projectId: string,
+    nonAdminMemberIds: ReadonlySet<string>
+  ): Promise<ContextImpactDto> {
     const entity = await this.getByIdAndProject(contextId, projectId);
 
-    const [
-      dataMartCount,
-      storageCount,
-      destinationCount,
-      memberCount,
-      userProvisioningDefaultsCount,
-    ] = await Promise.all([
-      this.dataMartContextRepository.count({ where: { contextId } }),
-      this.storageContextRepository.count({ where: { contextId } }),
-      this.destinationContextRepository.count({ where: { contextId } }),
-      this.memberRoleContextRepository.count({ where: { contextId } }),
-      this.userProvisioningContextSettingsContextRepository.count({ where: { contextId } }),
-    ]);
+    const {
+      counts: {
+        dataMartCount,
+        storageCount,
+        destinationCount,
+        memberCount,
+        userProvisioningDefaultsCount,
+      },
+    } = await this.countBlockingAttachments(contextId, projectId, nonAdminMemberIds);
 
     // Find members with selected_contexts scope whose only context is the one being deleted
     const affectedMembers = await this.memberRoleContextRepository
@@ -206,7 +210,9 @@ export class ContextService {
       .andHaving('MAX(mrc.context_id) = :contextId', { contextId })
       .getRawMany<{ userId: string }>();
 
-    const affectedMemberIds = affectedMembers.map(m => m.userId);
+    const affectedMemberIds = affectedMembers
+      .map(m => m.userId)
+      .filter(userId => nonAdminMemberIds.has(userId));
 
     return new ContextImpactDto(
       entity.id,
@@ -226,45 +232,122 @@ export class ContextService {
    * Storages, and Destinations". The admin must manually detach first; we
    * refuse the delete here when any attachment exists. Counts are returned
    * in the conflict body so the UI can show what's blocking.
+   *
+   * Assignments that do not decide the member's access (see
+   * `splitMemberAssignments`) are not role assignments in that sense: they
+   * grant nothing and the admin cannot see them, so they do not block. They
+   * are removed with the context, so a member switched back to Selected
+   * contexts later does not carry a deleted context.
+   *
+   * @param nonAdminMemberIds current project members other than admins.
    */
   @Transactional()
-  async delete(contextId: string, projectId: string): Promise<void> {
+  async delete(
+    contextId: string,
+    projectId: string,
+    nonAdminMemberIds: ReadonlySet<string>
+  ): Promise<void> {
     const entity = await this.getByIdAndProject(contextId, projectId);
 
+    const { counts, nonBlockingMemberIds } = await this.countBlockingAttachments(
+      contextId,
+      projectId,
+      nonAdminMemberIds
+    );
+    const total =
+      counts.dataMartCount +
+      counts.storageCount +
+      counts.destinationCount +
+      counts.memberCount +
+      counts.userProvisioningDefaultsCount;
+
+    if (total > 0) {
+      throw new ConflictException({
+        message:
+          'Context is attached to resources, members, or user provisioning defaults. Detach it from all Data Marts, Storages, Destinations, Members and User Provisioning settings before deleting.',
+        ...counts,
+      });
+    }
+
+    // Remove only the assignments the check found non-blocking, so one added
+    // in the meantime by a Selected contexts member is not dropped silently.
+    if (nonBlockingMemberIds.length > 0) {
+      await this.memberRoleContextRepository.delete({
+        contextId,
+        projectId,
+        userId: In(nonBlockingMemberIds),
+      });
+    }
+    await this.contextRepository.softRemove(entity);
+  }
+
+  private async countBlockingAttachments(
+    contextId: string,
+    projectId: string,
+    nonAdminMemberIds: ReadonlySet<string>
+  ) {
     const [
       dataMartCount,
       storageCount,
       destinationCount,
-      memberCount,
+      memberAssignments,
       userProvisioningDefaultsCount,
     ] = await Promise.all([
       this.dataMartContextRepository.count({ where: { contextId } }),
       this.storageContextRepository.count({ where: { contextId } }),
       this.destinationContextRepository.count({ where: { contextId } }),
-      this.memberRoleContextRepository.count({ where: { contextId } }),
+      this.splitMemberAssignments(contextId, projectId, nonAdminMemberIds),
       this.userProvisioningContextSettingsContextRepository.count({ where: { contextId } }),
     ]);
 
-    if (
-      dataMartCount +
-        storageCount +
-        destinationCount +
-        memberCount +
-        userProvisioningDefaultsCount >
-      0
-    ) {
-      throw new ConflictException({
-        message:
-          'Context is attached to resources, members, or user provisioning defaults. Detach it from all Data Marts, Storages, Destinations, Members and User Provisioning settings before deleting.',
+    return {
+      counts: {
         dataMartCount,
         storageCount,
         destinationCount,
-        memberCount,
+        memberCount: memberAssignments.blockingUserIds.length,
         userProvisioningDefaultsCount,
-      });
-    }
+      },
+      nonBlockingMemberIds: memberAssignments.nonBlockingUserIds,
+    };
+  }
 
-    await this.contextRepository.softRemove(entity);
+  /**
+   * Splits the members assigned to this context by whether the context decides
+   * their access. Only a current non-admin member with a stored Selected
+   * contexts scope is restricted by it (the same rule as `affectedMemberIds`).
+   * A member switched to Entire project keeps their assignments, so they come
+   * back if the admin switches the member back; until then they grant nothing.
+   * A member with no stored scope gets the user provisioning default on first
+   * read, which replaces their assignments, so a leftover one never decides
+   * access either. Admins see everything whatever their stored scope (it stays
+   * behind when the role changes outside ODM), and people no longer in the
+   * project see nothing; neither is shown as assigned in Members.
+   */
+  private async splitMemberAssignments(
+    contextId: string,
+    projectId: string,
+    nonAdminMemberIds: ReadonlySet<string>
+  ): Promise<{ blockingUserIds: string[]; nonBlockingUserIds: string[] }> {
+    const assignments = await this.memberRoleContextRepository.find({
+      where: { contextId, projectId },
+    });
+    if (assignments.length === 0) return { blockingUserIds: [], nonBlockingUserIds: [] };
+
+    const userIds = assignments.map(a => a.userId);
+    const candidateIds = userIds.filter(id => nonAdminMemberIds.has(id));
+    const restrictedScopes =
+      candidateIds.length > 0
+        ? await this.memberRoleScopeRepository.find({
+            where: { projectId, userId: In(candidateIds), roleScope: RoleScope.SELECTED_CONTEXTS },
+          })
+        : [];
+    const restrictedUserIds = new Set(restrictedScopes.map(s => s.userId));
+
+    return {
+      blockingUserIds: userIds.filter(id => restrictedUserIds.has(id)),
+      nonBlockingUserIds: userIds.filter(id => !restrictedUserIds.has(id)),
+    };
   }
 
   async getByIdAndProject(contextId: string, projectId: string): Promise<Context> {

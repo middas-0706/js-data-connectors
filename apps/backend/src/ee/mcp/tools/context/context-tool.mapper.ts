@@ -26,7 +26,11 @@ export const contextImpactOutputSchema = {
   data_mart_count: z.number(),
   storage_count: z.number(),
   destination_count: z.number(),
-  member_count: z.number(),
+  member_count: z
+    .number()
+    .describe(
+      'Members with selected-context access assigned to this Context; they block deletion. Members with project-wide access are not counted: their leftover assignments do not block and are removed with the Context.'
+    ),
   user_provisioning_defaults_count: z.number(),
   affected_member_ids: z
     .array(z.string())

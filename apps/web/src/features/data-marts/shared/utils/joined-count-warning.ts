@@ -1,4 +1,5 @@
 import type { AvailableSource } from '../types/relationship.types';
+import { aggregateFunctionLabel, UNIQUE_COUNT_LABEL } from './aggregation-labels';
 import { readJoinedUniqueCountState } from './unique-count-availability';
 
 type GrainSource = Partial<
@@ -13,58 +14,185 @@ type GrainSource = Partial<
   >
 >;
 
+/**
+ * A run of the warning's text. Names are tagged so the popover can set them apart from the prose
+ * the way the picker shows them: a Data Mart as its group header, an aggregation as its option, a
+ * field as its row. A link to a Data Mart's Output Schema wraps the runs it covers.
+ */
+export type JoinedCountWarningPart =
+  | string
+  | { kind: 'dataMart' | 'aggregation' | 'field'; text: string }
+  | { kind: 'outputSchemaLink'; dataMartId: string; parts: JoinedCountWarningPart[] };
+
+export interface JoinedCountWarning {
+  /** What the number counts, and what it does not. */
+  title: string;
+  /** Why it drifts, and which way. */
+  reason: JoinedCountWarningPart[];
+  /** What to pick instead; empty when the column offers neither. */
+  advice: JoinedCountWarningPart[];
+}
+
 export interface JoinedCountWarningOptions {
   /** The joined Data Mart's name as the picker shows it. */
   name: string;
+  /** The report's own Data Mart's name. */
+  mainName: string;
+  /** The column's name as the picker shows it. */
+  fieldLabel: string;
   /** The name of the joined Data Mart at another aliasPath of the same chain. */
   nameAt: (aliasPath: string) => string | undefined;
+  /** The report's own Data Mart's id, for a link to its Output Schema. */
+  mainDataMartId: string;
+  /** The id of the joined Data Mart at an aliasPath of the same chain. */
+  dataMartIdAt: (aliasPath: string) => string | undefined;
   /** Whether this column offers Count Unique. */
   offersCountUnique: boolean;
+}
+
+const dataMart = (text: string): JoinedCountWarningPart => ({ kind: 'dataMart', text });
+
+/** How the text names the report's own Data Mart when it has no title to show. */
+const REPORT_DATA_MART = "this report's Data Mart";
+
+/** `several Sessions rows`, or `several rows of this report's Data Mart` without a name. */
+function rowsOf(
+  mart: string | undefined,
+  quantity: string,
+  noun: 'row' | 'rows'
+): JoinedCountWarningPart[] {
+  return mart
+    ? [quantity, dataMart(mart), ` ${noun}`]
+    : [`${quantity}${noun} of ${REPORT_DATA_MART}`];
 }
 
 /** Why a COUNT over a joined column does not count the joined Data Mart's rows; undefined when it does. */
 export function joinedCountWarning(
   source: GrainSource | undefined,
-  { name, nameAt, offersCountUnique }: JoinedCountWarningOptions
-): string | undefined {
+  {
+    name,
+    mainName,
+    fieldLabel,
+    nameAt,
+    mainDataMartId,
+    dataMartIdAt,
+    offersCountUnique,
+  }: JoinedCountWarningOptions
+): JoinedCountWarning | undefined {
   if (!source) return undefined;
   const multiplication = source.mainGrainMultiplication ?? 'unknown';
   const collapses = (source.mainGrainCollapse ?? 'collapses') === 'collapses';
   if (multiplication === 'none' && !collapses) return undefined;
 
+  const main = mainName.trim() || undefined;
   const collapsedAt = source.mainGrainCollapsedAt;
   const collapsedName =
     collapsedAt && collapsedAt !== source.aliasPath ? (nameAt(collapsedAt) ?? name) : name;
-  const unprovenAt = source.mainGrainUnprovenAt;
-  const unprovenName =
-    unprovenAt === undefined
-      ? undefined
-      : unprovenAt === ''
-        ? "This report's Data Mart"
-        : nameAt(unprovenAt);
+  const thanJoinedRows: JoinedCountWarningPart[] = [
+    ' than the number of ',
+    dataMart(name),
+    ' rows.',
+  ];
 
-  const lead = `Count counts the rows of this report's Data Mart that have a match in ${name}, not the rows of ${name}.`;
-  let reason: string;
+  let reason: JoinedCountWarningPart[];
   if (multiplication === 'unknown') {
-    reason =
-      (unprovenName ? ` ${unprovenName} has no primary key, so` : ' Without a primary key') +
-      ` it can't be checked whether one ${name} row matches one row or several: the count can be higher` +
-      (collapses ? ' or lower.' : '.');
+    // The Data Mart that declares no primary key: named, the report's own one without a name, or
+    // one the picker cannot name.
+    const unprovenAt = source.mainGrainUnprovenAt;
+    const unprovenName = unprovenAt === '' ? main : unprovenAt && nameAt(unprovenAt);
+    const unproven: JoinedCountWarningPart | undefined = unprovenName
+      ? dataMart(unprovenName)
+      : unprovenAt === ''
+        ? REPORT_DATA_MART
+        : undefined;
+    const unprovenId = unprovenAt === '' ? mainDataMartId : unprovenAt && dataMartIdAt(unprovenAt);
+    // Where the key is set, when the picker knows which Data Mart that is.
+    const setPrimaryKey: JoinedCountWarningPart[] =
+      unproven === undefined ? [] : ['Set a primary key on ', unproven];
+    reason = [
+      ...(unproven === undefined
+        ? ['Without a primary key,']
+        : [
+            typeof unproven === 'string'
+              ? unproven.charAt(0).toUpperCase() + unproven.slice(1)
+              : unproven,
+            ' has no primary key, so',
+          ]),
+      " it's unclear how many ",
+      ...rowsOf(main, '', 'rows'),
+      ' each ',
+      dataMart(name),
+      ` row matches. The count can be higher${collapses ? ' or lower' : ''}`,
+      ...thanJoinedRows,
+      ...(unproven === undefined
+        ? []
+        : [
+            ' ',
+            ...(unprovenId
+              ? [
+                  {
+                    kind: 'outputSchemaLink' as const,
+                    dataMartId: unprovenId,
+                    parts: setPrimaryKey,
+                  },
+                ]
+              : setPrimaryKey),
+            ' to get a definite answer.',
+          ]),
+    ];
   } else if (multiplication === 'multiplies' && collapses) {
-    reason = ` One ${name} row can match several of them, and several ${collapsedName} rows can share one join key value, so the count can be higher or lower.`;
+    reason = [
+      'One ',
+      dataMart(name),
+      ' row can match ',
+      ...rowsOf(main, 'several ', 'rows'),
+      ', and several ',
+      dataMart(collapsedName),
+      ' rows can match ',
+      ...rowsOf(main, 'one ', 'row'),
+      ', so the count can be higher or lower',
+      ...thanJoinedRows,
+    ];
   } else if (multiplication === 'multiplies') {
-    reason = ` One ${name} row can match several of them, so the count can be higher.`;
+    reason = [
+      'One ',
+      dataMart(name),
+      ' row can match ',
+      ...rowsOf(main, 'several ', 'rows'),
+      ', so the count can be higher',
+      ...thanJoinedRows,
+    ];
   } else {
-    reason = ` Several ${collapsedName} rows can share one join key value, so the count can be lower.`;
+    reason = [
+      'Several ',
+      dataMart(collapsedName),
+      ' rows can match ',
+      ...rowsOf(main, 'one ', 'row'),
+      ', so the count can be lower',
+      ...thanJoinedRows,
+    ];
   }
 
   const uniqueCount =
     readJoinedUniqueCountState(source.uniqueCountAvailability).availability === 'available';
-  const advice = offersCountUnique
-    ? ' Count Unique counts distinct values of this column instead' +
-      (uniqueCount ? `, and the Unique Count of ${name} counts its rows.` : '.')
+  const addUniqueCount: JoinedCountWarningPart[] = [
+    { kind: 'field', text: UNIQUE_COUNT_LABEL },
+    ' from ',
+    dataMart(name),
+    ' to count its rows.',
+  ];
+  const advice: JoinedCountWarningPart[] = offersCountUnique
+    ? [
+        'Use ',
+        { kind: 'aggregation', text: aggregateFunctionLabel('COUNT_DISTINCT') },
+        ' for distinct ',
+        { kind: 'field', text: fieldLabel },
+        ...(uniqueCount ? [' values, or add ', ...addUniqueCount] : [' values.']),
+      ]
     : uniqueCount
-      ? ` The Unique Count of ${name} counts its rows.`
-      : '';
-  return lead + reason + advice;
+      ? ['Add ', ...addUniqueCount]
+      : [];
+
+  const title = `Counts ${main ? `${main} rows` : `rows of ${REPORT_DATA_MART}`}, not ${name} rows`;
+  return { title, reason, advice };
 }

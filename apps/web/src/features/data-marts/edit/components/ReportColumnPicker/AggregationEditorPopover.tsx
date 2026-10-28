@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@owox/ui/components/popover';
 import { Button } from '@owox/ui/components/button';
 import { Checkbox } from '@owox/ui/components/checkbox';
@@ -14,6 +14,12 @@ import {
 import { DATE_TRUNC_UNITS, type DateTruncUnit } from '../../../shared/types/output-config';
 import type { ReportAggregateFunction } from '../../../shared/types/relationship.types';
 import { aggregateFunctionLabel } from '../../../shared/utils/aggregation-labels';
+import type {
+  JoinedCountWarning,
+  JoinedCountWarningPart,
+} from '../../../shared/utils/joined-count-warning';
+import { outputSchemaPath } from '../../../shared/utils/output-schema-link';
+import { useProjectRoute } from '../../../../../shared/hooks/useProjectRoute';
 import { isDateType, isTimestampType } from './output-controls-operators';
 
 /**
@@ -72,7 +78,7 @@ export interface AggregationEditorPopoverProps {
   /** Functions the column may be aggregated by (already resolved via governance). */
   allowedAggregations: readonly ReportAggregateFunction[];
   /** Shown below the function list while Count is ticked. */
-  countWarning?: string;
+  countWarning?: JoinedCountWarning;
   /**
    * Whether THIS column may be date-bucketed, for callers whose column is of a date type but is
    * still not bucketable — today the aggregate-level calculated field, which already aggregates
@@ -280,7 +286,17 @@ export function AggregationEditorPopover(props: AggregationEditorPopoverProps) {
                 className='bg-warning-bg text-warning flex gap-1.5 rounded p-1.5 text-[11px]'
               >
                 <TriangleAlert className='mt-0.5 size-3 shrink-0' />
-                <span>{props.countWarning}</span>
+                <div className='space-y-1'>
+                  <p className='font-semibold'>{props.countWarning.title}</p>
+                  <p>
+                    <WarningParts parts={props.countWarning.reason} />
+                  </p>
+                  {props.countWarning.advice.length > 0 && (
+                    <p>
+                      <WarningParts parts={props.countWarning.advice} />
+                    </p>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -296,5 +312,42 @@ export function AggregationEditorPopover(props: AggregationEditorPopoverProps) {
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/**
+ * Sets a name apart from the prose the way the picker shows it: a field in mono, the rest bold. A
+ * link to an Output Schema opens in a new tab, so the report being edited stays as it is.
+ */
+function WarningParts({ parts }: { parts: readonly JoinedCountWarningPart[] }) {
+  return parts.map((part, index) => {
+    if (typeof part === 'string') return <Fragment key={index}>{part}</Fragment>;
+    if (part.kind === 'outputSchemaLink') {
+      return (
+        <OutputSchemaLink key={index} dataMartId={part.dataMartId}>
+          <WarningParts parts={part.parts} />
+        </OutputSchemaLink>
+      );
+    }
+    return (
+      <span key={index} className={part.kind === 'field' ? 'font-mono' : 'font-semibold'}>
+        {part.text}
+      </span>
+    );
+  });
+}
+
+function OutputSchemaLink({ dataMartId, children }: { dataMartId: string; children: ReactNode }) {
+  const { scope } = useProjectRoute();
+  return (
+    <a
+      href={scope(outputSchemaPath(dataMartId))}
+      target='_blank'
+      rel='noopener noreferrer'
+      title='Open the Output Schema in a new tab'
+      className='underline underline-offset-2 hover:no-underline'
+    >
+      {children}
+    </a>
   );
 }

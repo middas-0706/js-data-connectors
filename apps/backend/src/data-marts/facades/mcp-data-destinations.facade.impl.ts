@@ -1,12 +1,12 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataDestinationType } from '../data-destination-types/enums/data-destination-type.enum';
 import { ListDataDestinationsCommand } from '../dto/domain/list-data-destinations.command';
 import { ListDataDestinationsService } from '../use-cases/list-data-destinations.service';
 import { CreateDataDestinationService } from '../use-cases/create-data-destination.service';
 import { CreateDataDestinationCommand } from '../dto/domain/create-data-destination.command';
-import { DataDestinationCredentialService } from '../services/data-destination-credential.service';
-import { DataDestinationCredential } from '../entities/data-destination-credential.entity';
 import { DataDestinationCredentials } from '../data-destination-types/data-destination-credentials.type';
+import type { DestinationCredentialSummary } from '../data-destination-types/destination-credential-state';
+import { GOOGLE_SHEETS_OAUTH_DEFINITION_ID } from '../credentials/services/builtin-credential-definitions';
 import { toMcpDestinationType, type McpDestinationType } from './mcp-destination-type';
 import {
   McpDataDestinationsFacade,
@@ -28,12 +28,9 @@ const REVERSE_DESTINATION_TYPE_MAP: Record<McpDestinationType, DataDestinationTy
 
 @Injectable()
 export class McpDataDestinationsFacadeImpl implements McpDataDestinationsFacade {
-  private readonly logger = new Logger(McpDataDestinationsFacadeImpl.name);
-
   constructor(
     private readonly listDataDestinationsService: ListDataDestinationsService,
-    private readonly createDataDestinationService: CreateDataDestinationService,
-    private readonly dataDestinationCredentialService: DataDestinationCredentialService
+    private readonly createDataDestinationService: CreateDataDestinationService
   ) {}
 
   async listDestinations(
@@ -41,11 +38,6 @@ export class McpDataDestinationsFacadeImpl implements McpDataDestinationsFacade 
   ): Promise<McpListDestinationsResponse> {
     const items = await this.listDataDestinationsService.run(
       new ListDataDestinationsCommand(request.projectId, request.userId, request.roles)
-    );
-
-    const connectedGoogleAccountByDestinationId = await this.fetchConnectedGoogleAccounts(
-      items,
-      request.projectId
     );
 
     return {
@@ -57,51 +49,13 @@ export class McpDataDestinationsFacadeImpl implements McpDataDestinationsFacade 
         // ordering, so picking one of potentially several owners would be
         // non-deterministic; the creator is a single, stable value.
         owner: destination.createdByUser?.email ?? null,
-        connectedGoogleAccount: connectedGoogleAccountByDestinationId.get(destination.id) ?? null,
+        connectedGoogleAccount:
+          destination.type === DataDestinationType.GOOGLE_SHEETS
+            ? connectedAccount(destination.reusableCredential)
+            : null,
         createdAt: destination.createdAt.toISOString(),
       })),
     };
-  }
-
-  /**
-   * For google_sheets destinations, resolves which Google account actually completed
-   * OAuth consent — distinct from the OWOX `owner`/creator, and the only way to notice
-   * a mismatch after the MCP-driven Connect Google Sheets page finishes setup.
-   */
-  private async fetchConnectedGoogleAccounts(
-    destinations: Array<{ id: string; type: DataDestinationType; credentialId?: string | null }>,
-    projectId: string
-  ): Promise<Map<string, string | null>> {
-    const googleSheetsDestinations = destinations.filter(
-      destination =>
-        destination.type === DataDestinationType.GOOGLE_SHEETS && destination.credentialId
-    );
-
-    const credentialIds = googleSheetsDestinations.map(
-      destination => destination.credentialId as string
-    );
-
-    let credentialsById: Map<string, DataDestinationCredential>;
-    try {
-      credentialsById = await this.dataDestinationCredentialService.getByIds(
-        credentialIds,
-        projectId
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Failed to batch-fetch Google OAuth identities for ${credentialIds.length} credential(s); ` +
-          'connectedGoogleAccount will be null for affected google_sheets destinations',
-        error instanceof Error ? error.stack : String(error)
-      );
-      return new Map(googleSheetsDestinations.map(destination => [destination.id, null] as const));
-    }
-
-    return new Map(
-      googleSheetsDestinations.map(destination => {
-        const credential = credentialsById.get(destination.credentialId as string);
-        return [destination.id, credential?.identity?.email ?? null] as const;
-      })
-    );
   }
 
   async createDestination(
@@ -155,4 +109,11 @@ export class McpDataDestinationsFacadeImpl implements McpDataDestinationsFacade 
       name: result.title,
     };
   }
+}
+
+/** The Google account that completed OAuth consent, as the Destinations list names it to the member. */
+function connectedAccount(summary: DestinationCredentialSummary | null | undefined): string | null {
+  return summary?.definitionId === GOOGLE_SHEETS_OAUTH_DEFINITION_ID
+    ? (summary.identity ?? null)
+    : null;
 }

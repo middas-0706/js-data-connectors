@@ -1,3 +1,4 @@
+// Imported by migration 1792700000000: keep it and its imports when the legacy code goes.
 import { BadRequestException } from '@nestjs/common';
 import { createPrivateKey } from 'node:crypto';
 import {
@@ -48,6 +49,7 @@ export function parseGoogleServiceAccountKey(value: string): {
       clientEmail: key.client_email,
       projectId: key.project_id,
       privateKeyId: key.private_key_id,
+      clientId: key.client_id,
     },
   };
 }

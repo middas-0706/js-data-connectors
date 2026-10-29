@@ -1052,6 +1052,15 @@ export class ManifestParser {
     };
   }
 
+  getAuthenticationParameterNames(authentication) {
+    const names = new Set();
+    this.mapAuthenticationCredentials(authentication, value => {
+      this._collectParameterRefsDeep(value, names);
+      return value;
+    });
+    return [...names];
+  }
+
   /**
    * Marks every declared parameter the manifest interpolates into a credential
    * position of `authentication` with CONFIG_ATTRIBUTES.SECRET.
@@ -1064,8 +1073,7 @@ export class ManifestParser {
    *   residue this pass cannot protect, which the host surfaces at publish time.
    */
   _applyAuthSecrets(auth, parameters) {
-    const referenced = new Set();
-    this._collectAuthParameterRefs(auth, referenced);
+    const referenced = this.getAuthenticationParameterNames(auth);
 
     const autoSecretAuthParameters = [];
     const undeclaredAuthParameters = [];
@@ -1114,8 +1122,7 @@ export class ManifestParser {
           `underscore and contain only letters, digits and underscores`
       );
     }
-    const fields =
-      node.fields && typeof node.fields === 'object' ? Object.keys(node.fields) : [];
+    const fields = node.fields && typeof node.fields === 'object' ? Object.keys(node.fields) : [];
     for (const field of fields) {
       if (!identifier.test(field)) {
         throw new Error(
@@ -1140,50 +1147,68 @@ export class ManifestParser {
     }
   }
 
-  /**
-   * Walks an authenticator, collecting the parameter names referenced from
-   * credential-bearing positions. Recurses through `selective` branches.
-   */
-  _collectAuthParameterRefs(auth, into) {
-    if (!auth || typeof auth !== 'object' || Array.isArray(auth)) return;
+  /** Uses the same credential positions for parameter discovery and host-side masking. */
+  mapAuthenticationCredentials(auth, mapCredential, mapMetadata = value => value) {
+    if (auth == null) return mapMetadata(auth);
+    if (typeof auth !== 'object' || Array.isArray(auth)) return mapCredential(auth);
 
-    for (const [key, value] of Object.entries(auth)) {
-      // Basic auth without a password is an API key sent as the username (Stripe, Chargebee,
-      // Freshdesk), so there the username is the credential.
-      if (key === 'username' && auth.type === 'basic' && !auth.password) {
-        this._collectParameterRefsDeep(value, into);
-        continue;
-      }
-      if (NON_CREDENTIAL_AUTH_KEYS.has(key)) continue;
-
-      if (key === 'authenticators') {
-        // `selective`: each branch is a full authenticator with the same rules.
-        if (value && typeof value === 'object') {
-          for (const sub of Object.values(value)) this._collectAuthParameterRefs(sub, into);
+    return Object.fromEntries(
+      Object.entries(auth).map(([key, value]) => {
+        // Basic auth without a password sends an API key as the username.
+        if (key === 'username' && auth.type === 'basic' && !auth.password) {
+          return [key, mapCredential(value)];
         }
-        continue;
-      }
+        if (NON_CREDENTIAL_AUTH_KEYS.has(key)) return [key, mapMetadata(value)];
 
-      if (key === 'inject') {
-        if (value && typeof value === 'object') {
-          this._collectParameterRefsDeep(value[CREDENTIAL_INJECT_KEY], into);
+        if (key === 'authenticators') {
+          if (!value || typeof value !== 'object') return [key, mapCredential(value)];
+          return [
+            key,
+            Array.isArray(value)
+              ? value.map(sub => this.mapAuthenticationCredentials(sub, mapCredential, mapMetadata))
+              : Object.fromEntries(
+                  Object.entries(value).map(([name, sub]) => [
+                    name,
+                    this.mapAuthenticationCredentials(sub, mapCredential, mapMetadata),
+                  ])
+                ),
+          ];
         }
-        continue;
-      }
 
-      if (key === 'exchange') {
-        if (value && typeof value === 'object') {
-          for (const [exKey, exValue] of Object.entries(value)) {
-            if (NON_CREDENTIAL_EXCHANGE_KEYS.has(exKey)) continue;
-            this._collectParameterRefsDeep(exValue, into);
+        if (key === 'inject') {
+          if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            return [key, mapCredential(value)];
           }
+          const { [CREDENTIAL_INJECT_KEY]: credential, ...metadata } = value;
+          return [
+            key,
+            {
+              ...mapMetadata(metadata),
+              ...(CREDENTIAL_INJECT_KEY in value
+                ? { [CREDENTIAL_INJECT_KEY]: mapCredential(credential) }
+                : {}),
+            },
+          ];
         }
-        continue;
-      }
 
-      // clientSecret, refreshToken, password, and any key the format grows later.
-      this._collectParameterRefsDeep(value, into);
-    }
+        if (key === 'exchange') {
+          if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            return [key, mapCredential(value)];
+          }
+          return [
+            key,
+            Object.fromEntries(
+              Object.entries(value).map(([field, item]) => [
+                field,
+                NON_CREDENTIAL_EXCHANGE_KEYS.has(field) ? mapMetadata(item) : mapCredential(item),
+              ])
+            ),
+          ];
+        }
+
+        return [key, mapCredential(value)];
+      })
+    );
   }
 
   _collectParameterRefsDeep(value, into) {

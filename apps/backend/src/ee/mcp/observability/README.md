@@ -20,7 +20,33 @@ it only produces one MCP-domain event per call and puts bulky fields (SQL, resul
 changes the wrapped callback's result or error, and `emit()` swallows its own exceptions, so a logging failure
 can never surface as a tool-call failure.
 
-**Known gap:** the SDK validates a tool call's arguments against its input schema *before* the wrapped callback
+For custom connector payloads, telemetry masks parameter values identified by the
+`SECRET` attribute, authentication references, or credential names such as
+`DeveloperToken` and `AppSecret`. The masking covers `default`, `placeholder`,
+`options`, `value`, test configuration, and secret variables in `oauthParams.vars`.
+Parameter definitions and ordinary settings such as `TokenCount`, `PageToken`,
+public client IDs, and endpoint URLs remain readable. Unrecognized shapes inside
+credential-bearing branches have their literal values masked.
+
+The shared manifest parser identifies authentication credential positions.
+Literal credentials in those positions, request headers, and URL query parameters
+are masked. Parameter references remain readable. Credentials found in the request
+are also masked when echoed in result rows, samples, logs, or errors, including
+URL-encoded and JSON-escaped copies. Error masking runs before length truncation.
+
+The runner masks declared secrets in logs, errors, and test rows. The test service
+consumes credential-update events and returns a notice without the credentials.
+It does not store credentials rotated during a test.
+
+MCP retains the other diagnostics, rows, and samples. A failed test returns the
+error as its first text part and the diagnostic JSON as its second text part.
+The inline `error_message` contains only the masked error text. Rows and samples
+remain in the offloaded result. Telemetry masking does not change the handler's
+input or structured result.
+
+Supply credentials through secret parameters instead of literal values in a manifest.
+
+**Known gap:** the SDK validates a tool call's arguments against its input schema _before_ the wrapped callback
 runs, so calls rejected by schema validation emit no `mcp.tool_call` event (no t1/t2 trace). Only calls that
 reach the handler are instrumented.
 

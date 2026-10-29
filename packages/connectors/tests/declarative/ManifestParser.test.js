@@ -25,6 +25,109 @@ const valid = {
 };
 
 describe('ManifestParser', () => {
+  it('finds authentication credentials without validating or mutating a draft', () => {
+    const authentication = {
+      type: 'selective',
+      selectionParameter: 'Mode',
+      authenticators: {
+        bearer: {
+          type: 'bearer',
+          inject: { into: 'header', name: 'Authorization', format: 'Bearer {{ parameters.Pat }}' },
+        },
+        basic: {
+          type: 'basic',
+          username: '{{ parameters.User }}',
+          password: '{{ parameters.Pass }}',
+        },
+        key: { type: 'basic', username: '{{ parameters.Key }}' },
+        oauth: {
+          type: 'oauth2',
+          tokenUrl: '{{ parameters.Endpoint }}',
+          clientId: '{{ parameters.Client }}',
+          clientSecret: '{{ parameters.Value }}',
+        },
+      },
+    };
+    const before = JSON.stringify(authentication);
+    assert.deepStrictEqual(
+      new ManifestParser().getAuthenticationParameterNames(authentication).sort(),
+      ['Key', 'Pass', 'Pat', 'Value']
+    );
+    assert.strictEqual(JSON.stringify(authentication), before);
+    for (const auth of [undefined, null, 'unfinished', []]) {
+      assert.deepStrictEqual(new ManifestParser().getAuthenticationParameterNames(auth), []);
+    }
+  });
+
+  it('maps credential positions while preserving authentication metadata and the original object', () => {
+    const authentication = {
+      type: 'selective',
+      selectionParameter: 'Mode',
+      authenticators: {
+        basic: { type: 'basic', username: 'public-user', password: 'private-password' },
+        key: { type: 'basic', username: 'private-key' },
+        exchange: {
+          type: 'tokenExchange',
+          exchange: {
+            url: 'https://example.com/token',
+            method: 'POST',
+            tokenPath: ['access_token'],
+            ttlSeconds: 300,
+            body: { value: 'private-value' },
+          },
+          inject: { into: 'header', name: 'Authorization', format: 'Bearer {{ auth.token }}' },
+        },
+      },
+    };
+    const before = structuredClone(authentication);
+    const parser = new ManifestParser();
+
+    assert.deepStrictEqual(
+      parser.mapAuthenticationCredentials(authentication, () => '[MASKED]'),
+      {
+        type: 'selective',
+        selectionParameter: 'Mode',
+        authenticators: {
+          basic: { type: 'basic', username: 'public-user', password: '[MASKED]' },
+          key: { type: 'basic', username: '[MASKED]' },
+          exchange: {
+            type: 'tokenExchange',
+            exchange: {
+              url: 'https://example.com/token',
+              method: 'POST',
+              tokenPath: ['access_token'],
+              ttlSeconds: 300,
+              body: '[MASKED]',
+            },
+            inject: { into: 'header', name: 'Authorization', format: '[MASKED]' },
+          },
+        },
+      }
+    );
+    assert.deepStrictEqual(authentication, before);
+    for (const auth of [undefined, null, 'unfinished', []]) {
+      assert.deepStrictEqual(
+        parser.mapAuthenticationCredentials(auth, () => '[MASKED]'),
+        auth == null ? auth : '[MASKED]'
+      );
+    }
+  });
+
+  it('sends malformed authentication values through credential masking', () => {
+    const parser = new ManifestParser();
+    for (const auth of [
+      'private-value',
+      ['private-value'],
+      { inject: 'private-value' },
+      { inject: ['private-value'] },
+      { exchange: 'private-value' },
+      { authenticators: ['private-value'] },
+    ]) {
+      const result = parser.mapAuthenticationCredentials(auth, () => '[MASKED]');
+      assert.ok(!JSON.stringify(result).includes('private-value'));
+    }
+  });
+
   it('parses a valid manifest and exposes allowedHosts', () => {
     const model = new ManifestParser().parse(JSON.stringify(valid));
     assert.strictEqual(model.name, 'Demo');

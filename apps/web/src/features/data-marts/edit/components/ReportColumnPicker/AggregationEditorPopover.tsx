@@ -2,7 +2,7 @@ import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@owox/ui/components/popover';
 import { Button } from '@owox/ui/components/button';
 import { Checkbox } from '@owox/ui/components/checkbox';
-import { TriangleAlert } from 'lucide-react';
+import { ExternalLink, TriangleAlert } from 'lucide-react';
 import { Label } from '@owox/ui/components/label';
 import {
   Select,
@@ -20,6 +20,7 @@ import type {
 } from '../../../shared/utils/joined-count-warning';
 import { outputSchemaPath } from '../../../shared/utils/output-schema-link';
 import { useProjectRoute } from '../../../../../shared/hooks/useProjectRoute';
+import { useRefreshBlendableSchemaOnReturn } from '../../../shared/hooks/useRefreshBlendableSchemaOnReturn';
 import { isDateType, isTimestampType } from './output-controls-operators';
 
 /**
@@ -337,17 +338,27 @@ function WarningParts({ parts }: { parts: readonly JoinedCountWarningPart[] }) {
   });
 }
 
+/**
+ * Opens the Output Schema in a new tab. Every return to this tab after that refetches the picker's
+ * schema while the link is shown, so a primary key saved there ends the warning without reopening
+ * the report. A middle click or the context menu's "Open link in new tab" counts as using it too.
+ */
 function OutputSchemaLink({ dataMartId, children }: { dataMartId: string; children: ReactNode }) {
   const { scope } = useProjectRoute();
+  const refreshOnReturn = useRefreshBlendableSchemaOnReturn();
   return (
     <a
       href={scope(outputSchemaPath(dataMartId))}
       target='_blank'
       rel='noopener noreferrer'
-      title='Open the Output Schema in a new tab'
-      className='underline underline-offset-2 hover:no-underline'
+      onClick={refreshOnReturn}
+      onAuxClick={refreshOnReturn}
+      onContextMenu={refreshOnReturn}
+      className='focus-visible:ring-ring/50 rounded-sm underline underline-offset-2 outline-none hover:no-underline focus-visible:ring-[3px]'
     >
       {children}
+      <ExternalLink className='ml-0.5 inline size-3 align-[-1px]' aria-hidden='true' />
+      <span className='sr-only'> (opens in a new tab)</span>
     </a>
   );
 }

@@ -35,6 +35,46 @@ describe('ContextService', () => {
     createQueryBuilder: jest.fn(),
   });
 
+  /**
+   * The context's links to Data Marts, Storages or Destinations: `liveCount`
+   * links to existing resources of the project, one link per id in
+   * `deletedIds`, whose resource was deleted, and one per id in
+   * `otherProjectIds`, whose resource now belongs to another project.
+   */
+  const mockResourceLinks = (
+    linkRepository: ReturnType<typeof createMockRepository>,
+    liveCount: number,
+    deletedIds: string[] = [],
+    otherProjectIds: string[] = []
+  ) => {
+    const queryBuilder = {
+      withDeleted: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue([
+        ...Array.from({ length: liveCount }, (_, i) => ({
+          resourceId: `live-${i + 1}`,
+          projectId: PROJECT_ID,
+          deletedAt: null,
+        })),
+        ...deletedIds.map(resourceId => ({
+          resourceId,
+          projectId: PROJECT_ID,
+          deletedAt: new Date('2026-10-01'),
+        })),
+        ...otherProjectIds.map(resourceId => ({
+          resourceId,
+          projectId: 'project-2',
+          deletedAt: null,
+        })),
+      ]),
+    };
+    linkRepository.createQueryBuilder.mockReturnValue(queryBuilder);
+    return queryBuilder;
+  };
+
   const createService = () => {
     const contextRepository = createMockRepository();
     const dataMartContextRepository = createMockRepository();
@@ -44,7 +84,10 @@ describe('ContextService', () => {
     const memberRoleScopeRepository = createMockRepository();
     const userProvisioningContextSettingsContextRepository = createMockRepository();
 
-    // No member holds the context unless a test says otherwise.
+    // Nothing holds the context unless a test says otherwise.
+    mockResourceLinks(dataMartContextRepository, 0);
+    mockResourceLinks(storageContextRepository, 0);
+    mockResourceLinks(destinationContextRepository, 0);
     memberRoleContextRepository.find.mockResolvedValue([]);
     memberRoleScopeRepository.find.mockResolvedValue([]);
 
@@ -445,9 +488,9 @@ describe('ContextService', () => {
       contextRepository.findOne.mockResolvedValue(existingEntity);
 
       const memberIds = ['m-1', 'm-2', 'm-3', 'm-4'];
-      dataMartContextRepository.count.mockResolvedValue(3);
-      storageContextRepository.count.mockResolvedValue(2);
-      destinationContextRepository.count.mockResolvedValue(1);
+      mockResourceLinks(dataMartContextRepository, 3);
+      mockResourceLinks(storageContextRepository, 2);
+      mockResourceLinks(destinationContextRepository, 1);
       memberRoleContextRepository.find.mockResolvedValue(memberIds.map(memberAssignment));
       memberRoleScopeRepository.find.mockResolvedValue(memberIds.map(restrictedScope));
       userProvisioningContextSettingsContextRepository.count.mockResolvedValue(5);
@@ -521,6 +564,48 @@ describe('ContextService', () => {
       });
     });
 
+    it('does not count links of resources that moved to another project', async () => {
+      const { service, contextRepository, storageContextRepository, memberRoleContextRepository } =
+        createService();
+
+      contextRepository.findOne.mockResolvedValue(createContextEntity());
+      const storageLinks = mockResourceLinks(storageContextRepository, 1, [], ['storage-moved']);
+      mockAffectedMembers(memberRoleContextRepository);
+
+      const result = await service.getImpact(CONTEXT_ID, PROJECT_ID, new Set());
+
+      expect(result.storageCount).toBe(1);
+      expect(storageLinks.addSelect).toHaveBeenCalledWith('resource.projectId', 'projectId');
+    });
+
+    it('does not count links of deleted Data Marts, Storages and Destinations', async () => {
+      const {
+        service,
+        contextRepository,
+        dataMartContextRepository,
+        storageContextRepository,
+        destinationContextRepository,
+        memberRoleContextRepository,
+      } = createService();
+
+      contextRepository.findOne.mockResolvedValue(createContextEntity());
+      const dataMartLinks = mockResourceLinks(dataMartContextRepository, 1, ['dm-deleted']);
+      mockResourceLinks(storageContextRepository, 0, ['storage-deleted']);
+      mockResourceLinks(destinationContextRepository, 2, ['destination-deleted']);
+      mockAffectedMembers(memberRoleContextRepository);
+
+      const result = await service.getImpact(CONTEXT_ID, PROJECT_ID, new Set());
+
+      expect(result.dataMartCount).toBe(1);
+      expect(result.storageCount).toBe(0);
+      expect(result.destinationCount).toBe(2);
+      expect(dataMartLinks.withDeleted).toHaveBeenCalled();
+      expect(dataMartLinks.innerJoin).toHaveBeenCalledWith('link.dataMart', 'resource');
+      expect(dataMartLinks.where).toHaveBeenCalledWith('link.contextId = :contextId', {
+        contextId: CONTEXT_ID,
+      });
+    });
+
     it('should identify affected members (selected_contexts with only this context)', async () => {
       const {
         service,
@@ -537,9 +622,9 @@ describe('ContextService', () => {
       contextRepository.findOne.mockResolvedValue(existingEntity);
 
       const memberIds = ['member-1', 'member-2'];
-      dataMartContextRepository.count.mockResolvedValue(0);
-      storageContextRepository.count.mockResolvedValue(0);
-      destinationContextRepository.count.mockResolvedValue(0);
+      mockResourceLinks(dataMartContextRepository, 0);
+      mockResourceLinks(storageContextRepository, 0);
+      mockResourceLinks(destinationContextRepository, 0);
       memberRoleContextRepository.find.mockResolvedValue(memberIds.map(memberAssignment));
       memberRoleScopeRepository.find.mockResolvedValue(memberIds.map(restrictedScope));
       userProvisioningContextSettingsContextRepository.count.mockResolvedValue(0);
@@ -569,9 +654,9 @@ describe('ContextService', () => {
       contextRepository.findOne.mockResolvedValue(existingEntity);
       contextRepository.softRemove.mockResolvedValue(existingEntity);
 
-      dataMartContextRepository.count.mockResolvedValue(0);
-      storageContextRepository.count.mockResolvedValue(0);
-      destinationContextRepository.count.mockResolvedValue(0);
+      mockResourceLinks(dataMartContextRepository, 0);
+      mockResourceLinks(storageContextRepository, 0);
+      mockResourceLinks(destinationContextRepository, 0);
       userProvisioningContextSettingsContextRepository.count.mockResolvedValue(0);
 
       await service.delete(CONTEXT_ID, PROJECT_ID, new Set());
@@ -597,9 +682,9 @@ describe('ContextService', () => {
 
       const existingEntity = createContextEntity();
       contextRepository.findOne.mockResolvedValue(existingEntity);
-      dataMartContextRepository.count.mockResolvedValue(0);
-      storageContextRepository.count.mockResolvedValue(0);
-      destinationContextRepository.count.mockResolvedValue(0);
+      mockResourceLinks(dataMartContextRepository, 0);
+      mockResourceLinks(storageContextRepository, 0);
+      mockResourceLinks(destinationContextRepository, 0);
       userProvisioningContextSettingsContextRepository.count.mockResolvedValue(0);
       // m-1 was switched to Entire project; m-2 has no stored scope. Neither is restricted.
       memberRoleContextRepository.find.mockResolvedValue(['m-1', 'm-2'].map(memberAssignment));
@@ -632,9 +717,9 @@ describe('ContextService', () => {
 
       const existingEntity = createContextEntity();
       contextRepository.findOne.mockResolvedValue(existingEntity);
-      dataMartContextRepository.count.mockResolvedValue(0);
-      storageContextRepository.count.mockResolvedValue(0);
-      destinationContextRepository.count.mockResolvedValue(0);
+      mockResourceLinks(dataMartContextRepository, 0);
+      mockResourceLinks(storageContextRepository, 0);
+      mockResourceLinks(destinationContextRepository, 0);
       userProvisioningContextSettingsContextRepository.count.mockResolvedValue(0);
       // Both may still have a stored Selected contexts scope; it does not matter.
       memberRoleContextRepository.find.mockResolvedValue(
@@ -669,9 +754,9 @@ describe('ContextService', () => {
       } = createService();
 
       contextRepository.findOne.mockResolvedValue(createContextEntity());
-      dataMartContextRepository.count.mockResolvedValue(0);
-      storageContextRepository.count.mockResolvedValue(0);
-      destinationContextRepository.count.mockResolvedValue(0);
+      mockResourceLinks(dataMartContextRepository, 0);
+      mockResourceLinks(storageContextRepository, 0);
+      mockResourceLinks(destinationContextRepository, 0);
       userProvisioningContextSettingsContextRepository.count.mockResolvedValue(0);
       memberRoleContextRepository.find.mockResolvedValue(['m-1', 'm-2'].map(memberAssignment));
       memberRoleScopeRepository.find.mockResolvedValue([restrictedScope('m-2')]);
@@ -700,17 +785,57 @@ describe('ContextService', () => {
       const existingEntity = createContextEntity();
       contextRepository.findOne.mockResolvedValue(existingEntity);
 
-      dataMartContextRepository.count.mockResolvedValue(2);
-      storageContextRepository.count.mockResolvedValue(0);
-      destinationContextRepository.count.mockResolvedValue(1);
+      mockResourceLinks(dataMartContextRepository, 2, ['dm-deleted']);
+      mockResourceLinks(storageContextRepository, 0);
+      mockResourceLinks(destinationContextRepository, 1);
       userProvisioningContextSettingsContextRepository.count.mockResolvedValue(0);
 
-      await expect(service.delete(CONTEXT_ID, PROJECT_ID, new Set())).rejects.toBeInstanceOf(
-        ConflictException
-      );
+      await expect(service.delete(CONTEXT_ID, PROJECT_ID, new Set())).rejects.toMatchObject({
+        response: expect.objectContaining({ dataMartCount: 2, destinationCount: 1 }),
+      });
 
+      expect(dataMartContextRepository.delete).not.toHaveBeenCalled();
       expect(memberRoleContextRepository.delete).not.toHaveBeenCalled();
       expect(contextRepository.softRemove).not.toHaveBeenCalled();
+    });
+
+    it('deletes a context held only by deleted or moved resources, removing their links', async () => {
+      const {
+        service,
+        contextRepository,
+        dataMartContextRepository,
+        storageContextRepository,
+        destinationContextRepository,
+        memberRoleContextRepository,
+        userProvisioningContextSettingsContextRepository,
+      } = createService();
+
+      const existingEntity = createContextEntity();
+      contextRepository.findOne.mockResolvedValue(existingEntity);
+      mockResourceLinks(dataMartContextRepository, 0, ['dm-deleted']);
+      mockResourceLinks(storageContextRepository, 0, ['storage-deleted'], ['storage-moved']);
+      mockResourceLinks(destinationContextRepository, 0, ['destination-deleted']);
+      userProvisioningContextSettingsContextRepository.count.mockResolvedValue(0);
+
+      await service.delete(CONTEXT_ID, PROJECT_ID, new Set());
+
+      expect(dataMartContextRepository.delete).toHaveBeenCalledWith({
+        contextId: CONTEXT_ID,
+        dataMartId: In(['dm-deleted']),
+      });
+      expect(storageContextRepository.delete).toHaveBeenCalledWith({
+        contextId: CONTEXT_ID,
+        storageId: In(['storage-deleted', 'storage-moved']),
+      });
+      expect(destinationContextRepository.delete).toHaveBeenCalledWith({
+        contextId: CONTEXT_ID,
+        destinationId: In(['destination-deleted']),
+      });
+      expect(memberRoleContextRepository.delete).not.toHaveBeenCalled();
+      expect(contextRepository.softRemove).toHaveBeenCalledWith(existingEntity);
+      expect(destinationContextRepository.delete.mock.invocationCallOrder[0]).toBeLessThan(
+        contextRepository.softRemove.mock.invocationCallOrder[0]
+      );
     });
 
     it('should throw ConflictException when context is used by user provisioning defaults', async () => {
@@ -726,9 +851,9 @@ describe('ContextService', () => {
       const existingEntity = createContextEntity();
       contextRepository.findOne.mockResolvedValue(existingEntity);
 
-      dataMartContextRepository.count.mockResolvedValue(0);
-      storageContextRepository.count.mockResolvedValue(0);
-      destinationContextRepository.count.mockResolvedValue(0);
+      mockResourceLinks(dataMartContextRepository, 0);
+      mockResourceLinks(storageContextRepository, 0);
+      mockResourceLinks(destinationContextRepository, 0);
       userProvisioningContextSettingsContextRepository.count.mockResolvedValue(1);
 
       await expect(service.delete(CONTEXT_ID, PROJECT_ID, new Set())).rejects.toMatchObject({

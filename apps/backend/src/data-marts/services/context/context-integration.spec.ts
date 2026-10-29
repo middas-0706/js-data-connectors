@@ -38,6 +38,8 @@ const createMockRepository = () => ({
   count: jest.fn(),
   createQueryBuilder: jest.fn(),
   upsert: jest.fn(),
+  // Data Marts the tests write links for exist in the project.
+  manager: { exists: jest.fn().mockResolvedValue(true) },
 });
 
 // ─── Build entire service graph with mocked repos ───────────────────────────
@@ -158,6 +160,26 @@ function stubEntityContexts(repo: ReturnType<typeof createMockRepository>, match
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     getCount: jest.fn().mockResolvedValue(matchingCount),
+  };
+  repo.createQueryBuilder.mockReturnValue(qb);
+  return qb;
+}
+
+/** Stub the query-builder chain ContextService uses to read a context's resource links */
+function stubResourceLinks(repo: ReturnType<typeof createMockRepository>, liveCount: number) {
+  const qb = {
+    withDeleted: jest.fn().mockReturnThis(),
+    innerJoin: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
+    addSelect: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    getRawMany: jest.fn().mockResolvedValue(
+      Array.from({ length: liveCount }, (_, i) => ({
+        resourceId: `resource-${i + 1}`,
+        projectId: PROJECT_ID,
+        deletedAt: null,
+      }))
+    ),
   };
   repo.createQueryBuilder.mockReturnValue(qb);
   return qb;
@@ -630,9 +652,9 @@ describe('Context Integration Tests', () => {
     const CONTEXT_ID = 'ctx-to-delete';
 
     const mockZeroCounts = () => {
-      s.dmContextRepo.count.mockResolvedValue(0);
-      s.storageContextRepo.count.mockResolvedValue(0);
-      s.destContextRepo.count.mockResolvedValue(0);
+      stubResourceLinks(s.dmContextRepo, 0);
+      stubResourceLinks(s.storageContextRepo, 0);
+      stubResourceLinks(s.destContextRepo, 0);
       s.memberRoleContextRepo.find.mockResolvedValue([]);
       s.userProvisioningContextSettingsContextRepo.count.mockResolvedValue(0);
     };
@@ -660,9 +682,9 @@ describe('Context Integration Tests', () => {
         name: 'Doomed Context',
         projectId: PROJECT_ID,
       });
-      s.dmContextRepo.count.mockResolvedValue(2);
-      s.storageContextRepo.count.mockResolvedValue(1);
-      s.destContextRepo.count.mockResolvedValue(3);
+      stubResourceLinks(s.dmContextRepo, 2);
+      stubResourceLinks(s.storageContextRepo, 1);
+      stubResourceLinks(s.destContextRepo, 3);
       const memberIds = new Set(mockRestrictedMembers(4));
       s.userProvisioningContextSettingsContextRepo.count.mockResolvedValue(0);
 
@@ -709,9 +731,9 @@ describe('Context Integration Tests', () => {
         name: 'Impact Context',
         projectId: PROJECT_ID,
       });
-      s.dmContextRepo.count.mockResolvedValue(5);
-      s.storageContextRepo.count.mockResolvedValue(3);
-      s.destContextRepo.count.mockResolvedValue(2);
+      stubResourceLinks(s.dmContextRepo, 5);
+      stubResourceLinks(s.storageContextRepo, 3);
+      stubResourceLinks(s.destContextRepo, 2);
       const memberIds = new Set([...mockRestrictedMembers(7), 'affected-1', 'affected-2']);
       s.userProvisioningContextSettingsContextRepo.count.mockResolvedValue(4);
       s.memberRoleContextRepo.createQueryBuilder.mockReturnValue({

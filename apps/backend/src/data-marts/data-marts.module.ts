@@ -123,6 +123,7 @@ import { AiAssistantApplyAction } from './entities/ai-assistant-apply-action.ent
 import { dataStorageFacadesProviders } from './data-storage-types/data-storage-facades';
 import {
   DATA_QUALITY_SQL_DIALECT_RESOLVER,
+  DATA_MART_DEFINITION_RESOLVER,
   dataStorageResolverProviders,
 } from './data-storage-types/data-storage-providers';
 import { dataDestinationFacadesProviders } from './data-destination-types/data-destination-facades';
@@ -291,6 +292,9 @@ import { ConnectorSourceCredentials } from './entities/connector-source-credenti
 import { ConnectorSourceCredentialsService } from './services/connector/connector-source-credentials.service';
 import { ConnectorOauthService } from './services/connector/connector-oauth.service';
 import { DataMartTableReferenceService } from './services/data-mart-table-reference.service';
+import { DataMartSqlReferenceResolver } from './services/data-mart-sql-reference-resolver.service';
+import { DataMartSqlReferenceValidator } from './services/data-mart-sql-reference-validator.service';
+import { DataMartSchemaInheritanceService } from './services/data-mart-schema-inheritance.service';
 import { InsightTemplateSourceDataService } from './services/insight-template-source-data.service';
 import { InsightTemplateSourceService } from './services/insight-template-source.service';
 import { DataMartSqlTableService } from './services/data-mart-sql-table.service';
@@ -813,6 +817,10 @@ import { ConsentCredentialDefinitionService } from './credentials/use-cases/cons
     DataMartTemplateFacadeImpl,
     InsightTemplateSourceDataService,
     DataMartTableReferenceService,
+    DataMartSqlReferenceResolver,
+    { provide: DATA_MART_DEFINITION_RESOLVER, useExisting: DataMartSqlReferenceResolver },
+    DataMartSqlReferenceValidator,
+    DataMartSchemaInheritanceService,
     DataMartSqlTableService,
     DataMartSampleDataService,
     GetDataMartRunService,
